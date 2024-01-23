@@ -83,7 +83,7 @@ func RemoveLowCardinalityAndNullable(colType string) string {
 	if strings.HasPrefix(colType, "LowCardinality") {
 		colType = colType[15 : len(colType)-1]
 	}
-	if strings.HasSuffix(colType, "Nullable") {
+	if strings.HasPrefix(colType, "Nullable") {
 		colType = colType[9 : len(colType)-1]
 	}
 	return colType
