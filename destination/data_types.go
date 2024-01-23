@@ -1,31 +1,81 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-var DataTypes = map[string]pb.DataType{
-	"Int8":    pb.DataType_SHORT,
-	"Int16":   pb.DataType_SHORT,
-	"Int32":   pb.DataType_INT,
-	"Int64":   pb.DataType_LONG,
-	"Float32": pb.DataType_FLOAT,
-	"Float64": pb.DataType_DOUBLE,
-	"Date":    pb.DataType_NAIVE_DATE,
-	"Date32":  pb.DataType_NAIVE_DATE,
-	"String":  pb.DataType_STRING,
-	"UUID":    pb.DataType_STRING,
-}
+var (
+	ClickHouseDataTypes = map[string]pb.DataType{
+		"Int8":    pb.DataType_SHORT,
+		"Int16":   pb.DataType_SHORT,
+		"Int32":   pb.DataType_INT,
+		"Int64":   pb.DataType_LONG,
+		"Float32": pb.DataType_FLOAT,
+		"Float64": pb.DataType_DOUBLE,
+		"Date":    pb.DataType_NAIVE_DATE,
+		"Date32":  pb.DataType_NAIVE_DATE,
+		"String":  pb.DataType_STRING,
+		"UUID":    pb.DataType_STRING,
+	}
+	FivetranDataTypes = map[pb.DataType]string{
+		pb.DataType_BOOLEAN:        "Boolean",
+		pb.DataType_SHORT:          "Int16",
+		pb.DataType_INT:            "Int32",
+		pb.DataType_LONG:           "Int64",
+		pb.DataType_FLOAT:          "Float32",
+		pb.DataType_DOUBLE:         "Float64",
+		pb.DataType_DECIMAL:        "Decimal",
+		pb.DataType_STRING:         "String",
+		pb.DataType_BINARY:         "String",
+		pb.DataType_XML:            "String",
+		pb.DataType_NAIVE_DATE:     "Date",
+		pb.DataType_NAIVE_DATETIME: "DateTime",
+		pb.DataType_UTC_DATETIME:   "DateTime",
+		pb.DataType_JSON:           "JSON",
+	}
+)
 
-func GetDataType(colType string) pb.DataType {
+func GetFivetranDataType(colType string) pb.DataType {
 	colType = RemoveLowCardinalityAndNullable(colType)
-	dataType, ok := DataTypes[colType]
+	dataType, ok := ClickHouseDataTypes[colType]
 	if !ok {
 		dataType = pb.DataType_UNSPECIFIED
 	}
 	return dataType
+}
+
+func GetClickHouseColumnType(dataType pb.DataType, decimalParams *pb.DecimalParams) (string, error) {
+	colType, ok := FivetranDataTypes[dataType]
+	if !ok {
+		return "", errors.New(fmt.Sprintf("Unknown datatype %s", dataType.String()))
+	}
+	if colType == "Decimal" && decimalParams != nil {
+		return ToDecimalTypeWithParams(decimalParams), nil
+	}
+	return colType, nil
+}
+
+func ToDecimalTypeWithParams(decimalParams *pb.DecimalParams) string {
+	var (
+		precision uint32
+		scale     uint32
+	)
+	// See precision and scale valid ranges: https://clickhouse.com/docs/en/sql-reference/data-types/decimal
+	if decimalParams.Precision > MaxDecimalPrecision {
+		precision = MaxDecimalPrecision
+	} else {
+		precision = decimalParams.Precision
+	}
+	if decimalParams.Scale > precision {
+		scale = precision
+	} else {
+		scale = decimalParams.Scale
+	}
+	return fmt.Sprintf("Decimal(%d, %d)", precision, scale)
 }
 
 func RemoveLowCardinalityAndNullable(colType string) string {

@@ -160,25 +160,114 @@ func (s *server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 	return &pb.DescribeTableResponse{
 		Response: &pb.DescribeTableResponse_Table{Table: &pb.Table{
 			Name:    in.TableName,
-			Columns: TableDescriptionToColumns(tableDescription),
+			Columns: ToFivetranColumns(tableDescription),
 		}},
 	}, nil
 }
 
 func (s *server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*pb.CreateTableResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateTable not implemented")
+	conn := GetClickHouseConnection(in.GetConfiguration())
+	cols, err := ToClickHouseColumns(in.Table)
+	if err != nil {
+		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+
+	err = conn.CreateTable(in.SchemaName, in.Table.Name, cols, "Memory")
+	if err != nil {
+		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+
+	err = conn.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.CreateTableResponse{
+		Response: &pb.CreateTableResponse_Success{
+			Success: true,
+		},
+	}, nil
 }
 
 func (s *server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.AlterTableResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AlterTable not implemented")
+	conn := GetClickHouseConnection(in.GetConfiguration())
+	currentTableDescription, err := conn.DescribeTable(in.SchemaName, in.Table.Name)
+	if err != nil {
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+
+	alterTableDescription, err := ToClickHouseColumns(in.Table)
+	if err != nil {
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+
+	diff := GetAlterTableDiff(currentTableDescription, alterTableDescription)
+	err = conn.AlterTable(in.SchemaName, in.Table.Name, diff)
+	if err != nil {
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+
+	err = conn.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.AlterTableResponse{
+		Response: &pb.AlterTableResponse_Success{
+			Success: true,
+		},
+	}, nil
 }
 
 func (s *server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.TruncateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Truncate not implemented")
+	conn := GetClickHouseConnection(in.GetConfiguration())
+	err := conn.TruncateTable(in.SchemaName, in.TableName)
+	if err != nil {
+		return &pb.TruncateResponse{
+			Response: &pb.TruncateResponse_Failure{
+				Failure: fmt.Sprintf("Failed to truncate table `%s`.`%s`, cause: %s", in.SchemaName, in.TableName, err),
+			},
+		}, nil
+	}
+
+	err = conn.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.TruncateResponse{
+		Response: &pb.TruncateResponse_Success{
+			Success: true,
+		},
+	}, nil
 }
 
 func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WriteBatch not implemented")
+}
+
+func FailedTestResponse(name string, err error) *pb.TestResponse {
+	return &pb.TestResponse{
+		Response: &pb.TestResponse_Failure{
+			Failure: fmt.Sprintf("Test %s failed, cause: %s", name, err),
+		},
+	}
+}
+
+func FailedCreateTableResponse(schemaName string, tableName string, err error) *pb.CreateTableResponse {
+	return &pb.CreateTableResponse{
+		Response: &pb.CreateTableResponse_Failure{
+			Failure: fmt.Sprintf("Failed to create table `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		},
+	}
+}
+
+func FailedAlterTableResponse(schemaName string, tableName string, err error) *pb.AlterTableResponse {
+	return &pb.AlterTableResponse{
+		Response: &pb.AlterTableResponse_Failure{
+			Failure: fmt.Sprintf("Failed to alter table `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		},
+	}
 }
 
 func main() {

@@ -23,6 +23,19 @@ func GetClickHouseConnection(configuration map[string]string) *ClickHouseConnect
 		Auth: clickhouse.Auth{
 			Username: GetWithDefault(configuration, "username", "default"),
 			Password: GetWithDefault(configuration, "password", ""),
+			Database: GetWithDefault(configuration, "database", "default"),
+		},
+		Protocol: clickhouse.Native,
+		Settings: clickhouse.Settings{
+			"allow_experimental_object_type": 1,
+		},
+		ClientInfo: clickhouse.ClientInfo{
+			Products: []struct {
+				Name    string
+				Version string
+			}{
+				{Name: "fivetran-destination", Version: Version},
+			},
 		},
 	}
 	if GetWithDefault(configuration, "ssl", "false") == "true" {
@@ -41,8 +54,12 @@ func GetWithDefault(configuration map[string]string, key string, default_ string
 	return value
 }
 
-func (conn *ClickHouseConnection) DescribeTable(database string, tableName string) (map[string]string, error) {
-	rows, err := conn.Query(fmt.Sprintf("DESCRIBE `%s`.`%s`", database, tableName))
+func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
+	fullName := GetFullTableName(schemaName, tableName)
+	query := fmt.Sprintf("DESCRIBE %s", fullName)
+	LogQuery(query)
+
+	rows, err := conn.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -51,14 +68,106 @@ func (conn *ClickHouseConnection) DescribeTable(database string, tableName strin
 		colType string
 		ignore  string
 	)
-	result := make(map[string]string)
+	mapping := make(map[string]string)
+	var columns []string
 	for rows.Next() {
 		if err := rows.Scan(&colName, &colType, &ignore, &ignore, &ignore, &ignore, &ignore); err != nil {
 			return nil, err
 		}
-		result[colName] = colType
+		mapping[colName] = colType
+		columns = append(columns, colName)
 	}
-	return result, nil
+	return &TableDescription{
+		mapping: mapping,
+		columns: []string{},
+	}, nil
+}
+
+func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription, engine string) error {
+	fullName := GetFullTableName(schemaName, tableName)
+	logger.Printf("Creating table %s with columns %s", fullName, tableDescription)
+
+	var columnsBuilder strings.Builder
+	count := 0
+	for _, colName := range tableDescription.columns {
+		colType := tableDescription.mapping[colName]
+		if count < len(tableDescription.columns)-1 {
+			columnsBuilder.WriteString(fmt.Sprintf("%s %s, ", colName, colType))
+		} else {
+			columnsBuilder.WriteString(fmt.Sprintf("%s %s", colName, colType))
+		}
+		count++
+	}
+
+	columns := columnsBuilder.String()
+	query := fmt.Sprintf("CREATE TABLE %s (%s) Engine = %s", fullName, columns, engine)
+	LogQuery(query)
+
+	if _, err := conn.Exec(query); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string, diff *AlterTableDiff) error {
+	fullName := GetFullTableName(schemaName, tableName)
+	logger.Printf("Alter table %s; adding %s, modifying %s, dropping %s", fullName, diff.add, diff.modify, diff.drop)
+
+	total := len(diff.modify) + len(diff.add) + len(diff.drop)
+	if total == 0 {
+		logger.Printf("No statements to execute for altering table %s", fullName)
+		return nil
+	}
+
+	count := 0
+	var statementsBuilder strings.Builder
+
+	for _, col := range diff.add {
+		if count < total-1 {
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s, ", col.name, col.dbType))
+		} else {
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", col.name, col.dbType))
+		}
+		count++
+	}
+	for _, col := range diff.modify {
+		if count < total-1 {
+			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s, ", col.name, col.dbType))
+		} else {
+			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", col.name, col.dbType))
+		}
+		count++
+	}
+	for _, colName := range diff.drop {
+		if count < total-1 {
+			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s, ", colName))
+		} else {
+			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", colName))
+		}
+		count++
+	}
+
+	statements := statementsBuilder.String()
+	query := fmt.Sprintf("ALTER TABLE %s %s", fullName, statements)
+	LogQuery(query)
+
+	if _, err := conn.Exec(query); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
+	fullName := GetFullTableName(schemaName, tableName)
+	logger.Printf("Truncating %s", fullName)
+
+	query := fmt.Sprintf("TRUNCATE TABLE %s", fullName)
+	LogQuery(query)
+
+	if _, err := conn.Exec(query); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (conn *ClickHouseConnection) ConnectionTest() error {
@@ -66,8 +175,8 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 	if err != nil {
 		return err
 	}
-	colType, exists := describeResult["number"]
 
+	colType, exists := describeResult.mapping["number"]
 	if !exists || colType != "UInt64" {
 		return errors.New(
 			fmt.Sprintf(
@@ -84,9 +193,11 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	tableName := fmt.Sprintf("fivetran_destination_test_%s", id)
 
 	// Create test table
-	logger.Printf("Creating table %s", tableName)
-	createTableQuery := fmt.Sprintf("CREATE TABLE %s (Col1 UInt8, Col2 String) Engine = Memory", tableName)
-	if _, err := conn.Exec(createTableQuery); err != nil {
+	err := conn.CreateTable("", tableName, MakeTableDescription([]*ColumnDefinition{
+		{name: "Col1", dbType: "UInt8"},
+		{name: "Col2", dbType: "String"},
+	}), "Memory")
+	if err != nil {
 		return err
 	}
 
@@ -96,7 +207,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	if err != nil {
 		return err
 	}
-	batch, err := scope.Prepare(fmt.Sprintf("INSERT INTO %s", tableName))
+	batch, err := scope.Prepare(fmt.Sprintf("INSERT INTO `%s`", tableName))
 	if err != nil {
 		return err
 	}
@@ -110,15 +221,18 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	}
 
 	// Alter
-	logger.Printf("Alter %s.Col1 into UInt16", tableName)
-	alterTableQuery := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN Col1 UInt16", tableName)
-	if _, err := conn.Exec(alterTableQuery); err != nil {
+	err = conn.AlterTable("", tableName, &AlterTableDiff{
+		add:    []ColumnDefinition{},
+		modify: []ColumnDefinition{{name: "Col1", dbType: "UInt16"}},
+		drop:   []string{},
+	})
+	if err != nil {
 		return err
 	}
 
 	// Check the inserted data
 	logger.Printf("Checking test data in %s", tableName)
-	row := conn.QueryRow(fmt.Sprintf("SELECT * FROM %s", tableName))
+	row := conn.QueryRow(fmt.Sprintf("SELECT * FROM `%s`", tableName))
 	var (
 		col1 uint16
 		col2 string
@@ -132,14 +246,14 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	}
 
 	// Truncate
-	logger.Printf("Truncating %s", tableName)
-	if _, err := conn.Exec(fmt.Sprintf("TRUNCATE TABLE %s", tableName)); err != nil {
+	err = conn.TruncateTable("", tableName)
+	if err != nil {
 		return err
 	}
 
 	// Check the table is empty
 	logger.Printf("Checking if %s is empty", tableName)
-	row = conn.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName))
+	row = conn.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName))
 	var (
 		count uint64
 	)
@@ -152,7 +266,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 	// Drop
 	logger.Printf("Dropping %s", tableName)
-	if _, err := conn.Exec(fmt.Sprintf("DROP TABLE %s", tableName)); err != nil {
+	if _, err := conn.Exec(fmt.Sprintf("DROP TABLE `%s`", tableName)); err != nil {
 		return err
 	}
 
@@ -168,4 +282,18 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 	logger.Printf("Mutation check passed")
 	return nil
+}
+
+func GetFullTableName(schemaName string, tableName string) string {
+	var fullName string
+	if schemaName == "" {
+		fullName = fmt.Sprintf("`%s`", tableName)
+	} else {
+		fullName = fmt.Sprintf("`%s`.`%s`", schemaName, tableName)
+	}
+	return fullName
+}
+
+func LogQuery(query string) {
+	logger.Printf("Executing query: %s", query)
 }

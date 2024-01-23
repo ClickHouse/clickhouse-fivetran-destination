@@ -9,10 +9,6 @@ prepare-fivetran-sdk:
 start-docker:
 	docker-compose up -d
 
-init-db:
-	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123
-	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
-
 generate-proto:
 	rm -f proto/*.proto
 	rm -f proto/*.go
@@ -27,6 +23,8 @@ generate-proto:
         destination_sdk.proto
 
 test:
+	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123
+	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
 	docker run --mount type=bind,source=$$PWD/tests,target=/data \
 		-a STDIN -a STDOUT -a STDERR -it \
 		-e WORKING_DIR=$$PWD/tests \
@@ -37,4 +35,4 @@ test:
 run:
 	go run destination/main.go
 
-.PHONY: _ prepare-fivetran-sdk init-db generate-proto start-docker run test
+.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run test
