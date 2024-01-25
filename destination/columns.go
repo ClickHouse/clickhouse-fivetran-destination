@@ -7,13 +7,13 @@ import (
 const MaxDecimalPrecision = 76
 
 type ColumnDefinition struct {
-	name   string
-	dbType string
+	Name string
+	Type string
 }
 
 type TableDescription struct {
-	mapping map[string]string // column name -> db type mapping (unordered)
-	columns []string          // preserves the correct order of the columns
+	Mapping map[string]string // column name -> db type mapping (unordered)
+	Columns []string          // preserves the correct order of the columns
 }
 
 func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescription {
@@ -21,23 +21,23 @@ func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescripti
 	var columns = make([]string, len(columnDefinitions))
 
 	for i, col := range columnDefinitions {
-		mapping[col.name] = col.dbType
-		columns[i] = col.name
+		mapping[col.Name] = col.Type
+		columns[i] = col.Name
 	}
 
 	return &TableDescription{
-		mapping: mapping,
-		columns: columns,
+		Mapping: mapping,
+		Columns: columns,
 	}
 }
 
 func ToFivetranColumns(description *TableDescription) []*pb.Column {
-	columns := make([]*pb.Column, len(description.columns))
+	columns := make([]*pb.Column, len(description.Columns))
 	i := 0
-	for _, colName := range description.columns {
+	for _, colName := range description.Columns {
 		columns[i] = &pb.Column{
 			Name:       colName,
-			Type:       GetFivetranDataType(description.mapping[colName]),
+			Type:       GetFivetranDataType(description.Mapping[colName]),
 			PrimaryKey: false,
 			Decimal:    nil,
 		}
@@ -54,8 +54,8 @@ func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
 			return nil, err
 		}
 		result[i] = &ColumnDefinition{
-			name:   column.Name,
-			dbType: colType,
+			Name: column.Name,
+			Type: colType,
 		}
 	}
 	return MakeTableDescription(result), nil
@@ -70,42 +70,42 @@ const (
 )
 
 type AlterTableOp struct {
-	op     AlterTableOpType
-	column string
-	dbType *string // not needed for Drop
+	Op     AlterTableOpType
+	Column string
+	Type   *string // not needed for Drop
 }
 
 func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*AlterTableOp {
 	var ops []*AlterTableOp
 
-	// what columns are missing from the "current" or have a different data type? (add + modify)
-	for _, colName := range alter.columns {
-		alterColType := alter.mapping[colName]
-		curColType, ok := current.mapping[colName]
+	// what columns are missing from the "current" or have a different Data type? (add + modify)
+	for _, colName := range alter.Columns {
+		alterColType := alter.Mapping[colName]
+		curColType, ok := current.Mapping[colName]
 		if !ok {
-			dbType := alter.mapping[colName]
+			dbType := alter.Mapping[colName]
 			ops = append(ops, &AlterTableOp{
-				op:     Add,
-				column: colName,
-				dbType: &dbType,
+				Op:     Add,
+				Column: colName,
+				Type:   &dbType,
 			})
 		}
 		if curColType != alterColType {
 			ops = append(ops, &AlterTableOp{
-				op:     Modify,
-				column: colName,
-				dbType: &alterColType,
+				Op:     Modify,
+				Column: colName,
+				Type:   &alterColType,
 			})
 		}
 	}
 
 	// what columns are missing from the "alter"? (drop)
-	for _, colName := range current.columns {
-		_, ok := alter.mapping[colName]
+	for _, colName := range current.Columns {
+		_, ok := alter.Mapping[colName]
 		if !ok {
 			ops = append(ops, &AlterTableOp{
-				op:     Drop,
-				column: colName,
+				Op:     Drop,
+				Column: colName,
 			})
 		}
 	}

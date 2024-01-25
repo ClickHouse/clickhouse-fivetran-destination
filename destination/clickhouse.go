@@ -57,7 +57,7 @@ func GetWithDefault(configuration map[string]string, key string, default_ string
 func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
 	fullName := GetFullTableName(schemaName, tableName)
 	query := fmt.Sprintf("DESCRIBE %s", fullName)
-	LogQuery(query)
+	logger.Printf("Executing query: %s", query)
 
 	rows, err := conn.Query(query)
 	if err != nil {
@@ -74,8 +74,8 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			return nil, err
 		}
 		columns = append(columns, &ColumnDefinition{
-			name:   colName,
-			dbType: colType,
+			Name: colName,
+			Type: colType,
 		})
 	}
 	return MakeTableDescription(columns), nil
@@ -87,10 +87,10 @@ func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName strin
 
 	var columnsBuilder strings.Builder
 	count := 0
-	for _, colName := range tableDescription.columns {
-		colType := tableDescription.mapping[colName]
+	for _, colName := range tableDescription.Columns {
+		colType := tableDescription.Mapping[colName]
 		columnsBuilder.WriteString(fmt.Sprintf("%s %s", colName, colType))
-		if count < len(tableDescription.columns)-1 {
+		if count < len(tableDescription.Columns)-1 {
 			columnsBuilder.WriteString(", ")
 		}
 		count++
@@ -98,7 +98,7 @@ func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName strin
 
 	columns := columnsBuilder.String()
 	query := fmt.Sprintf("CREATE TABLE %s (%s) Engine = %s", fullName, columns, engine)
-	LogQuery(query)
+	logger.Printf("Executing query: %s", query)
 
 	if _, err := conn.Exec(query); err != nil {
 		return err
@@ -120,13 +120,13 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 	var statementsBuilder strings.Builder
 
 	for _, op := range ops {
-		switch op.op {
+		switch op.Op {
 		case Add:
-			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", op.column, *op.dbType))
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", op.Column, *op.Type))
 		case Modify:
-			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", op.column, *op.dbType))
+			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", op.Column, *op.Type))
 		case Drop:
-			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", op.column))
+			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", op.Column))
 		}
 		if count < total-1 {
 			statementsBuilder.WriteString(", ")
@@ -136,7 +136,7 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 
 	statements := statementsBuilder.String()
 	query := fmt.Sprintf("ALTER TABLE %s %s", fullName, statements)
-	LogQuery(query)
+	logger.Printf("Executing query: %s", query)
 
 	if _, err := conn.Exec(query); err != nil {
 		return err
@@ -149,7 +149,7 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 	logger.Printf("Truncating %s", fullName)
 
 	query := fmt.Sprintf("TRUNCATE TABLE %s", fullName)
-	LogQuery(query)
+	logger.Printf("Executing query: %s", query)
 
 	if _, err := conn.Exec(query); err != nil {
 		return err
@@ -163,7 +163,7 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 		return err
 	}
 
-	colType, exists := describeResult.mapping["number"]
+	colType, exists := describeResult.Mapping["number"]
 	if !exists || colType != "UInt64" {
 		return errors.New(
 			fmt.Sprintf(
@@ -181,15 +181,15 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 	// Create test table
 	err := conn.CreateTable("", tableName, MakeTableDescription([]*ColumnDefinition{
-		{name: "Col1", dbType: "UInt8"},
-		{name: "Col2", dbType: "String"},
+		{Name: "Col1", Type: "UInt8"},
+		{Name: "Col2", Type: "String"},
 	}), "Memory")
 	if err != nil {
 		return err
 	}
 
-	// Insert test data
-	logger.Printf("Inserting test data into %s", tableName)
+	// Insert test Data
+	logger.Printf("Inserting test Data into %s", tableName)
 	scope, err := conn.Begin()
 	if err != nil {
 		return err
@@ -210,14 +210,14 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	// Alter
 	dbType := "UInt16"
 	err = conn.AlterTable("", tableName, []*AlterTableOp{
-		{op: Modify, column: "Col1", dbType: &dbType},
+		{Op: Modify, Column: "Col1", Type: &dbType},
 	})
 	if err != nil {
 		return err
 	}
 
-	// Check the inserted data
-	logger.Printf("Checking test data in %s", tableName)
+	// Check the inserted Data
+	logger.Printf("Checking test Data in %s", tableName)
 	row := conn.QueryRow(fmt.Sprintf("SELECT * FROM `%s`", tableName))
 	var (
 		col1 uint16
@@ -228,7 +228,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	}
 	if col1 != 42 || col2 != "ClickHouse" {
 		return errors.New(
-			fmt.Sprintf("Unexpected data check output, expected 42/ClickHouse, got: %d/%s", col1, col2))
+			fmt.Sprintf("Unexpected Data check output, expected 42/ClickHouse, got: %d/%s", col1, col2))
 	}
 
 	// Truncate
@@ -278,8 +278,4 @@ func GetFullTableName(schemaName string, tableName string) string {
 		fullName = fmt.Sprintf("`%s`.`%s`", schemaName, tableName)
 	}
 	return fullName
-}
-
-func LogQuery(query string) {
-	logger.Printf("Executing query: %s", query)
 }

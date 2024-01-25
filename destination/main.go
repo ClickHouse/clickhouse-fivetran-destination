@@ -12,8 +12,6 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const ConnectionTest = "connection"
@@ -240,7 +238,69 @@ func (s *server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 }
 
 func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method WriteBatch not implemented")
+	compression := pb.Compression_OFF
+	encryption := pb.Encryption_NONE
+	csvParams := in.GetCsv()
+	if csvParams != nil {
+		compression = csvParams.Compression
+		encryption = csvParams.Encryption
+	}
+
+	deleteFiles, failure := ReadAndDecryptWriteBatchFiles(in.DeleteFiles, in.Keys, compression, encryption)
+	if failure != nil {
+		return failure, nil
+	}
+	updateFiles, failure := ReadAndDecryptWriteBatchFiles(in.UpdateFiles, in.Keys, compression, encryption)
+	if failure != nil {
+		return failure, nil
+	}
+	replaceFiles, failure := ReadAndDecryptWriteBatchFiles(in.ReplaceFiles, in.Keys, compression, encryption)
+	if failure != nil {
+		return failure, nil
+	}
+
+	fmt.Printf("Delete files: %v\n", deleteFiles)
+	fmt.Printf("Update files: %v\n", updateFiles)
+	fmt.Printf("Replace files: %v\n", replaceFiles)
+
+	return &pb.WriteBatchResponse{
+		Response: &pb.WriteBatchResponse_Success{
+			Success: true,
+		},
+	}, nil
+}
+
+func ReadAndDecryptWriteBatchFiles(
+	files []string,
+	keys map[string][]byte,
+	compression pb.Compression,
+	encryption pb.Encryption,
+) ([]string, *pb.WriteBatchResponse) {
+	decryptedFiles := make([]string, len(files))
+	for i, file := range files {
+		result := ReadAndDecryptCSVFile(file, keys, compression, encryption)
+		switch result.Type {
+		case KeyNotFound:
+			return nil, FailedWriteBatchResponse(fmt.Sprintf("Key for file %s not found", file))
+		case FileNotFound:
+			return nil, FailedWriteBatchResponse(fmt.Sprintf("File %s not found", file))
+		case FailedToDecompress:
+			return nil, FailedWriteBatchResponse(fmt.Sprintf("Failed to decompress file %s, cause: %s", file, *result.Error))
+		case FailedToDecrypt:
+			return nil, FailedWriteBatchResponse(fmt.Sprintf("Failed to decrypt file %s, cause: %s", file, *result.Error))
+		case Success:
+			decryptedFiles[i] = string(*result.Data)
+		}
+	}
+	return decryptedFiles, nil
+}
+
+func FailedWriteBatchResponse(reason string) *pb.WriteBatchResponse {
+	return &pb.WriteBatchResponse{
+		Response: &pb.WriteBatchResponse_Failure{
+			Failure: fmt.Sprintf("Failed to write batch, cause: %s", reason),
+		},
+	}
 }
 
 func FailedTestResponse(name string, err error) *pb.TestResponse {

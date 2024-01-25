@@ -25,9 +25,9 @@ generate-proto:
 test:
 	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123
 	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
-	docker run --mount type=bind,source=$$PWD/tests,target=/data \
+	docker run --mount type=bind,source=$$PWD/sdk_tests,target=/data \
 		-a STDIN -a STDOUT -a STDERR -it \
-		-e WORKING_DIR=$$PWD/tests \
+		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=host.docker.internal \
 		--network=host \
 		it5t/fivetran-sdk-destination-tester:024.0116.001

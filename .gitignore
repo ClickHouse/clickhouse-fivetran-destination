@@ -1,6 +1,6 @@
 fivetran_sdk
 proto
-tests/*.csv.*
+sdk_tests/*.csv*
 
 .idea
 .vscode
