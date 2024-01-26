@@ -34,7 +34,7 @@ test:
 		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=host.docker.internal \
 		--network=host \
-		-t it5t/fivetran-sdk-destination-tester:024.0125.001
+		it5t/fivetran-sdk-destination-tester:024.0125.001
 
 lint:
 	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
