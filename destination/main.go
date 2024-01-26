@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,77 +26,18 @@ type server struct {
 	pb.UnimplementedDestinationServer
 }
 
-func (s *server) ConfigurationForm(ctx context.Context, in *pb.ConfigurationFormRequest) (*pb.ConfigurationFormResponse, error) {
-	return &pb.ConfigurationFormResponse{
-		SchemaSelectionSupported: true,
-		TableSelectionSupported:  true,
-		Fields: []*pb.FormField{
-			{
-				Name:     "hostname",
-				Label:    "Hostname",
-				Required: true,
-				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_PlainText,
-				},
-			},
-			{
-				Name:     "port",
-				Label:    "Port",
-				Required: false,
-				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_PlainText,
-				},
-			},
-			{
-				Name:     "database",
-				Label:    "Database",
-				Required: false,
-				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_PlainText,
-				},
-			},
-			{
-				Name:     "username",
-				Label:    "Username",
-				Required: false,
-				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_Password,
-				},
-			},
-			{
-				Name:     "password",
-				Label:    "Password",
-				Required: false,
-				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_Password,
-				},
-			},
-			{
-				Name:     "ssl",
-				Label:    "SSL",
-				Required: false,
-				Type: &pb.FormField_ToggleField{
-					ToggleField: &pb.ToggleField{},
-				},
-			},
-		},
-		Tests: []*pb.ConfigurationTest{
-			{
-				Name:  ConnectionTest,
-				Label: "Test connection and basic operations",
-			},
-			{
-				Name:  MutationTest,
-				Label: "Test mutation operations",
-			},
-		},
-	}, nil
+func (s *server) ConfigurationForm(_ context.Context, _ *pb.ConfigurationFormRequest) (*pb.ConfigurationFormResponse, error) {
+	return ConfigurationFormResponse, nil
 }
 
 func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse, error) {
-	conn := GetClickHouseConnection(in.GetConfiguration())
-	logger.Printf("Running test: %v", in.Name)
+	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
+	if err != nil {
+		return FailedTestResponse(in.Name, err), nil
+	}
+	defer conn.Close()
 
+	logger.Printf("Running test: %v", in.Name)
 	switch in.Name {
 	case ConnectionTest:
 		err := conn.ConnectionTest()
@@ -114,11 +57,6 @@ func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 		}, nil
 	}
 
-	err := conn.Close()
-	if err != nil {
-		return nil, err
-	}
-
 	return &pb.TestResponse{
 		Response: &pb.TestResponse_Success{
 			Success: true,
@@ -127,9 +65,13 @@ func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 }
 
 func (s *server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest) (*pb.DescribeTableResponse, error) {
-	conn := GetClickHouseConnection(in.GetConfiguration())
-	tableDescription, err := conn.DescribeTable(in.SchemaName, in.TableName)
+	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
+	if err != nil {
+		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
+	}
+	defer conn.Close()
 
+	tableDescription, err := conn.DescribeTable(in.SchemaName, in.TableName)
 	if err != nil {
 		chErr := &clickhouse.Exception{}
 		// Code 60 => UNKNOWN_TABLE
@@ -138,28 +80,28 @@ func (s *server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 				Response: &pb.DescribeTableResponse_NotFound{NotFound: true},
 			}, nil
 		}
-		return &pb.DescribeTableResponse{
-			Response: &pb.DescribeTableResponse_Failure{
-				Failure: fmt.Sprintf("Failed to describe `%s`.`%s`, cause: %s", in.SchemaName, in.TableName, err),
-			},
-		}, nil
+		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
 
-	err = conn.Close()
+	columns, err := ToFivetranColumns(tableDescription)
 	if err != nil {
-		return nil, err
+		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
-
 	return &pb.DescribeTableResponse{
 		Response: &pb.DescribeTableResponse_Table{Table: &pb.Table{
 			Name:    in.TableName,
-			Columns: ToFivetranColumns(tableDescription),
+			Columns: columns,
 		}},
 	}, nil
 }
 
 func (s *server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*pb.CreateTableResponse, error) {
-	conn := GetClickHouseConnection(in.GetConfiguration())
+	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
+	if err != nil {
+		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	defer conn.Close()
+
 	cols, err := ToClickHouseColumns(in.Table)
 	if err != nil {
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
@@ -170,11 +112,6 @@ func (s *server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	err = conn.Close()
-	if err != nil {
-		return nil, err
-	}
-
 	return &pb.CreateTableResponse{
 		Response: &pb.CreateTableResponse_Success{
 			Success: true,
@@ -183,28 +120,28 @@ func (s *server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 }
 
 func (s *server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.AlterTableResponse, error) {
-	conn := GetClickHouseConnection(in.GetConfiguration())
+	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
+	if err != nil {
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	defer conn.Close()
+
 	currentTableDescription, err := conn.DescribeTable(in.SchemaName, in.Table.Name)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	logger.Printf("Current table description: %s", currentTableDescription)
+	logger.Printf("Current table description: %v", currentTableDescription)
 
 	alterTableDescription, err := ToClickHouseColumns(in.Table)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	logger.Printf("Requested table description: %s", alterTableDescription)
+	logger.Printf("Requested table description: %v", alterTableDescription)
 
 	diff := GetAlterTableOps(currentTableDescription, alterTableDescription)
 	err = conn.AlterTable(in.SchemaName, in.Table.Name, diff)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
-	}
-
-	err = conn.Close()
-	if err != nil {
-		return nil, err
 	}
 
 	return &pb.AlterTableResponse{
@@ -215,19 +152,15 @@ func (s *server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 }
 
 func (s *server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.TruncateResponse, error) {
-	conn := GetClickHouseConnection(in.GetConfiguration())
-	err := conn.TruncateTable(in.SchemaName, in.TableName)
+	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
-		return &pb.TruncateResponse{
-			Response: &pb.TruncateResponse_Failure{
-				Failure: fmt.Sprintf("Failed to truncate table `%s`.`%s`, cause: %s", in.SchemaName, in.TableName, err),
-			},
-		}, nil
+		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
+	defer conn.Close()
 
-	err = conn.Close()
+	err = conn.TruncateTable(in.SchemaName, in.TableName)
 	if err != nil {
-		return nil, err
+		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
 
 	return &pb.TruncateResponse{
@@ -240,21 +173,23 @@ func (s *server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
 	compression := pb.Compression_OFF
 	encryption := pb.Encryption_NONE
+	nullStr := ""
 	csvParams := in.GetCsv()
 	if csvParams != nil {
 		compression = csvParams.Compression
 		encryption = csvParams.Encryption
+		nullStr = csvParams.NullString
 	}
 
-	deleteFiles, failure := ReadAndDecryptWriteBatchFiles(in.DeleteFiles, in.Keys, compression, encryption)
+	deleteFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.DeleteFiles, in.Keys, compression, encryption)
 	if failure != nil {
 		return failure, nil
 	}
-	updateFiles, failure := ReadAndDecryptWriteBatchFiles(in.UpdateFiles, in.Keys, compression, encryption)
+	updateFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.UpdateFiles, in.Keys, compression, encryption)
 	if failure != nil {
 		return failure, nil
 	}
-	replaceFiles, failure := ReadAndDecryptWriteBatchFiles(in.ReplaceFiles, in.Keys, compression, encryption)
+	replaceFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.ReplaceFiles, in.Keys, compression, encryption)
 	if failure != nil {
 		return failure, nil
 	}
@@ -262,6 +197,19 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	fmt.Printf("Delete files: %v\n", deleteFiles)
 	fmt.Printf("Update files: %v\n", updateFiles)
 	fmt.Printf("Replace files: %v\n", replaceFiles)
+
+	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
+	if err != nil {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	defer conn.Close()
+
+	for _, data := range replaceFiles {
+		err := conn.Insert(in.SchemaName, in.Table, data, nullStr)
+		if err != nil {
+			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+		}
+	}
 
 	return &pb.WriteBatchResponse{
 		Response: &pb.WriteBatchResponse_Success{
@@ -271,60 +219,38 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 }
 
 func ReadAndDecryptWriteBatchFiles(
-	files []string,
+	schemaName string,
+	tableName string,
+	fileNames []string,
 	keys map[string][]byte,
 	compression pb.Compression,
 	encryption pb.Encryption,
-) ([]string, *pb.WriteBatchResponse) {
-	decryptedFiles := make([]string, len(files))
-	for i, file := range files {
-		result := ReadAndDecryptCSVFile(file, keys, compression, encryption)
+) ([]CSV, *pb.WriteBatchResponse) {
+	decryptedFiles := make([]CSV, len(fileNames))
+	for i, fileName := range fileNames {
+		result := ReadCSVFile(fileName, keys, compression, encryption)
 		switch result.Type {
 		case KeyNotFound:
-			return nil, FailedWriteBatchResponse(fmt.Sprintf("Key for file %s not found", file))
+			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("key for file %s not found", fileName))
 		case FileNotFound:
-			return nil, FailedWriteBatchResponse(fmt.Sprintf("File %s not found", file))
+			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s not found", fileName))
 		case FailedToDecompress:
-			return nil, FailedWriteBatchResponse(fmt.Sprintf("Failed to decompress file %s, cause: %s", file, *result.Error))
+			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decompress file %s, cause: %s", fileName, *result.Error))
 		case FailedToDecrypt:
-			return nil, FailedWriteBatchResponse(fmt.Sprintf("Failed to decrypt file %s, cause: %s", file, *result.Error))
+			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decrypt file %s, cause: %s", fileName, *result.Error))
 		case Success:
-			decryptedFiles[i] = string(*result.Data)
+			csvReader := csv.NewReader(bytes.NewReader(*result.Data))
+			records, err := csvReader.ReadAll()
+			if err != nil {
+				return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s is not a valid CSV, cause: %s", fileName, *result.Error))
+			}
+			if len(records) < 2 {
+				return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("expected to have more than 1 line in file %s", fileName))
+			}
+			decryptedFiles[i] = records[1:] // skip the column names
 		}
 	}
 	return decryptedFiles, nil
-}
-
-func FailedWriteBatchResponse(reason string) *pb.WriteBatchResponse {
-	return &pb.WriteBatchResponse{
-		Response: &pb.WriteBatchResponse_Failure{
-			Failure: fmt.Sprintf("Failed to write batch, cause: %s", reason),
-		},
-	}
-}
-
-func FailedTestResponse(name string, err error) *pb.TestResponse {
-	return &pb.TestResponse{
-		Response: &pb.TestResponse_Failure{
-			Failure: fmt.Sprintf("Test %s failed, cause: %s", name, err),
-		},
-	}
-}
-
-func FailedCreateTableResponse(schemaName string, tableName string, err error) *pb.CreateTableResponse {
-	return &pb.CreateTableResponse{
-		Response: &pb.CreateTableResponse_Failure{
-			Failure: fmt.Sprintf("Failed to create table `%s`.`%s`, cause: %s", schemaName, tableName, err),
-		},
-	}
-}
-
-func FailedAlterTableResponse(schemaName string, tableName string, err error) *pb.AlterTableResponse {
-	return &pb.AlterTableResponse{
-		Response: &pb.AlterTableResponse_Failure{
-			Failure: fmt.Sprintf("Failed to alter table `%s`.`%s`, cause: %s", schemaName, tableName, err),
-		},
-	}
 }
 
 func main() {

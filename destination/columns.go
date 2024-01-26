@@ -7,55 +7,62 @@ import (
 const MaxDecimalPrecision = 76
 
 type ColumnDefinition struct {
-	Name string
-	Type string
+	Name         string
+	Type         string
+	IsPrimaryKey bool
 }
 
 type TableDescription struct {
-	Mapping map[string]string // column name -> db type mapping (unordered)
-	Columns []string          // preserves the correct order of the columns
+	Mapping     map[string]string   // column name -> db type mapping (unordered)
+	Columns     []*ColumnDefinition // all the information about the columns (ordered)
+	PrimaryKeys []string
 }
 
 func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescription {
 	mapping := make(map[string]string, len(columnDefinitions))
-	var columns = make([]string, len(columnDefinitions))
-
-	for i, col := range columnDefinitions {
+	var primaryKeys []string
+	for _, col := range columnDefinitions {
 		mapping[col.Name] = col.Type
-		columns[i] = col.Name
+		if col.IsPrimaryKey {
+			primaryKeys = append(primaryKeys, col.Name)
+		}
 	}
-
 	return &TableDescription{
 		Mapping: mapping,
-		Columns: columns,
+		Columns: columnDefinitions,
 	}
 }
 
-func ToFivetranColumns(description *TableDescription) []*pb.Column {
+func ToFivetranColumns(description *TableDescription) ([]*pb.Column, error) {
 	columns := make([]*pb.Column, len(description.Columns))
 	i := 0
-	for _, colName := range description.Columns {
+	for _, col := range description.Columns {
+		fivetranType, decimalParams, err := GetFivetranDataType(col.Type)
+		if err != nil {
+			return nil, err
+		}
 		columns[i] = &pb.Column{
-			Name:       colName,
-			Type:       GetFivetranDataType(description.Mapping[colName]),
-			PrimaryKey: false,
-			Decimal:    nil,
+			Name:       col.Name,
+			Type:       fivetranType,
+			PrimaryKey: col.IsPrimaryKey,
+			Decimal:    decimalParams,
 		}
 		i++
 	}
-	return columns
+	return columns, nil
 }
 
 func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
 	result := make([]*ColumnDefinition, len(table.Columns))
 	for i, column := range table.Columns {
-		colType, err := GetClickHouseColumnType(column.Type, column.Decimal)
+		colType, err := GetClickHouseDataType(column)
 		if err != nil {
 			return nil, err
 		}
 		result[i] = &ColumnDefinition{
-			Name: column.Name,
-			Type: colType,
+			Name:         column.Name,
+			Type:         colType,
+			IsPrimaryKey: column.PrimaryKey,
 		}
 	}
 	return MakeTableDescription(result), nil
@@ -79,33 +86,31 @@ func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*Alt
 	var ops []*AlterTableOp
 
 	// what columns are missing from the "current" or have a different Data type? (add + modify)
-	for _, colName := range alter.Columns {
-		alterColType := alter.Mapping[colName]
-		curColType, ok := current.Mapping[colName]
+	for _, col := range alter.Columns {
+		curColType, ok := current.Mapping[col.Name]
 		if !ok {
-			dbType := alter.Mapping[colName]
 			ops = append(ops, &AlterTableOp{
 				Op:     Add,
-				Column: colName,
-				Type:   &dbType,
+				Column: col.Name,
+				Type:   &col.Type,
 			})
 		}
-		if curColType != alterColType {
+		if curColType != col.Type {
 			ops = append(ops, &AlterTableOp{
 				Op:     Modify,
-				Column: colName,
-				Type:   &alterColType,
+				Column: col.Name,
+				Type:   &col.Type,
 			})
 		}
 	}
 
 	// what columns are missing from the "alter"? (drop)
-	for _, colName := range current.Columns {
-		_, ok := alter.Mapping[colName]
+	for _, col := range current.Columns {
+		_, ok := alter.Mapping[col.Name]
 		if !ok {
 			ops = append(ops, &AlterTableOp{
 				Op:     Drop,
-				Column: colName,
+				Column: col.Name,
 			})
 		}
 	}

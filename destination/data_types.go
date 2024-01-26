@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -10,17 +11,18 @@ import (
 
 var (
 	ClickHouseDataTypes = map[string]pb.DataType{
-		"Bool":    pb.DataType_BOOLEAN,
-		"Int8":    pb.DataType_SHORT,
-		"Int16":   pb.DataType_SHORT,
-		"Int32":   pb.DataType_INT,
-		"Int64":   pb.DataType_LONG,
-		"Float32": pb.DataType_FLOAT,
-		"Float64": pb.DataType_DOUBLE,
-		"Date":    pb.DataType_NAIVE_DATE,
-		"Date32":  pb.DataType_NAIVE_DATE,
-		"String":  pb.DataType_STRING,
-		"UUID":    pb.DataType_STRING,
+		"Bool":                 pb.DataType_BOOLEAN,
+		"Int16":                pb.DataType_SHORT,
+		"Int32":                pb.DataType_INT,
+		"Int64":                pb.DataType_LONG,
+		"Float32":              pb.DataType_FLOAT,
+		"Float64":              pb.DataType_DOUBLE,
+		"Date":                 pb.DataType_NAIVE_DATE,
+		"DateTime":             pb.DataType_NAIVE_DATETIME,
+		"DateTime64(9, 'UTC')": pb.DataType_UTC_DATETIME,
+		"String":               pb.DataType_STRING,
+		"UUID":                 pb.DataType_STRING,
+		"JSON":                 pb.DataType_JSON,
 	}
 	FivetranDataTypes = map[pb.DataType]string{
 		pb.DataType_BOOLEAN:        "Bool",
@@ -35,29 +37,50 @@ var (
 		pb.DataType_XML:            "String",
 		pb.DataType_NAIVE_DATE:     "Date",
 		pb.DataType_NAIVE_DATETIME: "DateTime",
-		pb.DataType_UTC_DATETIME:   "DateTime",
+		pb.DataType_UTC_DATETIME:   "DateTime64(9, 'UTC')",
 		pb.DataType_JSON:           "JSON",
+	}
+	FivetranMetadataColumnTypes = map[string]string{
+		"_fivetran_id":      "String",
+		"_fivetran_synced":  "DateTime64(9, 'UTC')",
+		"_fivetran_deleted": "Bool",
 	}
 )
 
-func GetFivetranDataType(colType string) pb.DataType {
+func GetFivetranDataType(colType string) (pb.DataType, *pb.DecimalParams, error) {
 	colType = RemoveLowCardinalityAndNullable(colType)
-	dataType, ok := ClickHouseDataTypes[colType]
-	if !ok {
-		dataType = pb.DataType_UNSPECIFIED
+	decimalParams := GetDecimalParams(colType)
+	if decimalParams != nil {
+		return pb.DataType_DECIMAL, decimalParams, nil
 	}
-	return dataType
+	dataType, ok := ClickHouseDataTypes[colType]
+	if !ok { // shouldn't happen if the tables are created by the connector
+		return pb.DataType_UNSPECIFIED, nil, fmt.Errorf("can't map type %s to Fivetran types", colType)
+	}
+	return dataType, nil, nil
 }
 
-func GetClickHouseColumnType(dataType pb.DataType, decimalParams *pb.DecimalParams) (string, error) {
-	colType, ok := FivetranDataTypes[dataType]
+// GetClickHouseDataType
+// - Fivetran Metadata fields have known types and are not Nullable
+// - JSON fields are not Nullable by ClickHouse design
+// - PrimaryKey fields are not Nullable (assumption)
+// - all other fields are Nullable by default
+func GetClickHouseDataType(col *pb.Column) (string, error) {
+	metaColType, ok := FivetranMetadataColumnTypes[col.Name]
+	if ok {
+		return metaColType, nil
+	}
+	colType, ok := FivetranDataTypes[col.Type]
 	if !ok {
-		return "", errors.New(fmt.Sprintf("Unknown datatype %s", dataType.String()))
+		return "", errors.New(fmt.Sprintf("Unknown datatype %s", col.Type.String()))
 	}
-	if colType == "Decimal" && decimalParams != nil {
-		return ToDecimalTypeWithParams(decimalParams), nil
+	if colType == "Decimal" && col.Decimal != nil {
+		return ToDecimalTypeWithParams(col.Decimal), nil
 	}
-	return colType, nil
+	if col.PrimaryKey || colType == "JSON" {
+		return colType, nil
+	}
+	return fmt.Sprintf("Nullable(%s)", colType), nil
 }
 
 func ToDecimalTypeWithParams(decimalParams *pb.DecimalParams) string {
@@ -89,64 +112,21 @@ func RemoveLowCardinalityAndNullable(colType string) string {
 	return colType
 }
 
-/**
-  i8            Int8,
-  i16           Int16,
-  i32           Int32,
-  i64           Int64,
-  i128          Int128,
-  i256          Int256,
-  ui8           UInt8,
-  ui16          UInt16,
-  ui32          UInt32,
-  ui64          UInt64,
-  ui128         UInt128,
-  ui256         UInt256,
-  f32           Float32,
-  f64           Float64,
-  dec32         Decimal32(2),
-  dec64         Decimal64(2),
-  dec128        Decimal128(2),
-  dec128_native Decimal(35, 30),
-  dec128_text   Decimal(35, 31),
-  dec256        Decimal256(2),
-  dec256_native Decimal(65, 2),
-  dec256_text   Decimal(66, 2),
-  p             Point,
-  r             Ring,
-  pg            Polygon,
-  mpg           MultiPolygon,
-  b             Bool,
-  s             String,
-  fs            FixedString(3),
-  uuid          UUID,
-  d             Date,
-  d32           Date32,
-  dt            DateTime,
-  dt_tz1        DateTime('UTC'),
-  dt_tz2        DateTime('Europe/Amsterdam'),
-  dt64          DateTime64(3),
-  dt64_3_tz1    DateTime64(3, 'UTC'),
-  dt64_3_tz2    DateTime64(3, 'Asia/Shanghai'),
-  dt64_6        DateTime64(6, 'UTC'),
-  dt64_9        DateTime64(9, 'UTC'),
-  enm           Enum('hallo' = 1, 'welt' = 2),
-  agg           AggregateFunction(uniq, UInt64),
-  sagg          SimpleAggregateFunction(sum, Double),
-  a             Array(String),
-  o             JSON,
-  t             Tuple(Int32, String, Nullable(String), LowCardinality(String), LowCardinality(Nullable(String)), Tuple(Int32, String)),
-  m             Map(Int32, String),
-  m_complex     Map(Int32, Map(Int32, LowCardinality(Nullable(String)))),
-  nested        Nested (col1 String, col2 UInt32),
-  ip4           IPv4,
-  ip6           IPv6,
-  ns            Nullable(String),
-  nfs           Nullable(FixedString(3)),
-  ndt64         Nullable(DateTime64(3)),
-  ndt64_tz      Nullable(DateTime64(3, 'Asia/Shanghai')),
-  ls            LowCardinality(String),
-  lfs           LowCardinality(FixedString(3)),
-  lns           LowCardinality(Nullable(String)),
-  lnfs          LowCardinality(Nullable(FixedString(3))),
-*/
+func GetDecimalParams(dataType string) *pb.DecimalParams {
+	if strings.HasPrefix(dataType, "Decimal(") {
+		decimalParams := strings.Split(dataType[8:len(dataType)-1], ",")
+		if len(decimalParams) != 2 {
+			return nil
+		}
+		precision, err := strconv.Atoi(decimalParams[0])
+		scale, err := strconv.Atoi(decimalParams[1])
+		if err != nil {
+			return nil
+		}
+		return &pb.DecimalParams{
+			Precision: uint32(precision),
+			Scale:     uint32(scale),
+		}
+	}
+	return nil
+}

@@ -32,7 +32,10 @@ test:
 		--network=host \
 		it5t/fivetran-sdk-destination-tester:024.0116.001
 
+go-test:
+	go test fivetran.com/fivetran_sdk/destination -count=1
+
 run:
 	go run destination/main.go
 
-.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run test
+.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run test go-test

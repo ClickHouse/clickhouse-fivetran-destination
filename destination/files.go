@@ -12,45 +12,45 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-type DecryptCSVFileResultType int
+type ReadCSVFileResultType int
 
 const (
-	Success DecryptCSVFileResultType = iota
+	Success ReadCSVFileResultType = iota
 	KeyNotFound
 	FileNotFound
 	FailedToDecompress
 	FailedToDecrypt
 )
 
-type DecryptCSVFileResult struct {
-	Type  DecryptCSVFileResultType
+type ReadCSVFileResult struct {
+	Type  ReadCSVFileResultType
 	Data  *[]byte // only set if Type is Success
 	Error *error  // only set if Type is FailedToDecrypt or FailedToDecompress
 }
 
-func ReadAndDecryptCSVFile(
-	file string,
+func ReadCSVFile(
+	fileName string,
 	keys map[string][]byte,
 	compression pb.Compression,
 	encryption pb.Encryption,
-) *DecryptCSVFileResult {
-	key, ok := keys[file]
+) *ReadCSVFileResult {
+	key, ok := keys[fileName]
 	if !ok {
-		return &DecryptCSVFileResult{Type: KeyNotFound}
+		return &ReadCSVFileResult{Type: KeyNotFound}
 	}
-	fileContent, err := os.ReadFile(file)
+	fileContent, err := os.ReadFile(fileName)
 	if err != nil {
-		return &DecryptCSVFileResult{Type: FileNotFound}
+		return &ReadCSVFileResult{Type: FileNotFound}
 	}
 	decrypted, err := Decrypt(key, fileContent, encryption)
 	if err != nil {
-		return &DecryptCSVFileResult{Type: FailedToDecrypt, Error: &err}
+		return &ReadCSVFileResult{Type: FailedToDecrypt, Error: &err}
 	}
 	decompressed, err := Decompress(decrypted, compression)
 	if err != nil {
-		return &DecryptCSVFileResult{Type: FailedToDecompress, Error: &err}
+		return &ReadCSVFileResult{Type: FailedToDecompress, Error: &err}
 	}
-	return &DecryptCSVFileResult{Type: Success, Data: &decompressed}
+	return &ReadCSVFileResult{Type: Success, Data: &decompressed}
 }
 
 func Decrypt(key []byte, data []byte, encryption pb.Encryption) ([]byte, error) {
@@ -74,10 +74,10 @@ func DecryptAES256(key []byte, data []byte) ([]byte, error) {
 	mode := cipher.NewCBCDecrypter(block, iv)
 	decrypted := make([]byte, len(data))
 	mode.CryptBlocks(decrypted, data)
-	return PKCS5Trimming(decrypted), nil
+	return PKCS5Padding(decrypted), nil
 }
 
-func PKCS5Trimming(data []byte) []byte {
+func PKCS5Padding(data []byte) []byte {
 	padding := data[len(data)-1]
 	return data[:len(data)-int(padding)]
 }
