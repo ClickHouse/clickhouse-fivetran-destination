@@ -56,10 +56,10 @@ jobs:
         run: |
           make generate-proto
 
-# TODO: enable it later. It exceeds timeout on GitHub Actions.
-#      - name: Run linter
-#        run: |
-#          make lint
+      # TODO: enable it later. It exceeds timeout on GitHub Actions.
+      #      - name: Run linter
+      #        run: |
+      #          make lint
 
       - name: Build app docker images
         run: |
