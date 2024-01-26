@@ -9,6 +9,9 @@ prepare-fivetran-sdk:
 start-docker:
 	docker-compose up clickhouse -d
 
+install-protoc-gen-go:
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
 generate-proto:
 	rm -f proto/*.proto
 	rm -f proto/*.go

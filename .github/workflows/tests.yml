@@ -39,6 +39,10 @@ jobs:
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
 
+      - name: Install Protoc-Gen-Go
+        run: |
+          make install-protoc-gen-go
+
       - name: Generate proto files
         run: |
           make generate-proto
