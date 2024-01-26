@@ -36,6 +36,9 @@ jobs:
         run: |
           make prepare-fivetran-sdk
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+
       - name: Generate proto files
         run: |
           make generate-proto
