@@ -32,7 +32,7 @@ test:
 	docker run --mount type=bind,source=$$PWD/sdk_tests,target=/data \
 		-a STDIN -a STDOUT -a STDERR \
 		-e WORKING_DIR=$$PWD/sdk_tests \
-		-e GRPC_HOSTNAME=host.docker.internal \
+		-e GRPC_HOSTNAME=172.17.0.1 \
 		--network=host \
 		it5t/fivetran-sdk-destination-tester:024.0125.001
 
