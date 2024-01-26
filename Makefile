@@ -7,7 +7,7 @@ prepare-fivetran-sdk:
 	mkdir -p proto
 
 start-docker:
-	docker-compose up -d
+	docker-compose up clickhouse -d
 
 generate-proto:
 	rm -f proto/*.proto
@@ -32,10 +32,21 @@ test:
 		--network=host \
 		it5t/fivetran-sdk-destination-tester:024.0116.001
 
+lint:
+	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
+
 go-test:
 	go test fivetran.com/fivetran_sdk/destination -count=1
+
+compile:
+	rm -rf ./out
+	go build -o ./out/clickhouse_destination ./destination
+	chmod a+x ./out/clickhouse_destination
+
+build-docker:
+	docker compose -f docker-compose.ci.yml build --no-cache
 
 run:
 	go run destination/main.go
 
-.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run test go-test
+.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run test go-test compile

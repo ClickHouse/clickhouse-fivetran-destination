@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -23,7 +22,7 @@ type ClickHouseConnection struct {
 
 func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
 	hostname := fmt.Sprintf("%s:%s",
-		GetWithDefault(configuration, "host", "localhost"),
+		GetWithDefault(configuration, "hostname", "localhost"),
 		GetWithDefault(configuration, "port", "9000"))
 	username := GetWithDefault(configuration, "username", "default")
 	password := GetWithDefault(configuration, "password", "")
@@ -133,7 +132,6 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 
 	count := 0
 	var statementsBuilder strings.Builder
-
 	for _, op := range ops {
 		switch op.Op {
 		case Add:
@@ -206,10 +204,9 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 
 	colType, exists := describeResult.Mapping["number"]
 	if !exists || colType != "UInt64" {
-		return errors.New(
-			fmt.Sprintf(
-				"unexpected describe system.numbers output, expected result map to contain number:UInt64, got: %v",
-				describeResult))
+		return fmt.Errorf(
+			"unexpected describe system.numbers output, expected result map to contain number:UInt64, got: %v",
+			describeResult)
 	}
 
 	logger.Printf("Connection check passed")
@@ -264,8 +261,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 		return err
 	}
 	if col1 != 42 || col2 != "ClickHouse" {
-		return errors.New(
-			fmt.Sprintf("Unexpected Data check output, expected 42/ClickHouse, got: %d/%s", col1, col2))
+		return fmt.Errorf("unexpected Data check output, expected 42/ClickHouse, got: %d/%s", col1, col2)
 	}
 
 	// Truncate
@@ -284,7 +280,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 		return err
 	}
 	if count != 0 {
-		return errors.New(fmt.Sprintf("Truncated table count is not zero, got: %d", count))
+		return fmt.Errorf("truncated table count is not zero, got: %d", count)
 	}
 
 	// Drop
@@ -300,7 +296,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 		return err
 	}
 	if count != 0 {
-		return errors.New(fmt.Sprintf("Table %s still exists after drop", tableName))
+		return fmt.Errorf("table %s still exists after drop", tableName)
 	}
 
 	logger.Printf("Mutation check passed")

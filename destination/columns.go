@@ -28,8 +28,9 @@ func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescripti
 		}
 	}
 	return &TableDescription{
-		Mapping: mapping,
-		Columns: columnDefinitions,
+		Mapping:     mapping,
+		Columns:     columnDefinitions,
+		PrimaryKeys: primaryKeys,
 	}
 }
 

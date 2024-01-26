@@ -32,18 +32,35 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Checkout SDK Repo
+        run: |
+          make prepare-fivetran-sdk
+
+      - name: Generate proto files
+        run: |
+          make generate-proto
+
       - name: Install Go ${{ matrix.go }}
         uses: actions/setup-go@v2.1.5
         with:
           stable: false
           go-version: ${{ matrix.go }}
 
-      - name: Start ClickHouse (version - ${{ matrix.clickhouse }}) in Docker
+      - name: Run linter
+        run: |
+          make lint
+
+      - name: Build app docker images
+        run: |
+          make compile
+          make build-docker
+
+      - name: Start ClickHouse (version - ${{ matrix.clickhouse }}) and Destination App in Docker
         uses: isbang/compose-action@v1.1.0
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
         with:
-          compose-file: 'docker-compose.yml'
+          compose-file: 'docker-compose.ci.yml'
           down-flags: '--volumes'
 
       - name: Run Go tests

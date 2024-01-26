@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  clickhouse:
+    image: 'clickhouse/clickhouse-server:${CLICKHOUSE_VERSION-23.12-alpine}'
+    container_name: 'fivetran-destination-clickhouse-server'
+    ports:
+      - '8123:8123'
+      - '9000:9000'
+      - '9004:9004'
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - './.docker/clickhouse/config.xml:/etc/clickhouse-server/config.xml'
+      - './.docker/clickhouse/users.xml:/etc/clickhouse-server/users.xml'
+  destination:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    container_name: 'fivetran-destination-app'
+    ports:
+      - '50052:50052'

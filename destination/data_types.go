@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -72,7 +71,7 @@ func GetClickHouseDataType(col *pb.Column) (string, error) {
 	}
 	colType, ok := FivetranDataTypes[col.Type]
 	if !ok {
-		return "", errors.New(fmt.Sprintf("Unknown datatype %s", col.Type.String()))
+		return "", fmt.Errorf("unknown datatype %s", col.Type.String())
 	}
 	if colType == "Decimal" && col.Decimal != nil {
 		return ToDecimalTypeWithParams(col.Decimal), nil
@@ -119,6 +118,9 @@ func GetDecimalParams(dataType string) *pb.DecimalParams {
 			return nil
 		}
 		precision, err := strconv.Atoi(decimalParams[0])
+		if err != nil {
+			return nil
+		}
 		scale, err := strconv.Atoi(decimalParams[1])
 		if err != nil {
 			return nil

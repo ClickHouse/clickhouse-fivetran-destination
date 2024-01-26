@@ -6,3 +6,4 @@ sdk_tests/*.csv*
 .vscode
 
 .DS_Store
+out
