@@ -30,11 +30,11 @@ test:
 	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123
 	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
 	docker run --mount type=bind,source=$$PWD/sdk_tests,target=/data \
-		-a STDIN -a STDOUT -a STDERR -it \
+		-a STDIN -a STDOUT -a STDERR \
 		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=host.docker.internal \
 		--network=host \
-		-t it5t/fivetran-sdk-destination-tester:024.0116.001
+		-t it5t/fivetran-sdk-destination-tester:024.0125.001
 
 lint:
 	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
