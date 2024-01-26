@@ -37,7 +37,7 @@ jobs:
           make prepare-fivetran-sdk
 
       - name: Install Go ${{ matrix.go }}
-        uses: actions/setup-go@v2.1.5
+        uses: actions/setup-go@v4
         with:
           stable: false
           go-version: ${{ matrix.go }}
@@ -48,6 +48,10 @@ jobs:
       - name: Install Protoc-Gen-Go
         run: |
           make install-protoc-gen-go
+
+      - name: Check env
+        run: |
+          echo $PATH
 
       - name: Generate proto files
         run: |
