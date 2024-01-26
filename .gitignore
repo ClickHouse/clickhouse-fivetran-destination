@@ -4,3 +4,5 @@ sdk_tests/*.csv*
 
 .idea
 .vscode
+
+.DS_Store

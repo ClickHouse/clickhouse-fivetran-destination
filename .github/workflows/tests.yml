@@ -1,0 +1,55 @@
+name: 'tests'
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'examples/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'examples/**'
+
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        go:
+          - "1.20"
+        clickhouse:
+          - "head"
+          - "latest"
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Go ${{ matrix.go }}
+        uses: actions/setup-go@v2.1.5
+        with:
+          stable: false
+          go-version: ${{ matrix.go }}
+
+      - name: Start ClickHouse (version - ${{ matrix.clickhouse }}) in Docker
+        uses: isbang/compose-action@v1.1.0
+        env:
+          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+        with:
+          compose-file: 'docker-compose.yml'
+          down-flags: '--volumes'
+
+      - name: Run Go tests
+        run: |
+          make go-test
+
+      - name: Run SDK tests
+        run: |
+          make test
