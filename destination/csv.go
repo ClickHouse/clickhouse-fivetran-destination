@@ -115,9 +115,13 @@ func CSVRowToSoftDeletedRow(csvRow CSVRow, dbRow []any, fivetranSyncedIdx int, f
 	}
 	updatedRow := make([]any, len(dbRow))
 	copy(updatedRow, dbRow)
-	// should be in sync with CSVRowToSelectQuery
-	updatedRow[fivetranDeletedIdx] = true                     // _fivetran_deleted
-	updatedRow[fivetranSyncedIdx] = csvRow[fivetranSyncedIdx] // _fivetran_synced
+	// we only need to update _fivetran_deleted and _fivetran_synced values, keeping the rest
+	updatedRow[fivetranDeletedIdx] = true
+	fivetranSynced, err := time.Parse("2006-01-02T15:04:05.000000000Z", csvRow[fivetranSyncedIdx])
+	if err != nil {
+		return nil, err
+	}
+	updatedRow[fivetranSyncedIdx] = fivetranSynced
 	return updatedRow, nil
 }
 

@@ -227,6 +227,7 @@ func (conn *ClickHouseConnection) Replace(
 		logger.Printf("[Replace/Select] Executing query: %s", selectQuery)
 		rows, err := conn.Query(conn.ctx, selectQuery)
 		if !rows.Next() {
+			fmt.Printf("row does not exist: %s\n", csvRow)
 			// Row does not exist, it's a "normal" insert
 			execArgs, err := CSVRowToInsertValues(csvRow, table, nullStr)
 			if err != nil {
