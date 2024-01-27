@@ -109,11 +109,11 @@ func DecompressGZIP(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+        defer gzipReader.Close()
 	res, err := io.ReadAll(gzipReader)
 	if err != nil {
 		return nil, err
 	}
-	err = gzipReader.Close()
 	if err != nil {
 		return nil, err
 	}
