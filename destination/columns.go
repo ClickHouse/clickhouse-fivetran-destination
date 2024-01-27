@@ -4,7 +4,12 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-const MaxDecimalPrecision = 76
+const (
+	MaxDecimalPrecision = 76
+	FivetranID          = "_fivetran_id"
+	FivetranSynced      = "_fivetran_synced"
+	FivetranDeleted     = "_fivetran_deleted"
+)
 
 type ColumnDefinition struct {
 	Name         string

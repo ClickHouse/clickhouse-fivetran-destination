@@ -40,9 +40,9 @@ var (
 		pb.DataType_JSON:           "JSON",
 	}
 	FivetranMetadataColumnTypes = map[string]string{
-		"_fivetran_id":      "String",
-		"_fivetran_synced":  "DateTime64(9, 'UTC')",
-		"_fivetran_deleted": "Bool",
+		FivetranID:      "String",
+		FivetranSynced:  "DateTime64(9, 'UTC')",
+		FivetranDeleted: "Bool",
 	}
 )
 

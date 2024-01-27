@@ -107,7 +107,7 @@ func (s *server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	err = conn.CreateTable(in.SchemaName, in.Table.Name, cols, "Memory")
+	err = conn.CreateTable(in.SchemaName, in.Table.Name, cols)
 	if err != nil {
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -174,11 +174,43 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	compression := pb.Compression_OFF
 	encryption := pb.Encryption_NONE
 	nullStr := ""
+	unmodifiedStr := ""
 	csvParams := in.GetCsv()
 	if csvParams != nil {
 		compression = csvParams.Compression
 		encryption = csvParams.Encryption
 		nullStr = csvParams.NullString
+		unmodifiedStr = csvParams.UnmodifiedString
+	} else {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("write batch request without CSV params")), nil
+	}
+
+	var pkCols []*PrimaryKeyColumn
+	fivetranSyncedIdx := -1
+	fivetranDeletedIdx := -1
+	for i, col := range in.Table.Columns {
+		if col.PrimaryKey {
+			pkCols = append(pkCols, &PrimaryKeyColumn{
+				Name:  col.Name,
+				Type:  col.Type,
+				Index: i,
+			})
+		}
+		if col.Name == FivetranSynced {
+			fivetranSyncedIdx = i
+		}
+		if col.Name == FivetranDeleted {
+			fivetranDeletedIdx = i
+		}
+	}
+	if len(pkCols) == 0 {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no primary keys found")), nil
+	}
+	if fivetranSyncedIdx == -1 {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no %s column found", FivetranSynced)), nil
+	}
+	if fivetranDeletedIdx == -1 {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no %s column found", FivetranDeleted)), nil
 	}
 
 	deleteFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.DeleteFiles, in.Keys, compression, encryption)
@@ -205,7 +237,19 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	defer conn.Close()
 
 	for _, data := range replaceFiles {
-		err := conn.Insert(in.SchemaName, in.Table, data, nullStr)
+		err := conn.Replace(in.SchemaName, in.Table, pkCols, data, nullStr, unmodifiedStr, false, -1, -1)
+		if err != nil {
+			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+		}
+	}
+	for _, data := range updateFiles {
+		err := conn.Replace(in.SchemaName, in.Table, pkCols, data, nullStr, unmodifiedStr, false, -1, -1)
+		if err != nil {
+			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+		}
+	}
+	for _, data := range deleteFiles {
+		err := conn.Replace(in.SchemaName, in.Table, pkCols, data, nullStr, unmodifiedStr, true, fivetranSyncedIdx, fivetranDeletedIdx)
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
