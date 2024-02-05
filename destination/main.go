@@ -19,6 +19,8 @@ import (
 const ConnectionTest = "connection"
 const MutationTest = "mutation"
 
+const DefaultWriteBatchSize = 500
+
 var port = flag.Int("port", 50052, "The server port")
 var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 
@@ -236,20 +238,25 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	}
 	defer conn.Close()
 
-	for _, data := range replaceFiles {
-		err := conn.Replace(in.SchemaName, in.Table, pkCols, data, nullStr, unmodifiedStr, false, -1, -1)
+	columnTypes, err := conn.GetColumnTypes(in.SchemaName, in.Table.Name)
+	if err != nil {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+
+	for _, csvData := range replaceFiles {
+		err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, DefaultWriteBatchSize)
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 	}
-	for _, data := range updateFiles {
-		err := conn.Replace(in.SchemaName, in.Table, pkCols, data, nullStr, unmodifiedStr, false, -1, -1)
+	for _, csvData := range updateFiles {
+		err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, nullStr, unmodifiedStr, DefaultWriteBatchSize)
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 	}
-	for _, data := range deleteFiles {
-		err := conn.Replace(in.SchemaName, in.Table, pkCols, data, nullStr, unmodifiedStr, true, fivetranSyncedIdx, fivetranDeletedIdx)
+	for _, csvData := range deleteFiles {
+		err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, DefaultWriteBatchSize, fivetranSyncedIdx, fivetranDeletedIdx)
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}

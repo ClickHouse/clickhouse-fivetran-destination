@@ -38,11 +38,11 @@ func ReadCSVFile(
 	if !ok {
 		return &ReadCSVFileResult{Type: KeyNotFound}
 	}
-	fileContent, err := os.ReadFile(fileName)
+	file, err := os.ReadFile(fileName)
 	if err != nil {
 		return &ReadCSVFileResult{Type: FileNotFound}
 	}
-	decrypted, err := Decrypt(key, fileContent, encryption)
+	decrypted, err := Decrypt(key, file, encryption)
 	if err != nil {
 		return &ReadCSVFileResult{Type: FailedToDecrypt, Error: &err}
 	}
@@ -67,6 +67,7 @@ func DecryptAES256(key []byte, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(data) < block.BlockSize() {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func DecompressGZIP(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-        defer gzipReader.Close()
+	defer gzipReader.Close()
 	res, err := io.ReadAll(gzipReader)
 	if err != nil {
 		return nil, err

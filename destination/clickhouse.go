@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"reflect"
 	"strings"
+	"time"
 
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -39,7 +39,8 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 		Settings: clickhouse.Settings{
 			"allow_experimental_object_type": 1,
 			"date_time_input_format":         "best_effort",
-			// async_insert?
+			//"async_insert":                   1,
+			//"wait_for_async_insert":          1,
 		},
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
@@ -115,7 +116,8 @@ func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName strin
 	}
 	columns := columnsBuilder.String()
 
-	query := fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = MergeTree ORDER BY (%s)", fullName, columns, strings.Join(orderByCols, ", "))
+	query := fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
+		fullName, columns, FivetranSynced, strings.Join(orderByCols, ", "))
 	logger.Printf("Executing query: %s", query)
 
 	if err := conn.Exec(conn.ctx, query); err != nil {
@@ -174,14 +176,16 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 	return nil
 }
 
-func (conn *ClickHouseConnection) Insert(fullTableName string, row []any) error {
+func (conn *ClickHouseConnection) InsertBatch(fullTableName string, rows [][]interface{}) error {
 	batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
 	if err != nil {
 		return err
 	}
-	if err := batch.Append(row...); err != nil {
-		fmt.Printf("batch append error: %v\n", err)
-		return err
+	for _, row := range rows {
+		if err := batch.Append(row...); err != nil {
+			fmt.Printf("batch append error: %v\n", err)
+			return err
+		}
 	}
 	if err := batch.Send(); err != nil {
 		fmt.Printf("batch send error: %v\n", err)
@@ -190,101 +194,165 @@ func (conn *ClickHouseConnection) Insert(fullTableName string, row []any) error 
 	return nil
 }
 
-func (conn *ClickHouseConnection) Delete(schemaName string, tableName string, pkCols []*PrimaryKeyColumn, csv CSV) error {
+func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
 	fullName := GetFullTableName(schemaName, tableName)
-	for _, row := range csv {
-		query, err := CSVRowToDeleteStatement(row, fullName, pkCols)
-		if err != nil {
-			return err
+	rows, err := conn.Query(conn.ctx, fmt.Sprintf("SELECT * FROM %s WHERE false", fullName))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return rows.ColumnTypes(), nil
+}
+
+func (conn *ClickHouseConnection) SelectByPrimaryKeys(
+	fullTableName string,
+	columnTypes []driver.ColumnType,
+	pkCols []*PrimaryKeyColumn,
+	csv CSV,
+) (RowsByPrimaryKeyValue, error) {
+	query, err := CSVRowsToSelectQuery(csv, fullTableName, pkCols)
+	if err != nil {
+		return nil, err
+	}
+	scanRows := ColumnTypesToEmptyRows(columnTypes, uint32(len(csv)))
+	rows, err := conn.Query(conn.ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	rowsByPKValues := make(map[string][]interface{})
+	for i := 0; rows.Next(); i++ {
+		if err := rows.Scan(scanRows[i]...); err != nil {
+			return nil, err
 		}
-		logger.Printf("[Delete] Executing query: %s", query)
-		if err := conn.Exec(conn.ctx, query); err != nil {
+		mappingKey := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+		rowsByPKValues[mappingKey] = scanRows[i]
+	}
+	return rowsByPKValues, nil
+}
+
+func (conn *ClickHouseConnection) ReplaceBatch(
+	schemaName string,
+	table *pb.Table,
+	csv CSV,
+	nullStr string,
+	batchSize int,
+) error {
+	fullName := GetFullTableName(schemaName, table.Name)
+	for i := 0; i < len(csv); i += batchSize {
+		end := i + batchSize
+		if end > len(csv) {
+			end = len(csv)
+		}
+		batch := csv[i:end]
+		insertRows := make([][]interface{}, len(batch))
+		for i, csvRow := range batch {
+			insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
+			if err != nil {
+				return err
+			}
+			insertRows[i] = insertRow
+		}
+		err := conn.InsertBatch(fullName, insertRows)
+		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (conn *ClickHouseConnection) Replace(
+func (conn *ClickHouseConnection) UpdateBatch(
 	schemaName string,
 	table *pb.Table,
 	pkCols []*PrimaryKeyColumn,
+	columnTypes []driver.ColumnType,
 	csv CSV,
 	nullStr string,
 	unmodifiedStr string,
-	softDelete bool,
+	batchSize int,
+) error {
+	fullName := GetFullTableName(schemaName, table.Name)
+	for i := 0; i < len(csv); i += batchSize {
+		end := i + batchSize
+		if end > len(csv) {
+			end = len(csv)
+		}
+		batch := csv[i:end]
+		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
+		if err != nil {
+			return err
+		}
+		insertRows := make([][]interface{}, len(batch))
+		for i, csvRow := range batch {
+			mappingKey, err := GetCSVRowMappingKey(csvRow, pkCols)
+			if err != nil {
+				return err
+			}
+			dbRow, exists := selectRows[mappingKey]
+			if exists {
+				updatedRow, err := CSVRowToUpdatedDBRow(csvRow, dbRow, table, nullStr, unmodifiedStr)
+				if err != nil {
+					return err
+				}
+				insertRows[i] = updatedRow
+			} else {
+				insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
+				if err != nil {
+					return err
+				}
+				insertRows[i] = insertRow
+			}
+		}
+		err = conn.InsertBatch(fullName, insertRows)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (conn *ClickHouseConnection) SoftDeleteBatch(
+	schemaName string,
+	table *pb.Table,
+	pkCols []*PrimaryKeyColumn,
+	columnTypes []driver.ColumnType,
+	csv CSV,
+	batchSize int,
 	fivetranSyncedIdx int,
 	fivetranDeletedIdx int,
 ) error {
 	fullName := GetFullTableName(schemaName, table.Name)
-	for _, csvRow := range csv {
-		// Select the row first using the PK values, if it exists
-		selectQuery, err := CSVRowToSelectQuery(csvRow, fullName, pkCols)
+	for i := 0; i < len(csv); i += batchSize {
+		end := i + batchSize
+		if end > len(csv) {
+			end = len(csv)
+		}
+		batch := csv[i:end]
+		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
 		if err != nil {
 			return err
 		}
-
-		logger.Printf("[Replace/Select] Executing query: %s", selectQuery)
-		rows, err := conn.Query(conn.ctx, selectQuery)
-		if !rows.Next() {
-			fmt.Printf("row does not exist: %s\n", csvRow)
-			// Row does not exist, it's a "normal" insert
-			execArgs, err := CSVRowToInsertValues(csvRow, table, nullStr)
+		insertRows := make([][]interface{}, len(batch))
+		for i, csvRow := range batch {
+			mappingKey, err := GetCSVRowMappingKey(csvRow, pkCols)
 			if err != nil {
-				fmt.Printf("error parsing insert args: %v\n", err)
 				return err
 			}
-			err = conn.Insert(fullName, execArgs)
-			if err != nil {
-				fmt.Printf("error inserting row: %v\n", err)
-				return err
-			}
-		} else if err == nil {
-			// Row exists; replace the values in the existing row with the new values
-			// If it is a Fivetran "delete", then we only need to update the _fivetran_deleted and _fivetran_synced columns
-			// If it is a Fivetran "replace"/"update", then we need to update all the columns
-			var (
-				columnTypes = rows.ColumnTypes()
-				dbRow       = make([]interface{}, len(columnTypes))
-			)
-			for i := range columnTypes {
-				value := reflect.New(columnTypes[i].ScanType()).Interface()
-				dbRow[i] = value
-			}
-			if err := rows.Scan(dbRow...); err != nil {
-				return err
-			}
-
-			var updatedRow []any
-			if softDelete {
-				fmt.Printf("Soft delete row: %s\n", csvRow)
-				updatedRow, err = CSVRowToSoftDeletedRow(csvRow, dbRow, fivetranSyncedIdx, fivetranDeletedIdx)
+			dbRow, exists := selectRows[mappingKey]
+			if exists {
+				updatedRow, err := CSVRowToSoftDeletedRow(csvRow, dbRow, fivetranSyncedIdx, fivetranDeletedIdx)
+				if err != nil {
+					return err
+				}
+				insertRows[i] = updatedRow
 			} else {
-				fmt.Printf("Replace row: %s\n", csvRow)
-				updatedRow, err = CSVRowToUpdatedDBRow(csvRow, dbRow, table, nullStr, unmodifiedStr)
+				// Shouldn't happen
+				logger.Printf("Row with PK mapping %s does not exist", mappingKey)
+				continue
 			}
-			if err != nil {
-				return err
-			}
-
-			// Delete the existing row
-			deleteStatement, err := CSVRowToDeleteStatement(csvRow, fullName, pkCols)
-			if err != nil {
-				return err
-			}
-			logger.Printf("[Replace/Delete] Executing query: %s", deleteStatement)
-			if err := conn.Exec(conn.ctx, deleteStatement); err != nil {
-				return err
-			}
-
-			// Insert an updated row instead
-			err = conn.Insert(fullName, updatedRow)
-			if err != nil {
-				fmt.Printf("error inserting updated row: %v\n", err)
-				return err
-			}
-		} else {
-			// Unexpected database error
+		}
+		err = conn.InsertBatch(fullName, insertRows)
+		if err != nil {
 			return err
 		}
 	}
@@ -316,7 +384,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	err := conn.CreateTable("", tableName, MakeTableDescription([]*ColumnDefinition{
 		{Name: "Col1", Type: "UInt8", IsPrimaryKey: true},
 		{Name: "Col2", Type: "String"},
-		{Name: FivetranID, Type: "String"},
+		{Name: FivetranSynced, Type: "DateTime64(9, 'UTC')"},
 	}))
 	if err != nil {
 		return err
@@ -328,7 +396,8 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	if err != nil {
 		return err
 	}
-	err = batch.Append(uint8(42), "ClickHouse", "abc")
+	now := time.Now()
+	err = batch.Append(uint8(42), "ClickHouse", now)
 	if err != nil {
 		return err
 	}
@@ -352,12 +421,12 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	var (
 		col1 uint8
 		col2 string
-		col3 string
+		col3 *time.Time
 	)
 	if err := row.Scan(&col1, &col2, &col3); err != nil {
 		return err
 	}
-	if col1 != uint8(42) || col2 != "ClickHouse" || col3 != "abc" {
+	if col1 != uint8(42) || col2 != "ClickHouse" {
 		return fmt.Errorf("unexpected Data check output, expected 42/ClickHouse/abc, got: %d/%s/%s", col1, col2, col3)
 	}
 
@@ -398,14 +467,4 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 	logger.Printf("Mutation check passed")
 	return nil
-}
-
-func GetFullTableName(schemaName string, tableName string) string {
-	var fullName string
-	if schemaName == "" {
-		fullName = fmt.Sprintf("`%s`", tableName)
-	} else {
-		fullName = fmt.Sprintf("`%s`.`%s`", schemaName, tableName)
-	}
-	return fullName
 }

@@ -43,23 +43,51 @@ func CSVRowToInsertValues(row CSVRow, table *pb.Table, nullStr string) ([]any, e
 	return result, nil
 }
 
-func CSVRowToSelectQuery(row CSVRow, fullTableName string, columns []*PrimaryKeyColumn) (string, error) {
-	if len(columns) == 0 {
+// CSVRowsToSelectQuery
+// CSV slice + known primary key columns and their CSV cell indices -> SELECT query using values from CSV rows
+// Sample generated query:
+// SELECT * FROM `foo`.`bar` FINAL WHERE (id, name) IN ((44, 'qaz'), (43, 'qux')) ORDER BY (id, name) LIMIT batch_size
+func CSVRowsToSelectQuery(batch CSV, fullTableName string, pkCols []*PrimaryKeyColumn) (string, error) {
+	if len(pkCols) == 0 {
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
 	}
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("SELECT * FROM %s WHERE ", fullTableName))
-	for i, col := range columns {
-		if col.Index > len(row) {
-			return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-		}
-		builder.WriteString(fmt.Sprintf("%s = %s", col.Name, QuoteValue(col.Type, row[col.Index])))
-		if i < len(columns)-1 {
-			builder.WriteString(" AND ")
+	if len(batch) == 0 {
+		return "", fmt.Errorf("expected non-empty CSV slice")
+	}
+	var orderByBuilder strings.Builder
+	orderByBuilder.WriteRune('(')
+	var clauseBuilder strings.Builder
+	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", fullTableName))
+	for i, col := range pkCols {
+		clauseBuilder.WriteString(col.Name)
+		orderByBuilder.WriteString(col.Name)
+		if i < len(pkCols)-1 {
+			clauseBuilder.WriteString(", ")
+			orderByBuilder.WriteString(", ")
 		}
 	}
-	builder.WriteString(" LIMIT 1")
-	return builder.String(), nil
+	orderByBuilder.WriteRune(')')
+	clauseBuilder.WriteString(") IN (")
+	for i, row := range batch {
+		clauseBuilder.WriteRune('(')
+		for j, col := range pkCols {
+			if col.Index > len(row) {
+				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
+			}
+			clauseBuilder.WriteString(QuoteValue(col.Type, row[col.Index]))
+			if j < len(pkCols)-1 {
+				clauseBuilder.WriteString(", ")
+			}
+		}
+		clauseBuilder.WriteRune(')')
+		if i < len(batch)-1 {
+			clauseBuilder.WriteString(", ")
+		}
+	}
+	clauseBuilder.WriteString(") ORDER BY ")
+	clauseBuilder.WriteString(orderByBuilder.String())
+	clauseBuilder.WriteString(fmt.Sprintf(" LIMIT %d", len(batch)))
+	return clauseBuilder.String(), nil
 }
 
 func CSVRowToDeleteStatement(row CSVRow, fullTableName string, columns []*PrimaryKeyColumn) (string, error) {
@@ -125,7 +153,7 @@ func CSVRowToSoftDeletedRow(csvRow CSVRow, dbRow []any, fivetranSyncedIdx int, f
 	return updatedRow, nil
 }
 
-func QuoteValue(colType pb.DataType, value any) any {
+func QuoteValue(colType pb.DataType, value string) string {
 	switch colType {
 	case // quote types that we can pass as a string
 		pb.DataType_NAIVE_DATE,
