@@ -90,24 +90,6 @@ func CSVRowsToSelectQuery(batch CSV, fullTableName string, pkCols []*PrimaryKeyC
 	return clauseBuilder.String(), nil
 }
 
-func CSVRowToDeleteStatement(row CSVRow, fullTableName string, columns []*PrimaryKeyColumn) (string, error) {
-	if len(columns) == 0 {
-		return "", fmt.Errorf("expected non-empty list of primary keys columns")
-	}
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE ", fullTableName))
-	for i, col := range columns {
-		if col.Index > len(row) {
-			return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-		}
-		builder.WriteString(fmt.Sprintf("%s = %s", col.Name, QuoteValue(col.Type, row[col.Index])))
-		if i < len(columns)-1 {
-			builder.WriteString(" AND ")
-		}
-	}
-	return builder.String(), nil
-}
-
 func CSVRowToUpdatedDBRow(csvRow CSVRow, dbRow []any, table *pb.Table, nullStr string, unmodifiedStr string) ([]any, error) {
 	if len(csvRow) != len(dbRow) || len(dbRow) != len(table.Columns) {
 		return nil, fmt.Errorf("expected CSV, table definition and ClickHouse row to contain the same number of columns, but got %d, %d and %d", len(csvRow), len(table.Columns), len(dbRow))
