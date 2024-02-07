@@ -20,8 +20,8 @@ var (
 		"DateTime":             pb.DataType_NAIVE_DATETIME,
 		"DateTime64(9, 'UTC')": pb.DataType_UTC_DATETIME,
 		"String":               pb.DataType_STRING,
-		"UUID":                 pb.DataType_STRING,
 		"JSON":                 pb.DataType_JSON,
+		"Object('json')":       pb.DataType_JSON,
 	}
 	FivetranDataTypes = map[pb.DataType]string{
 		pb.DataType_BOOLEAN:        "Bool",
@@ -32,12 +32,13 @@ var (
 		pb.DataType_DOUBLE:         "Float64",
 		pb.DataType_DECIMAL:        "Decimal",
 		pb.DataType_STRING:         "String",
-		pb.DataType_BINARY:         "String",
-		pb.DataType_XML:            "String",
 		pb.DataType_NAIVE_DATE:     "Date",
 		pb.DataType_NAIVE_DATETIME: "DateTime",
 		pb.DataType_UTC_DATETIME:   "DateTime64(9, 'UTC')",
 		pb.DataType_JSON:           "JSON",
+		// Unclear CH mapping, may be removed
+		pb.DataType_BINARY: "String",
+		pb.DataType_XML:    "String",
 	}
 	FivetranMetadataColumnTypes = map[string]string{
 		FivetranID:      "String",
@@ -47,8 +48,11 @@ var (
 )
 
 func GetFivetranDataType(colType string) (pb.DataType, *pb.DecimalParams, error) {
-	colType = RemoveLowCardinalityAndNullable(colType)
-	decimalParams := GetDecimalParams(colType)
+	colType = RemoveNullable(colType)
+	decimalParams, err := GetDecimalParams(colType)
+	if err != nil {
+		return pb.DataType_UNSPECIFIED, nil, err
+	}
 	if decimalParams != nil {
 		return pb.DataType_DECIMAL, decimalParams, nil
 	}
@@ -101,34 +105,37 @@ func ToDecimalTypeWithParams(decimalParams *pb.DecimalParams) string {
 	return fmt.Sprintf("Decimal(%d, %d)", precision, scale)
 }
 
-func RemoveLowCardinalityAndNullable(colType string) string {
-	if strings.HasPrefix(colType, "LowCardinality") {
-		colType = colType[15 : len(colType)-1]
-	}
+func RemoveNullable(colType string) string {
 	if strings.HasPrefix(colType, "Nullable") {
 		colType = colType[9 : len(colType)-1]
 	}
 	return colType
 }
 
-func GetDecimalParams(dataType string) *pb.DecimalParams {
+func GetDecimalParams(dataType string) (*pb.DecimalParams, error) {
 	if strings.HasPrefix(dataType, "Decimal(") {
 		decimalParams := strings.Split(dataType[8:len(dataType)-1], ",")
 		if len(decimalParams) != 2 {
-			return nil
+			return nil, fmt.Errorf("invalid decimal type %s, expected two parameters - precision and scale", dataType)
 		}
-		precision, err := strconv.Atoi(decimalParams[0])
+		precision, err := strconv.Atoi(strings.TrimSpace(decimalParams[0]))
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("can't parse precision: %w", err)
 		}
-		scale, err := strconv.Atoi(decimalParams[1])
+		if precision < 0 {
+			return nil, fmt.Errorf("invalid decimal type %s: precision can't be negative", dataType)
+		}
+		scale, err := strconv.Atoi(strings.TrimSpace(decimalParams[1]))
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("can't parse scale: %w", err)
+		}
+		if scale < 0 {
+			return nil, fmt.Errorf("invalid decimal type %s: scale can't be negative", dataType)
 		}
 		return &pb.DecimalParams{
 			Precision: uint32(precision),
 			Scale:     uint32(scale),
-		}
+		}, nil
 	}
-	return nil
+	return nil, nil
 }

@@ -57,11 +57,11 @@ func CSVRowsToSelectQuery(batch CSV, fullTableName string, pkCols []*PrimaryKeyC
 	if len(pkCols) == 0 {
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
 	}
-	if len(batch) == 0 {
-		return "", fmt.Errorf("expected non-empty CSV slice")
-	}
 	if fullTableName == "" {
 		return "", fmt.Errorf("table name is empty")
+	}
+	if len(batch) == 0 {
+		return "", fmt.Errorf("expected non-empty CSV slice")
 	}
 	var orderByBuilder strings.Builder
 	orderByBuilder.WriteRune('(')

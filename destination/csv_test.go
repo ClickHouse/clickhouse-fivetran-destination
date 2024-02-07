@@ -252,16 +252,15 @@ func TestCSVRowToInsertValuesNullStr(t *testing.T) {
 }
 
 func TestCSVRowsToSelectQueryValidation(t *testing.T) {
-	_, err := CSVRowsToSelectQuery(nil, "", nil)
-	assert.ErrorContains(t, err, "expected non-empty CSV slice")
-	_, err = CSVRowsToSelectQuery(CSV{}, "", nil)
-	assert.ErrorContains(t, err, "expected non-empty CSV slice")
-	_, err = CSVRowsToSelectQuery(CSV{{"42"}}, "", nil)
-	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
-	_, err = CSVRowsToSelectQuery(CSV{{"42"}}, "", []*PrimaryKeyColumn{
+	pkCols := []*PrimaryKeyColumn{
 		{Index: 0, Name: "id", Type: pb.DataType_LONG},
-	})
+	}
+	_, err := CSVRowsToSelectQuery(nil, "", nil)
 	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
+	_, err = CSVRowsToSelectQuery(nil, "", pkCols)
+	assert.ErrorContains(t, err, "table name is empty")
+	_, err = CSVRowsToSelectQuery(CSV{}, "test_table", pkCols)
+	assert.ErrorContains(t, err, "expected non-empty CSV slice")
 }
 
 func TestCSVRowsToSelectQuery(t *testing.T) {

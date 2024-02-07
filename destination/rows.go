@@ -12,17 +12,6 @@ import (
 
 type RowsByPrimaryKeyValue map[string][]interface{}
 
-func GetFullTableName(schemaName string, tableName string) (string, error) {
-	if tableName == "" {
-		return "", fmt.Errorf("table name is empty")
-	}
-	if schemaName == "" {
-		return fmt.Sprintf("`%s`", tableName), nil
-	} else {
-		return fmt.Sprintf("`%s`.`%s`", schemaName, tableName), nil
-	}
-}
-
 func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint32) [][]interface{} {
 	dbRows := make([][]interface{}, n)
 	for i := range dbRows {
@@ -52,17 +41,15 @@ func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) (st
 }
 
 func GetCSVRowMappingKey(row CSVRow, pkCols []*PrimaryKeyColumn) (string, error) {
+	if len(pkCols) == 0 {
+		return "", fmt.Errorf("expected non-empty list of primary keys columns")
+	}
 	var key strings.Builder
-	for _, col := range pkCols {
-		val, err := ParseValue(col.Name, col.Type, row[col.Index])
-		if err != nil {
-			return "", err
+	for i, col := range pkCols {
+		key.WriteString(row[col.Index])
+		if i < len(pkCols)-1 {
+			key.WriteString("_")
 		}
-		str, err := ToString(val)
-		if err != nil {
-			return "", err
-		}
-		key.WriteString(str)
 	}
 	return key.String(), nil
 }

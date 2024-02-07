@@ -490,3 +490,14 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	logger.Printf("Mutation check passed")
 	return nil
 }
+
+func GetFullTableName(schemaName string, tableName string) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if schemaName == "" {
+		return fmt.Sprintf("`%s`", tableName), nil
+	} else {
+		return fmt.Sprintf("`%s`.`%s`", schemaName, tableName), nil
+	}
+}

@@ -40,7 +40,7 @@ lint:
 	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
 
 go-test:
-	go test fivetran.com/fivetran_sdk/destination -count=1
+	go test fivetran.com/fivetran_sdk/destination -count=1 -v
 
 compile:
 	rm -rf ./out
