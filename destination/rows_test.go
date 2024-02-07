@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -17,8 +18,33 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 	assert.NoError(t, err)
 	defer conn.Close()
 
-	tableName := fmt.Sprintf("test_empty_rows_gen_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
-	err = conn.Exec(context.Background(), GetDDL(tableName))
+	tableName := fmt.Sprintf("test_empty_rows_gen_%s", Guid())
+	err = conn.Exec(context.Background(), fmt.Sprintf(`
+		CREATE OR REPLACE TABLE %s (
+			b     Bool,
+			nb    Nullable(Bool),
+			i16   Int16,
+			ni16  Nullable(Int16),
+			i32   Int32,
+			ni32  Nullable(Int32),
+			i64   Int64,
+			ni64  Nullable(Int64),
+			f32   Float32,
+			nf32  Nullable(Float32),
+			f64   Float64,
+			nf64  Nullable(Float64),
+			dd    Decimal(4, 2),
+			ndd   Nullable(Decimal(4, 2)),
+			d     Date,
+			nd    Nullable(Date),
+			dt    DateTime,
+			ndt   Nullable(DateTime),
+			dt64  DateTime64(9, 'UTC'),
+			ndt64 Nullable(DateTime64(9, 'UTC')),
+			s     String,
+			ns    Nullable(String),
+			j     JSON
+		) ENGINE Memory`, tableName))
 	assert.NoError(t, err)
 
 	rows, err := conn.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE false", tableName))
@@ -97,7 +123,7 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 func TestGetCSVRowMappingKey(t *testing.T) {
 	row := CSVRow{"true", "false", "42", "100.5", "2021-03-04T22:44:22.123456789Z", "2023-05-07T18:22:44", "2019-12-15", "test"}
 
-	// Serialization of a single PK to a mapping key
+	// Serialization of a single PK to a mapping key (assuming one column is defined as a PK in Fivetran)
 	singlePrimaryKeyArgs := []struct {
 		*PrimaryKeyColumn
 		string
@@ -117,7 +143,7 @@ func TestGetCSVRowMappingKey(t *testing.T) {
 		assert.Equal(t, arg.string, key, "Expected key to be %s for idx %d", arg.string, i)
 	}
 
-	// Serialization of multiple PKs to a mapping key
+	// Serialization of multiple PKs to a mapping key (assuming two columns are defined as PKs in Fivetran)
 	multiplePrimaryKeyArgs := []struct {
 		pkCols []*PrimaryKeyColumn
 		key    string
@@ -138,27 +164,122 @@ func TestGetCSVRowMappingKey(t *testing.T) {
 }
 
 func TestGetDatabaseRowMappingKey(t *testing.T) {
-	//row := CSVRow{
-	//	"true", "42", "43", "44", "100.5", "200.5", "47.47",
-	//	"2021-03-04T22:44:22.123456789Z", "2023-05-07T18:22:44", "2019-12-15",
-	//	"test", "{\"foo\": \"bar\"}",
-	//	"binaryStr", "xmlStr"}
+	conn, err := GetClickHouseConnection(context.Background(), config)
+	assert.NoError(t, err)
+	defer conn.Close()
 
-	//{&PrimaryKeyColumn{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0}, "true"},
-	//{&PrimaryKeyColumn{Name: "i16", Type: pb.DataType_SHORT, Index: 1}, "42"},
-	//{&PrimaryKeyColumn{Name: "i32", Type: pb.DataType_INT, Index: 2}, "43"},
-	//{&PrimaryKeyColumn{Name: "i64", Type: pb.DataType_LONG, Index: 3}, "44"},
-	//{&PrimaryKeyColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4}, "100.5"},
-	//{&PrimaryKeyColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5}, "200.5"},
-	//{&PrimaryKeyColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6}, "47.47"},
-	//{&PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7}, "2021-03-04T22:44:22.123456789Z"},
-	//{&PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8}, "2023-05-07T18:22:44"},
-	//{&PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9}, "2019-12-15"},
-	//{&PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 10}, "test"},
-	//{&PrimaryKeyColumn{Name: "json", Type: pb.DataType_JSON, Index: 11}, "{\"foo\": \"bar\"}"},
-	//// Unclear CH mapping: may be removed
-	//{&PrimaryKeyColumn{Name: "binary", Type: pb.DataType_BINARY, Index: 12}, "binaryStr"},
-	//{&PrimaryKeyColumn{Name: "xml", Type: pb.DataType_XML, Index: 13}, "xmlStr"},
+	// Create a table with all possible destination types and a single record
+	// JSON is not supported as a primary key atm
+	tableName := fmt.Sprintf("test_get_db_row_key_%s", Guid())
+	err = conn.Exec(context.Background(), fmt.Sprintf(`
+		CREATE OR REPLACE TABLE %s (
+			b    Bool,
+			i16  Int16,
+			i32  Int32,
+			i64  Int64,
+			f32  Float32,
+			f64  Float64,
+			dd   Decimal(4, 2),
+			dt64 DateTime64(9, 'UTC'),
+			dt   DateTime,
+			d    Date,
+			s    String
+		) ENGINE Memory`, tableName))
+	assert.NoError(t, err)
+
+	batch, err := conn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s", tableName))
+	assert.NoError(t, err)
+	err = batch.Append(
+		true,
+		int16(42),
+		int32(43),
+		int64(44),
+		float32(100.5),
+		float64(200.5),
+		decimal.NewFromFloat(47.47),
+		time.Date(2021, 3, 4, 22, 44, 22, 123456789, time.UTC),
+		time.Date(2023, 5, 7, 18, 22, 44, 0, time.UTC),
+		time.Date(2019, 12, 15, 0, 0, 0, 0, time.UTC),
+		"test",
+	)
+	assert.NoError(t, err)
+	err = batch.Send()
+	assert.NoError(t, err)
+
+	// Introspect the table definition and create a single empty "proto" row to scan into
+	rows, err := conn.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE false", tableName))
+	assert.NoError(t, err)
+
+	columnTypes := rows.ColumnTypes()
+	dbRow := ColumnTypesToEmptyRows(columnTypes, 1)[0]
+	rows.Close()
+
+	// Scan into that "proto" row
+	rows, err = conn.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s LIMIT 1", tableName))
+	assert.NoError(t, err)
+	rows.Next()
+	err = rows.Scan(dbRow...)
+	assert.NoError(t, err)
+
+	// Serialization of a single PK to a mapping key (assuming one column is defined as a PK in Fivetran)
+	singlePrimaryKeyArgs := []struct {
+		*PrimaryKeyColumn
+		string
+	}{
+		{&PrimaryKeyColumn{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0}, "true"},
+		{&PrimaryKeyColumn{Name: "i16", Type: pb.DataType_SHORT, Index: 1}, "42"},
+		{&PrimaryKeyColumn{Name: "i32", Type: pb.DataType_INT, Index: 2}, "43"},
+		{&PrimaryKeyColumn{Name: "i64", Type: pb.DataType_LONG, Index: 3}, "44"},
+		{&PrimaryKeyColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4}, "100.5"},
+		{&PrimaryKeyColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5}, "200.5"},
+		{&PrimaryKeyColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6}, "47.47"},
+		{&PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7}, "2021-03-04T22:44:22.123456789Z"},
+		{&PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8}, "2023-05-07T18:22:44"},
+		{&PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9}, "2019-12-15"},
+		{&PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 10}, "test"},
+	}
+	for _, arg := range singlePrimaryKeyArgs {
+		key, err := GetDatabaseRowMappingKey(dbRow, []*PrimaryKeyColumn{arg.PrimaryKeyColumn})
+		assert.NoError(t, err, "Expected no error for key %s", arg.string)
+		assert.Equal(t, arg.string, key, "Expected key to be %s", arg.string)
+	}
+
+	// Serialization of multiple PKs to a mapping key (assuming two columns are defined as PKs in Fivetran)
+	multiplePrimaryKeyArgs := []struct {
+		pkCols []*PrimaryKeyColumn
+		key    string
+	}{
+		{pkCols: []*PrimaryKeyColumn{
+			{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0},
+			{Name: "i16", Type: pb.DataType_SHORT, Index: 1},
+		}, key: "true_42"},
+		{pkCols: []*PrimaryKeyColumn{
+			{Name: "i32", Type: pb.DataType_INT, Index: 2},
+			{Name: "i64", Type: pb.DataType_LONG, Index: 3},
+		}, key: "43_44"},
+		{pkCols: []*PrimaryKeyColumn{
+			{Name: "f32", Type: pb.DataType_FLOAT, Index: 4},
+			{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5},
+		}, key: "100.5_200.5"},
+		{pkCols: []*PrimaryKeyColumn{
+			{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6},
+			{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7},
+		}, key: "47.47_2021-03-04T22:44:22.123456789Z"},
+		{pkCols: []*PrimaryKeyColumn{
+			{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8},
+			{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9},
+			{Name: "str", Type: pb.DataType_STRING, Index: 10},
+		}, key: "2023-05-07T18:22:44_2019-12-15_test"},
+	}
+	for i, arg := range multiplePrimaryKeyArgs {
+		key, err := GetDatabaseRowMappingKey(dbRow, arg.pkCols)
+		assert.NoError(t, err, "Expected no error for idx %d with key %s", i, arg.key)
+		assert.Equal(t, arg.key, key, "Expected key to be %s for idx %d", arg.key, i)
+	}
+}
+
+func Guid() string {
+	return strings.ReplaceAll(uuid.New().String(), "-", "_")
 }
 
 var config = map[string]string{
@@ -166,33 +287,4 @@ var config = map[string]string{
 	"port":     "9000",
 	"username": "default",
 	"password": "",
-}
-
-func GetDDL(tableName string) string {
-	return fmt.Sprintf(`
-		CREATE OR REPLACE TABLE %s (
-			b Bool,
-			nb Nullable(Bool),
-			i16 Int16,
-			ni16 Nullable(Int16),
-			i32 Int32,
-			ni32 Nullable(Int32),
-			i64 Int64,
-			ni64 Nullable(Int64),
-			f32 Float32,
-			nf32 Nullable(Float32),
-			f64 Float64,
-			nf64 Nullable(Float64),
-			dd Decimal(4, 2),
-			ndd Nullable(Decimal(4, 2)),
-			d Date,
-			nd Nullable(Date),
-			dt DateTime,
-			ndt Nullable(DateTime),
-			dt64 DateTime64(9, 'UTC'),
-			ndt64 Nullable(DateTime64(9, 'UTC')),
-			s String,
-			ns Nullable(String),
-			j JSON,
-		) ENGINE Memory`, tableName)
 }

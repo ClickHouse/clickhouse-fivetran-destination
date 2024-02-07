@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/shopspring/decimal"
 )
@@ -29,12 +30,42 @@ func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) (st
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
 	}
 	var key strings.Builder
-	for _, col := range pkCols {
-		str, err := ToString(row[col.Index])
-		if err != nil {
-			return "", err
+	for i, col := range pkCols {
+		p := row[col.Index]
+		switch p.(type) {
+		case *string:
+			key.WriteString(fmt.Sprint(*p.(*string)))
+		case *int:
+			key.WriteString(fmt.Sprint(*p.(*int)))
+		case *int16:
+			key.WriteString(fmt.Sprint(*p.(*int16)))
+		case *int32:
+			key.WriteString(fmt.Sprint(*p.(*int32)))
+		case *int64:
+			key.WriteString(fmt.Sprint(*p.(*int64)))
+		case *float32:
+			key.WriteString(fmt.Sprint(*p.(*float32)))
+		case *float64:
+			key.WriteString(fmt.Sprint(*p.(*float64)))
+		case *bool:
+			key.WriteString(fmt.Sprint(*p.(*bool)))
+		case *time.Time:
+			// should exactly match CSV datetime format
+			if col.Type == pb.DataType_UTC_DATETIME {
+				key.WriteString(p.(*time.Time).Format("2006-01-02T15:04:05.000000000Z"))
+			} else if col.Type == pb.DataType_NAIVE_DATETIME {
+				key.WriteString(p.(*time.Time).Format("2006-01-02T15:04:05"))
+			} else {
+				key.WriteString(p.(*time.Time).Format("2006-01-02"))
+			}
+		case *decimal.Decimal:
+			key.WriteString(p.(*decimal.Decimal).String())
+		default: // JSON is not supported as a primary key atm
+			return "", fmt.Errorf("can't use type %T as mapping key", p)
 		}
-		key.WriteString(str)
+		if i < len(pkCols)-1 {
+			key.WriteString("_")
+		}
 	}
 	res := key.String()
 	return res, nil
@@ -52,31 +83,4 @@ func GetCSVRowMappingKey(row CSVRow, pkCols []*PrimaryKeyColumn) (string, error)
 		}
 	}
 	return key.String(), nil
-}
-
-func ToString(p interface{}) (string, error) {
-	switch p.(type) {
-	case *string:
-		return *p.(*string), nil
-	case *int:
-		return fmt.Sprint(*p.(*int)), nil
-	case *int16:
-		return fmt.Sprint(*p.(*int16)), nil
-	case *int32:
-		return fmt.Sprint(*p.(*int32)), nil
-	case *int64:
-		return fmt.Sprint(*p.(*int64)), nil
-	case *float32:
-		return fmt.Sprint(*p.(*float32)), nil
-	case *float64:
-		return fmt.Sprint(*p.(*float64)), nil
-	case *bool:
-		return fmt.Sprint(*p.(*bool)), nil
-	case *time.Time:
-		return fmt.Sprint(p.(*time.Time).Nanosecond()), nil
-	case *decimal.Decimal:
-		return p.(*decimal.Decimal).String(), nil
-	default:
-		return "", fmt.Errorf("can't call ToString on type %T", p)
-	}
 }
