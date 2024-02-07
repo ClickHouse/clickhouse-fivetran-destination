@@ -21,6 +21,12 @@ type (
 )
 
 func CSVRowToInsertValues(row CSVRow, table *pb.Table, nullStr string) ([]any, error) {
+	if nullStr == "" {
+		return nil, fmt.Errorf("nullStr can't be empty")
+	}
+	if table == nil {
+		return nil, fmt.Errorf("table can't be nil")
+	}
 	if len(row) != len(table.Columns) {
 		return nil, fmt.Errorf("expected %d columns, but row contains %d", len(table.Columns), len(row))
 	}
@@ -53,6 +59,9 @@ func CSVRowsToSelectQuery(batch CSV, fullTableName string, pkCols []*PrimaryKeyC
 	}
 	if len(batch) == 0 {
 		return "", fmt.Errorf("expected non-empty CSV slice")
+	}
+	if fullTableName == "" {
+		return "", fmt.Errorf("table name is empty")
 	}
 	var orderByBuilder strings.Builder
 	orderByBuilder.WriteRune('(')
@@ -91,6 +100,15 @@ func CSVRowsToSelectQuery(batch CSV, fullTableName string, pkCols []*PrimaryKeyC
 }
 
 func CSVRowToUpdatedDBRow(csvRow CSVRow, dbRow []any, table *pb.Table, nullStr string, unmodifiedStr string) ([]any, error) {
+	if unmodifiedStr == "" {
+		return nil, fmt.Errorf("unmodifiedStr can't be empty")
+	}
+	if nullStr == "" {
+		return nil, fmt.Errorf("nullStr can't be empty")
+	}
+	if table == nil {
+		return nil, fmt.Errorf("table can't be nil")
+	}
 	if len(csvRow) != len(dbRow) || len(dbRow) != len(table.Columns) {
 		return nil, fmt.Errorf("expected CSV, table definition and ClickHouse row to contain the same number of columns, but got %d, %d and %d", len(csvRow), len(table.Columns), len(dbRow))
 	}
@@ -114,11 +132,11 @@ func CSVRowToUpdatedDBRow(csvRow CSVRow, dbRow []any, table *pb.Table, nullStr s
 }
 
 func CSVRowToSoftDeletedRow(csvRow CSVRow, dbRow []any, fivetranSyncedIdx int, fivetranDeletedIdx int) ([]any, error) {
-	if fivetranSyncedIdx == -1 || fivetranSyncedIdx >= len(csvRow) {
-		return nil, fmt.Errorf("can't find %s column in CSV row", FivetranSynced)
-	}
 	if fivetranDeletedIdx == -1 || fivetranDeletedIdx >= len(csvRow) {
-		return nil, fmt.Errorf("can't find %s column in CSV row", FivetranDeleted)
+		return nil, fmt.Errorf("can't find column %s with index %d in a CSV row", FivetranDeleted, fivetranDeletedIdx)
+	}
+	if fivetranSyncedIdx == -1 || fivetranSyncedIdx >= len(csvRow) {
+		return nil, fmt.Errorf("can't find column %s with index %d in a CSV row", FivetranSynced, fivetranSyncedIdx)
 	}
 	if len(dbRow) < 2 {
 		return nil, fmt.Errorf("expected ClickHouse row to contain at least 2 columns, but got %d", len(dbRow))
@@ -129,7 +147,7 @@ func CSVRowToSoftDeletedRow(csvRow CSVRow, dbRow []any, fivetranSyncedIdx int, f
 	updatedRow[fivetranDeletedIdx] = true
 	fivetranSynced, err := time.Parse("2006-01-02T15:04:05.000000000Z", csvRow[fivetranSyncedIdx])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("can't parse value %s as UTC datetime for column %s: %w", csvRow[fivetranSyncedIdx], FivetranSynced, err)
 	}
 	updatedRow[fivetranSyncedIdx] = fivetranSynced
 	return updatedRow, nil
@@ -156,61 +174,61 @@ func ParseValue(colName string, colType pb.DataType, val string) (any, error) {
 	case pb.DataType_BOOLEAN:
 		result, err := strconv.ParseBool(val)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as boolean for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_SHORT:
 		result, err := strconv.ParseInt(val, 10, 16)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as int16 for column %s: %w", val, colName, err)
 		}
 		return int16(result), nil
 	case pb.DataType_INT:
 		result, err := strconv.ParseInt(val, 10, 32)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as int32 for column %s: %w", val, colName, err)
 		}
 		return int32(result), nil
 	case pb.DataType_LONG:
 		result, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as int64 for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_FLOAT:
 		result, err := strconv.ParseFloat(val, 32)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as float32 for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_DOUBLE:
 		result, err := strconv.ParseFloat(val, 64)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as float64 for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_DECIMAL:
 		result, err := decimal.NewFromString(val)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as decimal for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_NAIVE_DATE:
 		result, err := time.Parse("2006-01-02", val)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as naive date for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_NAIVE_DATETIME:
 		result, err := time.Parse("2006-01-02T15:04:05", val)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as naive datetime for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_UTC_DATETIME:
 		result, err := time.Parse("2006-01-02T15:04:05.000000000Z", val)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("can't parse value %s as UTC datetime for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case // "string" types work as-is

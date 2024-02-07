@@ -12,14 +12,15 @@ import (
 
 type RowsByPrimaryKeyValue map[string][]interface{}
 
-func GetFullTableName(schemaName string, tableName string) string {
-	var fullName string
-	if schemaName == "" {
-		fullName = fmt.Sprintf("`%s`", tableName)
-	} else {
-		fullName = fmt.Sprintf("`%s`.`%s`", schemaName, tableName)
+func GetFullTableName(schemaName string, tableName string) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
 	}
-	return fullName
+	if schemaName == "" {
+		return fmt.Sprintf("`%s`", tableName), nil
+	} else {
+		return fmt.Sprintf("`%s`.`%s`", schemaName, tableName), nil
+	}
 }
 
 func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint32) [][]interface{} {
@@ -34,13 +35,20 @@ func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint32) [][]inter
 	return dbRows
 }
 
-func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) string {
+func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) (string, error) {
+	if len(pkCols) == 0 {
+		return "", fmt.Errorf("expected non-empty list of primary keys columns")
+	}
 	var key strings.Builder
 	for _, col := range pkCols {
-		key.WriteString(ToString(row[col.Index]))
+		str, err := ToString(row[col.Index])
+		if err != nil {
+			return "", err
+		}
+		key.WriteString(str)
 	}
 	res := key.String()
-	return res
+	return res, nil
 }
 
 func GetCSVRowMappingKey(row CSVRow, pkCols []*PrimaryKeyColumn) (string, error) {
@@ -50,34 +58,38 @@ func GetCSVRowMappingKey(row CSVRow, pkCols []*PrimaryKeyColumn) (string, error)
 		if err != nil {
 			return "", err
 		}
-		key.WriteString(ToString(val))
+		str, err := ToString(val)
+		if err != nil {
+			return "", err
+		}
+		key.WriteString(str)
 	}
 	return key.String(), nil
 }
 
-func ToString(p interface{}) string {
+func ToString(p interface{}) (string, error) {
 	switch p.(type) {
 	case *string:
-		return *p.(*string)
+		return *p.(*string), nil
 	case *int:
-		return fmt.Sprint(*p.(*int))
+		return fmt.Sprint(*p.(*int)), nil
 	case *int16:
-		return fmt.Sprint(*p.(*int16))
+		return fmt.Sprint(*p.(*int16)), nil
 	case *int32:
-		return fmt.Sprint(*p.(*int32))
+		return fmt.Sprint(*p.(*int32)), nil
 	case *int64:
-		return fmt.Sprint(*p.(*int64))
+		return fmt.Sprint(*p.(*int64)), nil
 	case *float32:
-		return fmt.Sprint(*p.(*float32))
+		return fmt.Sprint(*p.(*float32)), nil
 	case *float64:
-		return fmt.Sprint(*p.(*float64))
+		return fmt.Sprint(*p.(*float64)), nil
 	case *bool:
-		return fmt.Sprint(*p.(*bool))
+		return fmt.Sprint(*p.(*bool)), nil
 	case *time.Time:
-		return fmt.Sprint(p.(*time.Time).Nanosecond())
+		return fmt.Sprint(p.(*time.Time).Nanosecond()), nil
 	case *decimal.Decimal:
-		return p.(*decimal.Decimal).String()
+		return p.(*decimal.Decimal).String(), nil
 	default:
-		return fmt.Sprint(p)
+		return "", fmt.Errorf("can't call ToString on type %T", p)
 	}
 }

@@ -98,7 +98,10 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 }
 
 func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription) error {
-	fullName := GetFullTableName(schemaName, tableName)
+	fullName, err := GetFullTableName(schemaName, tableName)
+	if err != nil {
+		return err
+	}
 	logger.Printf("Creating table %s with columns %v", fullName, tableDescription.Columns)
 
 	var orderByCols []string
@@ -127,7 +130,10 @@ func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName strin
 }
 
 func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string, ops []*AlterTableOp) error {
-	fullName := GetFullTableName(schemaName, tableName)
+	fullName, err := GetFullTableName(schemaName, tableName)
+	if err != nil {
+		return err
+	}
 	logger.Printf("Altering table %s", fullName)
 
 	total := len(ops)
@@ -164,7 +170,10 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 }
 
 func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
-	fullName := GetFullTableName(schemaName, tableName)
+	fullName, err := GetFullTableName(schemaName, tableName)
+	if err != nil {
+		return err
+	}
 	logger.Printf("Truncating %s", fullName)
 
 	query := fmt.Sprintf("TRUNCATE TABLE %s", fullName)
@@ -195,7 +204,10 @@ func (conn *ClickHouseConnection) InsertBatch(fullTableName string, rows [][]int
 }
 
 func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
-	fullName := GetFullTableName(schemaName, tableName)
+	fullName, err := GetFullTableName(schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := conn.Query(conn.ctx, fmt.Sprintf("SELECT * FROM %s WHERE false", fullName))
 	if err != nil {
 		return nil, err
@@ -225,7 +237,10 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 		if err := rows.Scan(scanRows[i]...); err != nil {
 			return nil, err
 		}
-		mappingKey := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+		mappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+		if err != nil {
+			return nil, err
+		}
 		rowsByPKValues[mappingKey] = scanRows[i]
 	}
 	return rowsByPKValues, nil
@@ -238,7 +253,10 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	nullStr string,
 	batchSize int,
 ) error {
-	fullName := GetFullTableName(schemaName, table.Name)
+	fullName, err := GetFullTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
 	for i := 0; i < len(csv); i += batchSize {
 		end := i + batchSize
 		if end > len(csv) {
@@ -271,7 +289,10 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	unmodifiedStr string,
 	batchSize int,
 ) error {
-	fullName := GetFullTableName(schemaName, table.Name)
+	fullName, err := GetFullTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
 	for i := 0; i < len(csv); i += batchSize {
 		end := i + batchSize
 		if end > len(csv) {
@@ -296,11 +317,9 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				}
 				insertRows[i] = updatedRow
 			} else {
-				insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
-				if err != nil {
-					return err
-				}
-				insertRows[i] = insertRow
+				// Shouldn't happen
+				logger.Printf("Row with PK mapping %s does not exist", mappingKey)
+				continue
 			}
 		}
 		err = conn.InsertBatch(fullName, insertRows)
@@ -321,7 +340,10 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	fivetranSyncedIdx int,
 	fivetranDeletedIdx int,
 ) error {
-	fullName := GetFullTableName(schemaName, table.Name)
+	fullName, err := GetFullTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
 	for i := 0; i < len(csv); i += batchSize {
 		end := i + batchSize
 		if end > len(csv) {

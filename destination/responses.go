@@ -72,7 +72,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 }
 
 func FailedWriteBatchResponse(schemaName string, tableName string, err error) *pb.WriteBatchResponse {
-	logger.Printf("FailedWriteBatchResponse Error: %s\n", err)
+	LogError("WriteBatch", err)
 	return &pb.WriteBatchResponse{
 		Response: &pb.WriteBatchResponse_Failure{
 			Failure: fmt.Sprintf("Failed to write batch into `%s`.`%s`, cause: %s", schemaName, tableName, err),
@@ -81,7 +81,7 @@ func FailedWriteBatchResponse(schemaName string, tableName string, err error) *p
 }
 
 func FailedDescribeTableResponse(schemaName string, tableName string, err error) *pb.DescribeTableResponse {
-	logger.Printf("FailedDescribeTableResponse Error: %s\n", err)
+	LogError("DescribeTable", err)
 	return &pb.DescribeTableResponse{
 		Response: &pb.DescribeTableResponse_Failure{
 			Failure: fmt.Sprintf("Failed to describe table `%s`.`%s`, cause: %s", schemaName, tableName, err),
@@ -89,8 +89,14 @@ func FailedDescribeTableResponse(schemaName string, tableName string, err error)
 	}
 }
 
+func NotFoundDescribeTableResponse() *pb.DescribeTableResponse {
+	return &pb.DescribeTableResponse{
+		Response: &pb.DescribeTableResponse_NotFound{NotFound: true},
+	}
+}
+
 func FailedTestResponse(name string, err error) *pb.TestResponse {
-	logger.Printf("FailedTestResponse Error: %s\n", err)
+	LogError("Test", err)
 	return &pb.TestResponse{
 		Response: &pb.TestResponse_Failure{
 			Failure: fmt.Sprintf("Test %s failed, cause: %s", name, err),
@@ -99,7 +105,7 @@ func FailedTestResponse(name string, err error) *pb.TestResponse {
 }
 
 func FailedCreateTableResponse(schemaName string, tableName string, err error) *pb.CreateTableResponse {
-	logger.Printf("FailedCreateTableResponse Error: %s\n", err)
+	LogError("CreateTable", err)
 	return &pb.CreateTableResponse{
 		Response: &pb.CreateTableResponse_Failure{
 			Failure: fmt.Sprintf("Failed to create table `%s`.`%s`, cause: %s", schemaName, tableName, err),
@@ -108,7 +114,7 @@ func FailedCreateTableResponse(schemaName string, tableName string, err error) *
 }
 
 func FailedAlterTableResponse(schemaName string, tableName string, err error) *pb.AlterTableResponse {
-	logger.Printf("FailedAlterTableResponse Error: %s\n", err)
+	LogError("AlterTable", err)
 	return &pb.AlterTableResponse{
 		Response: &pb.AlterTableResponse_Failure{
 			Failure: fmt.Sprintf("Failed to alter table `%s`.`%s`, cause: %s", schemaName, tableName, err),
@@ -117,10 +123,14 @@ func FailedAlterTableResponse(schemaName string, tableName string, err error) *p
 }
 
 func FailedTruncateTableResponse(schemaName string, tableName string, err error) *pb.TruncateResponse {
-	logger.Printf("FailedTruncateTableResponse Error: %s\n", err)
+	LogError("TruncateTable", err)
 	return &pb.TruncateResponse{
 		Response: &pb.TruncateResponse_Failure{
 			Failure: fmt.Sprintf("Failed to truncate table `%s`.`%s`, cause: %s", schemaName, tableName, err),
 		},
 	}
+}
+
+func LogError(endpoint string, err error) {
+	logger.Printf("%s error: %+v\n", endpoint, err)
 }

@@ -52,11 +52,7 @@ func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 			return FailedTestResponse(in.Name, err), nil
 		}
 	default:
-		return &pb.TestResponse{
-			Response: &pb.TestResponse_Failure{
-				Failure: fmt.Sprintf("Unexpected test name: %s", in.Name),
-			},
-		}, nil
+		return FailedTestResponse(in.Name, fmt.Errorf("unexpected test name: %s", in.Name)), nil
 	}
 
 	return &pb.TestResponse{
@@ -78,9 +74,7 @@ func (s *server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 		chErr := &clickhouse.Exception{}
 		// Code 60 => UNKNOWN_TABLE
 		if errors.As(err, &chErr) && chErr.Code == 60 {
-			return &pb.DescribeTableResponse{
-				Response: &pb.DescribeTableResponse_NotFound{NotFound: true},
-			}, nil
+			return NotFoundDescribeTableResponse(), nil
 		}
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
@@ -286,14 +280,14 @@ func ReadAndDecryptWriteBatchFiles(
 		case FileNotFound:
 			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s not found", fileName))
 		case FailedToDecompress:
-			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decompress file %s, cause: %s", fileName, *result.Error))
+			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decompress file %s, cause: %w", fileName, *result.Error))
 		case FailedToDecrypt:
-			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decrypt file %s, cause: %s", fileName, *result.Error))
+			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decrypt file %s, cause: %w", fileName, *result.Error))
 		case Success:
 			csvReader := csv.NewReader(bytes.NewReader(*result.Data))
 			records, err := csvReader.ReadAll()
 			if err != nil {
-				return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s is not a valid CSV, cause: %s", fileName, *result.Error))
+				return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s is not a valid CSV, cause: %w", fileName, *result.Error))
 			}
 			if len(records) < 2 {
 				return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("expected to have more than 1 line in file %s", fileName))
