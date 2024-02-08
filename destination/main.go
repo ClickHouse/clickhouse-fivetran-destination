@@ -160,8 +160,8 @@ func (s *server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 }
 
 func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
-	compression := pb.Compression_OFF
-	encryption := pb.Encryption_NONE
+	var compression pb.Compression
+	var encryption pb.Encryption
 	nullStr := ""
 	unmodifiedStr := ""
 	csvParams := in.GetCsv()

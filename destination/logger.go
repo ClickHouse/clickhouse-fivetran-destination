@@ -34,5 +34,6 @@ func LogError(err error) {
 	log.Log().
 		Str("message-origin", "sdk_destination").
 		Str("level", "SEVERE").
-		Str("message", fmt.Sprintf("%+v", err)).Send()
+		Str("message", fmt.Sprintf("%+v", err)).
+		Send()
 }

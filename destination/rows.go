@@ -31,42 +31,43 @@ func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) (st
 	}
 	var key strings.Builder
 	for i, col := range pkCols {
+		key.WriteString(col.Name)
+		key.WriteRune(':')
 		p := row[col.Index]
-		switch p.(type) {
+		switch p := p.(type) {
 		case *string:
-			key.WriteString(fmt.Sprint(*p.(*string)))
+			key.WriteString(fmt.Sprint(*p))
 		case *int16:
-			key.WriteString(fmt.Sprint(*p.(*int16)))
+			key.WriteString(fmt.Sprint(*p))
 		case *int32:
-			key.WriteString(fmt.Sprint(*p.(*int32)))
+			key.WriteString(fmt.Sprint(*p))
 		case *int64:
-			key.WriteString(fmt.Sprint(*p.(*int64)))
+			key.WriteString(fmt.Sprint(*p))
 		case *float32:
-			key.WriteString(fmt.Sprint(*p.(*float32)))
+			key.WriteString(fmt.Sprint(*p))
 		case *float64:
-			key.WriteString(fmt.Sprint(*p.(*float64)))
+			key.WriteString(fmt.Sprint(*p))
 		case *bool:
-			key.WriteString(fmt.Sprint(*p.(*bool)))
+			key.WriteString(fmt.Sprint(*p))
 		case *time.Time:
 			// should exactly match CSV datetime format
 			if col.Type == pb.DataType_UTC_DATETIME {
-				key.WriteString(p.(*time.Time).Format("2006-01-02T15:04:05.000000000Z"))
+				key.WriteString(p.Format("2006-01-02T15:04:05.000000000Z"))
 			} else if col.Type == pb.DataType_NAIVE_DATETIME {
-				key.WriteString(p.(*time.Time).Format("2006-01-02T15:04:05"))
+				key.WriteString(p.Format("2006-01-02T15:04:05"))
 			} else {
-				key.WriteString(p.(*time.Time).Format("2006-01-02"))
+				key.WriteString(p.Format("2006-01-02"))
 			}
 		case *decimal.Decimal:
-			key.WriteString(p.(*decimal.Decimal).String())
+			key.WriteString(p.String())
 		default: // JSON is not supported as a primary key atm
 			return "", fmt.Errorf("can't use type %T as mapping key", p)
 		}
 		if i < len(pkCols)-1 {
-			key.WriteString("_")
+			key.WriteString(",")
 		}
 	}
-	res := key.String()
-	return res, nil
+	return key.String(), nil
 }
 
 func GetCSVRowMappingKey(row CSVRow, pkCols []*PrimaryKeyColumn) (string, error) {
@@ -75,9 +76,11 @@ func GetCSVRowMappingKey(row CSVRow, pkCols []*PrimaryKeyColumn) (string, error)
 	}
 	var key strings.Builder
 	for i, col := range pkCols {
+		key.WriteString(col.Name)
+		key.WriteRune(':')
 		key.WriteString(row[col.Index])
 		if i < len(pkCols)-1 {
-			key.WriteString("_")
+			key.WriteRune(',')
 		}
 	}
 	return key.String(), nil

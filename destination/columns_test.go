@@ -62,9 +62,11 @@ func TestToFivetranColumns(t *testing.T) {
 	})
 
 	columns, err = ToFivetranColumns(nil)
+	assert.NoError(t, err)
 	assert.Equal(t, columns, []*pb.Column{})
 
 	columns, err = ToFivetranColumns(&TableDescription{})
+	assert.NoError(t, err)
 	assert.Equal(t, columns, []*pb.Column{})
 
 	_, err = ToFivetranColumns(&TableDescription{Columns: []*ColumnDefinition{{Name: "a", Type: "Array(String)"}}})

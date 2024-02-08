@@ -128,14 +128,14 @@ func TestGetCSVRowMappingKey(t *testing.T) {
 		*PrimaryKeyColumn
 		string
 	}{
-		{&PrimaryKeyColumn{Index: 0}, "true"},
-		{&PrimaryKeyColumn{Index: 1}, "false"},
-		{&PrimaryKeyColumn{Index: 2}, "42"},
-		{&PrimaryKeyColumn{Index: 3}, "100.5"},
-		{&PrimaryKeyColumn{Index: 4}, "2021-03-04T22:44:22.123456789Z"},
-		{&PrimaryKeyColumn{Index: 5}, "2023-05-07T18:22:44"},
-		{&PrimaryKeyColumn{Index: 6}, "2019-12-15"},
-		{&PrimaryKeyColumn{Index: 7}, "test"},
+		{&PrimaryKeyColumn{Name: "b1", Index: 0}, "b1:true"},
+		{&PrimaryKeyColumn{Name: "b2", Index: 1}, "b2:false"},
+		{&PrimaryKeyColumn{Name: "i32", Index: 2}, "i32:42"},
+		{&PrimaryKeyColumn{Name: "f32", Index: 3}, "f32:100.5"},
+		{&PrimaryKeyColumn{Name: "dt_utc", Index: 4}, "dt_utc:2021-03-04T22:44:22.123456789Z"},
+		{&PrimaryKeyColumn{Name: "dt", Index: 5}, "dt:2023-05-07T18:22:44"},
+		{&PrimaryKeyColumn{Name: "d", Index: 6}, "d:2019-12-15"},
+		{&PrimaryKeyColumn{Name: "s", Index: 7}, "s:test"},
 	}
 	for i, arg := range singlePrimaryKeyArgs {
 		key, err := GetCSVRowMappingKey(row, []*PrimaryKeyColumn{arg.PrimaryKeyColumn})
@@ -148,10 +148,10 @@ func TestGetCSVRowMappingKey(t *testing.T) {
 		pkCols []*PrimaryKeyColumn
 		key    string
 	}{
-		{pkCols: []*PrimaryKeyColumn{{Index: 0}, {Index: 1}}, key: "true_false"},
-		{pkCols: []*PrimaryKeyColumn{{Index: 2}, {Index: 3}}, key: "42_100.5"},
-		{pkCols: []*PrimaryKeyColumn{{Index: 4}, {Index: 5}}, key: "2021-03-04T22:44:22.123456789Z_2023-05-07T18:22:44"},
-		{pkCols: []*PrimaryKeyColumn{{Index: 6}, {Index: 7}}, key: "2019-12-15_test"},
+		{pkCols: []*PrimaryKeyColumn{{Name: "b1", Index: 0}, {Name: "b2", Index: 1}}, key: "b1:true,b2:false"},
+		{pkCols: []*PrimaryKeyColumn{{Name: "i32", Index: 2}, {Name: "f32", Index: 3}}, key: "i32:42,f32:100.5"},
+		{pkCols: []*PrimaryKeyColumn{{Name: "dt_utc", Index: 4}, {Name: "dt", Index: 5}}, key: "dt_utc:2021-03-04T22:44:22.123456789Z,dt:2023-05-07T18:22:44"},
+		{pkCols: []*PrimaryKeyColumn{{Name: "d", Index: 6}, {Name: "s", Index: 7}}, key: "d:2019-12-15,s:test"},
 	}
 	for i, arg := range multiplePrimaryKeyArgs {
 		key, err := GetCSVRowMappingKey(row, arg.pkCols)
@@ -228,17 +228,17 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		*PrimaryKeyColumn
 		string
 	}{
-		{&PrimaryKeyColumn{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0}, "true"},
-		{&PrimaryKeyColumn{Name: "i16", Type: pb.DataType_SHORT, Index: 1}, "42"},
-		{&PrimaryKeyColumn{Name: "i32", Type: pb.DataType_INT, Index: 2}, "43"},
-		{&PrimaryKeyColumn{Name: "i64", Type: pb.DataType_LONG, Index: 3}, "44"},
-		{&PrimaryKeyColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4}, "100.5"},
-		{&PrimaryKeyColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5}, "200.5"},
-		{&PrimaryKeyColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6}, "47.47"},
-		{&PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7}, "2021-03-04T22:44:22.123456789Z"},
-		{&PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8}, "2023-05-07T18:22:44"},
-		{&PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9}, "2019-12-15"},
-		{&PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 10}, "test"},
+		{&PrimaryKeyColumn{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0}, "b:true"},
+		{&PrimaryKeyColumn{Name: "i16", Type: pb.DataType_SHORT, Index: 1}, "i16:42"},
+		{&PrimaryKeyColumn{Name: "i32", Type: pb.DataType_INT, Index: 2}, "i32:43"},
+		{&PrimaryKeyColumn{Name: "i64", Type: pb.DataType_LONG, Index: 3}, "i64:44"},
+		{&PrimaryKeyColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4}, "f32:100.5"},
+		{&PrimaryKeyColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5}, "f64:200.5"},
+		{&PrimaryKeyColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6}, "dec:47.47"},
+		{&PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7}, "utc_datetime:2021-03-04T22:44:22.123456789Z"},
+		{&PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8}, "naive_datetime:2023-05-07T18:22:44"},
+		{&PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9}, "naive_date:2019-12-15"},
+		{&PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 10}, "str:test"},
 	}
 	for _, arg := range singlePrimaryKeyArgs {
 		key, err := GetDatabaseRowMappingKey(dbRow, []*PrimaryKeyColumn{arg.PrimaryKeyColumn})
@@ -254,24 +254,24 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		{pkCols: []*PrimaryKeyColumn{
 			{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0},
 			{Name: "i16", Type: pb.DataType_SHORT, Index: 1},
-		}, key: "true_42"},
+		}, key: "b:true,i16:42"},
 		{pkCols: []*PrimaryKeyColumn{
 			{Name: "i32", Type: pb.DataType_INT, Index: 2},
 			{Name: "i64", Type: pb.DataType_LONG, Index: 3},
-		}, key: "43_44"},
+		}, key: "i32:43,i64:44"},
 		{pkCols: []*PrimaryKeyColumn{
 			{Name: "f32", Type: pb.DataType_FLOAT, Index: 4},
 			{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5},
-		}, key: "100.5_200.5"},
+		}, key: "f32:100.5,f64:200.5"},
 		{pkCols: []*PrimaryKeyColumn{
 			{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6},
 			{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7},
-		}, key: "47.47_2021-03-04T22:44:22.123456789Z"},
+		}, key: "dec:47.47,utc_datetime:2021-03-04T22:44:22.123456789Z"},
 		{pkCols: []*PrimaryKeyColumn{
 			{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8},
 			{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9},
 			{Name: "str", Type: pb.DataType_STRING, Index: 10},
-		}, key: "2023-05-07T18:22:44_2019-12-15_test"},
+		}, key: "naive_datetime:2023-05-07T18:22:44,naive_date:2019-12-15,str:test"},
 	}
 	for i, arg := range multiplePrimaryKeyArgs {
 		key, err := GetDatabaseRowMappingKey(dbRow, arg.pkCols)
