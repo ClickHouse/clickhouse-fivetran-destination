@@ -7,9 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net"
-	"os"
 
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -19,10 +17,9 @@ import (
 const ConnectionTest = "connection"
 const MutationTest = "mutation"
 
-const DefaultWriteBatchSize = 500
-
 var port = flag.Int("port", 50052, "The server port")
-var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
+var isDevelopment = flag.Bool("dev", false, "Whether the server is running in development mode")
+var batchSize = flag.Uint("batch-size", 500, "The batch size for write operations")
 
 type server struct {
 	pb.UnimplementedDestinationServer
@@ -39,7 +36,6 @@ func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 	}
 	defer conn.Close()
 
-	logger.Printf("Running test: %v", in.Name)
 	switch in.Name {
 	case ConnectionTest:
 		err := conn.ConnectionTest()
@@ -126,13 +122,10 @@ func (s *server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	logger.Printf("Current table description: %v", currentTableDescription)
-
 	alterTableDescription, err := ToClickHouseColumns(in.Table)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	logger.Printf("Requested table description: %v", alterTableDescription)
 
 	diff := GetAlterTableOps(currentTableDescription, alterTableDescription)
 	err = conn.AlterTable(in.SchemaName, in.Table.Name, diff)
@@ -209,7 +202,7 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no %s column found", FivetranDeleted)), nil
 	}
 
-	deleteFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.DeleteFiles, in.Keys, compression, encryption)
+	replaceFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.ReplaceFiles, in.Keys, compression, encryption)
 	if failure != nil {
 		return failure, nil
 	}
@@ -217,14 +210,10 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	if failure != nil {
 		return failure, nil
 	}
-	replaceFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.ReplaceFiles, in.Keys, compression, encryption)
+	deleteFiles, failure := ReadAndDecryptWriteBatchFiles(in.SchemaName, in.Table.Name, in.DeleteFiles, in.Keys, compression, encryption)
 	if failure != nil {
 		return failure, nil
 	}
-
-	fmt.Printf("Delete files: %v\n", deleteFiles)
-	fmt.Printf("Update files: %v\n", updateFiles)
-	fmt.Printf("Replace files: %v\n", replaceFiles)
 
 	conn, err := GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
@@ -238,19 +227,19 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	}
 
 	for _, csvData := range replaceFiles {
-		err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, DefaultWriteBatchSize)
+		err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, int(*batchSize))
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 	}
 	for _, csvData := range updateFiles {
-		err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, nullStr, unmodifiedStr, DefaultWriteBatchSize)
+		err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, nullStr, unmodifiedStr, int(*batchSize))
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 	}
 	for _, csvData := range deleteFiles {
-		err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, DefaultWriteBatchSize, fivetranSyncedIdx, fivetranDeletedIdx)
+		err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, int(*batchSize), fivetranSyncedIdx, fivetranDeletedIdx)
 		if err != nil {
 			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
@@ -300,14 +289,15 @@ func ReadAndDecryptWriteBatchFiles(
 
 func main() {
 	flag.Parse()
+	InitLogger(*isDevelopment)
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
-		logger.Fatalf("failed to listen: %v", err)
+		LogError(fmt.Errorf("failed to listen: %w", err))
 	}
 	s := grpc.NewServer()
 	pb.RegisterDestinationServer(s, &server{})
-	logger.Printf("server listening at %v", lis.Addr())
+	LogInfo(fmt.Sprintf("server listening at %v, isDevelopment: %t, batchSize: %d", lis.Addr(), *isDevelopment, *batchSize))
 	if err := s.Serve(lis); err != nil {
-		logger.Fatalf("failed to serve: %v", err)
+		LogError(fmt.Errorf("failed to serve: %w", err))
 	}
 }

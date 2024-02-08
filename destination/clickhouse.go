@@ -13,6 +13,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type WriteBatchOpType string
+
+const (
+	Replace    WriteBatchOpType = "Replace"
+	Update     WriteBatchOpType = "Update"
+	SoftDelete WriteBatchOpType = "SoftDelete"
+)
+
 // ClickHouseConnection
 // TODO: on premise cluster setup for DDL
 type ClickHouseConnection struct {
@@ -123,12 +131,24 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 	return nil
 }
 
-func (conn *ClickHouseConnection) InsertBatch(fullTableName string, rows [][]interface{}) error {
+func (conn *ClickHouseConnection) InsertBatch(
+	fullTableName string,
+	rows [][]interface{},
+	skipIdx map[int]bool,
+	opType WriteBatchOpType,
+) error {
+	if len(skipIdx) == len(rows) {
+		LogWarn(fmt.Sprintf("[InsertBatch - %s] All rows are skipped for %s", opType, fullTableName))
+		return nil
+	}
 	batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
 	if err != nil {
 		return fmt.Errorf("error while preparing a batch for %s: %w", fullTableName, err)
 	}
-	for _, row := range rows {
+	for i, row := range rows {
+		if skipIdx[i] {
+			continue
+		}
 		if err := batch.Append(row...); err != nil {
 			return fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
 		}
@@ -203,14 +223,14 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 			break
 		}
 		insertRows := make([][]interface{}, len(batch))
-		for i, csvRow := range batch {
+		for j, csvRow := range batch {
 			insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
 			if err != nil {
 				return err
 			}
-			insertRows[i] = insertRow
+			insertRows[j] = insertRow
 		}
-		err := conn.InsertBatch(fullName, insertRows)
+		err = conn.InsertBatch(fullName, insertRows, nil, Replace)
 		if err != nil {
 			return err
 		}
@@ -246,7 +266,8 @@ func (conn *ClickHouseConnection) UpdateBatch(
 			return err
 		}
 		insertRows := make([][]interface{}, len(batch))
-		for i, csvRow := range batch {
+		skipIdx := make(map[int]bool)
+		for j, csvRow := range batch {
 			mappingKey, err := GetCSVRowMappingKey(csvRow, pkCols)
 			if err != nil {
 				return err
@@ -257,14 +278,15 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				if err != nil {
 					return err
 				}
-				insertRows[i] = updatedRow
+				insertRows[j] = updatedRow
 			} else {
 				// Shouldn't happen
-				logger.Printf("Row with PK mapping %s does not exist", mappingKey)
+				LogWarn(fmt.Sprintf("[UpdateBatch] Row with PK mapping %s does not exist", mappingKey))
+				skipIdx[j] = true
 				continue
 			}
 		}
-		err = conn.InsertBatch(fullName, insertRows)
+		err = conn.InsertBatch(fullName, insertRows, skipIdx, Update)
 		if err != nil {
 			return err
 		}
@@ -300,25 +322,27 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 			return err
 		}
 		insertRows := make([][]interface{}, len(batch))
-		for i, csvRow := range batch {
+		skipIdx := make(map[int]bool)
+		for j, csvRow := range batch {
 			mappingKey, err := GetCSVRowMappingKey(csvRow, pkCols)
 			if err != nil {
 				return err
 			}
 			dbRow, exists := selectRows[mappingKey]
 			if exists {
-				updatedRow, err := CSVRowToSoftDeletedRow(csvRow, dbRow, fivetranSyncedIdx, fivetranDeletedIdx)
+				softDeletedRow, err := CSVRowToSoftDeletedRow(csvRow, dbRow, fivetranSyncedIdx, fivetranDeletedIdx)
 				if err != nil {
 					return err
 				}
-				insertRows[i] = updatedRow
+				insertRows[j] = softDeletedRow
 			} else {
 				// Shouldn't happen
-				logger.Printf("Row with PK mapping %s does not exist", mappingKey)
+				LogWarn(fmt.Sprintf("[SoftDeleteBatch] Row with PK mapping %s does not exist", mappingKey))
+				skipIdx[j] = true
 				continue
 			}
 		}
-		err = conn.InsertBatch(fullName, insertRows)
+		err = conn.InsertBatch(fullName, insertRows, skipIdx, SoftDelete)
 		if err != nil {
 			return err
 		}
@@ -339,7 +363,7 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 			describeResult)
 	}
 
-	logger.Printf("Connection check passed")
+	LogInfo("Connection check passed")
 	return nil
 }
 
@@ -354,23 +378,22 @@ func (conn *ClickHouseConnection) MutationTest() error {
 		{Name: FivetranSynced, Type: "DateTime64(9, 'UTC')"},
 	}))
 	if err != nil {
-		return err
+		return fmt.Errorf("error while creating table %s: %w", tableName, err)
 	}
 
 	// Insert test Data
-	logger.Printf("Inserting test Data into %s", tableName)
 	batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO `%s`", tableName))
 	if err != nil {
-		return err
+		return fmt.Errorf("error while preparing a batch for %s: %w", tableName, err)
 	}
 	now := time.Now()
 	err = batch.Append(uint8(42), "ClickHouse", now)
 	if err != nil {
-		return err
+		return fmt.Errorf("error appending row to a batch for %s: %w", tableName, err)
 	}
 	err = batch.Send()
 	if err != nil {
-		return err
+		return fmt.Errorf("error while sending a batch to %s: %w", tableName, err)
 	}
 
 	// Alter
@@ -379,11 +402,10 @@ func (conn *ClickHouseConnection) MutationTest() error {
 		{Op: Modify, Column: "Col2", Type: &dbType},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("error while altering table %s: %w", tableName, err)
 	}
 
 	// Check the inserted Data
-	logger.Printf("Checking test Data in %s", tableName)
 	row := conn.QueryRow(conn.ctx, fmt.Sprintf("SELECT * FROM `%s`", tableName))
 	var (
 		col1 uint8
@@ -391,7 +413,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 		col3 *time.Time
 	)
 	if err := row.Scan(&col1, &col2, &col3); err != nil {
-		return err
+		return fmt.Errorf("error while scanning row from %s: %w", tableName, err)
 	}
 	if col1 != uint8(42) || col2 != "ClickHouse" {
 		return fmt.Errorf("unexpected Data check output, expected 42/ClickHouse/abc, got: %d/%s/%s", col1, col2, col3)
@@ -400,38 +422,35 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	// Truncate
 	err = conn.TruncateTable("", tableName)
 	if err != nil {
-		return err
+		return fmt.Errorf("error while truncating table %s: %w", tableName, err)
 	}
 
 	// Check the table is empty
-	logger.Printf("Checking if %s is empty", tableName)
 	row = conn.QueryRow(conn.ctx, fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName))
 	var (
 		count uint64
 	)
 	if err := row.Scan(&count); err != nil {
-		return err
+		return fmt.Errorf("error while scanning count from %s: %w", tableName, err)
 	}
 	if count != 0 {
 		return fmt.Errorf("truncated table count is not zero, got: %d", count)
 	}
 
 	// Drop
-	logger.Printf("Dropping %s", tableName)
 	if err := conn.Exec(conn.ctx, fmt.Sprintf("DROP TABLE `%s`", tableName)); err != nil {
-		return err
+		return fmt.Errorf("error while dropping table %s: %w", tableName, err)
 	}
 
 	// Check the table does not exist
-	logger.Printf("Checking that %s does not exist", tableName)
 	row = conn.QueryRow(conn.ctx, fmt.Sprintf("SELECT COUNT(*) FROM system.tables WHERE name = '%s'", tableName))
 	if err := row.Scan(&count); err != nil {
-		return err
+		return fmt.Errorf("error while scanning count from system.tables: %w", err)
 	}
 	if count != 0 {
 		return fmt.Errorf("table %s still exists after drop", tableName)
 	}
 
-	logger.Printf("Mutation check passed")
+	LogInfo("Mutation check passed")
 	return nil
 }
