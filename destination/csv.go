@@ -237,8 +237,6 @@ func ParseValue(colName string, colType pb.DataType, val string) (any, error) {
 		pb.DataType_STRING,
 		pb.DataType_JSON:
 		return val, nil
-	case pb.DataType_UNSPECIFIED:
-		return nil, fmt.Errorf("column %s has unspecified type", colName)
 	default:
 		return nil, fmt.Errorf("no target type for column %s with type %s", colName, colType.String())
 	}

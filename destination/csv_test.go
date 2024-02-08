@@ -140,6 +140,10 @@ func TestParseValue(t *testing.T) {
 	val, err = ParseValue("test", pb.DataType_BINARY, "foobar")
 	assert.NoError(t, err)
 	assert.Equal(t, "foobar", val)
+
+	// Unspecified
+	val, err = ParseValue("test", pb.DataType_UNSPECIFIED, "foobar")
+	assert.ErrorContains(t, err, "no target type for column test with type UNSPECIFIED")
 }
 
 func TestCSVRowToInsertValuesValidation(t *testing.T) {
@@ -160,6 +164,8 @@ func TestCSVRowToInsertValuesValidation(t *testing.T) {
 	assert.ErrorContains(t, err, "expected 2 columns, but row contains 0")
 	_, err = CSVRowToInsertValues([]string{"1", "2", "3"}, table, "foobar")
 	assert.ErrorContains(t, err, "expected 2 columns, but row contains 3")
+	_, err = CSVRowToInsertValues([]string{"foo", "2"}, table, "foobar")
+	assert.ErrorContains(t, err, "can't parse value foo as int64 for column id")
 }
 
 func TestCSVRowToInsertValues(t *testing.T) {
@@ -223,44 +229,46 @@ func TestCSVRowToInsertValuesNullStr(t *testing.T) {
 			{Name: "id", Type: pb.DataType_LONG},
 			{Name: "name", Type: pb.DataType_STRING},
 			{Name: "is_deleted", Type: pb.DataType_BOOLEAN},
+			{Name: "some_json_field", Type: pb.DataType_JSON},
 		},
 	}
 
 	row, err := CSVRowToInsertValues([]string{
-		"my-null-str", "foo", "true",
+		"my-null-str", "foo", "true", `{"foo": "bar"}`,
 	}, table, "my-null-str")
 	assert.Equal(t, []any{
-		nil, "foo", true,
+		nil, "foo", true, `{"foo": "bar"}`,
 	}, row)
 	assert.NoError(t, err)
 
 	row, err = CSVRowToInsertValues([]string{
-		"42", "my-null-str", "false",
+		"42", "my-null-str", "false", "my-null-str",
 	}, table, "my-null-str")
 	assert.NoError(t, err)
 	assert.Equal(t, []any{
-		int64(42), nil, false,
+		int64(42), nil, false, "{}", // <- JSON can't be nullable, so we use an empty object instead
 	}, row)
 
 	row, err = CSVRowToInsertValues([]string{
-		"43", "bar", "my-null-str",
+		"43", "bar", "my-null-str", `{"foo": "bar"}`,
 	}, table, "my-null-str")
 	assert.NoError(t, err)
 	assert.Equal(t, []any{
-		int64(43), "bar", nil,
+		int64(43), "bar", nil, `{"foo": "bar"}`,
 	}, row)
 }
 
 func TestCSVRowsToSelectQueryValidation(t *testing.T) {
-	pkCols := []*PrimaryKeyColumn{
-		{Index: 0, Name: "id", Type: pb.DataType_LONG},
-	}
+	pkCols := []*PrimaryKeyColumn{{Index: 0, Name: "id", Type: pb.DataType_LONG}}
 	_, err := CSVRowsToSelectQuery(nil, "", nil)
 	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
 	_, err = CSVRowsToSelectQuery(nil, "", pkCols)
 	assert.ErrorContains(t, err, "table name is empty")
 	_, err = CSVRowsToSelectQuery(CSV{}, "test_table", pkCols)
 	assert.ErrorContains(t, err, "expected non-empty CSV slice")
+	_, err = CSVRowsToSelectQuery(CSV{{"foo"}}, "test_table",
+		[]*PrimaryKeyColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG}})
+	assert.ErrorContains(t, err, "can't find matching value for primary key with index 5")
 }
 
 func TestCSVRowsToSelectQuery(t *testing.T) {
@@ -322,6 +330,8 @@ func TestCSVRowToUpdatedDBRowValidation(t *testing.T) {
 		Columns: []*pb.Column{{Name: "id", Type: pb.DataType_LONG}},
 	}, "foo", "bar")
 	assert.ErrorContains(t, err, "expected CSV, table definition and ClickHouse row to contain the same number of columns, but got 2, 1 and 2")
+	_, err = CSVRowToUpdatedDBRow([]string{"qaz", "qux"}, []any{int64(42), "foo"}, table, "foo", "bar")
+	assert.ErrorContains(t, err, "can't parse value qaz as int64 for column id")
 }
 
 func TestCSVRowToUpdatedDBRow(t *testing.T) {

@@ -35,8 +35,6 @@ func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) (st
 		switch p.(type) {
 		case *string:
 			key.WriteString(fmt.Sprint(*p.(*string)))
-		case *int:
-			key.WriteString(fmt.Sprint(*p.(*int)))
 		case *int16:
 			key.WriteString(fmt.Sprint(*p.(*int16)))
 		case *int32:

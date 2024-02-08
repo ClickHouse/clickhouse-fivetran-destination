@@ -62,18 +62,11 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	return &ClickHouseConnection{database, ctx, conn}, nil
 }
 
-func GetWithDefault(configuration map[string]string, key string, default_ string) string {
-	value, ok := configuration[key]
-	if !ok || value == "" {
-		return default_
-	}
-	return value
-}
-
 func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
-	query := fmt.Sprintf("SELECT name, type, is_in_primary_key FROM system.columns WHERE database = '%s' AND table = '%s'", schemaName, tableName)
-	logger.Printf("Executing query: %s", query)
-
+	query, err := GetDescribeTableQuery(schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := conn.Query(conn.ctx, query)
 	if err != nil {
 		return nil, err
@@ -94,93 +87,41 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			IsPrimaryKey: isPrimaryKey == 1,
 		})
 	}
-	return MakeTableDescription(columns), nil
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("got empty list of columns with query %s", query)
+	}
+	return MakeTableDescription(columns)
 }
 
 func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription) error {
-	fullName, err := GetFullTableName(schemaName, tableName)
+	statement, err := GetCreateTableStatement(schemaName, tableName, tableDescription)
 	if err != nil {
 		return err
 	}
-	logger.Printf("Creating table %s with columns %v", fullName, tableDescription.Columns)
-
-	var orderByCols []string
-	var columnsBuilder strings.Builder
-	count := 0
-	for _, col := range tableDescription.Columns {
-		columnsBuilder.WriteString(fmt.Sprintf("%s %s", col.Name, col.Type))
-		if col.IsPrimaryKey {
-			orderByCols = append(orderByCols, col.Name)
-		}
-		if count < len(tableDescription.Columns)-1 {
-			columnsBuilder.WriteString(", ")
-		}
-		count++
-	}
-	columns := columnsBuilder.String()
-
-	query := fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
-		fullName, columns, FivetranSynced, strings.Join(orderByCols, ", "))
-	logger.Printf("Executing query: %s", query)
-
-	if err := conn.Exec(conn.ctx, query); err != nil {
-		return err
+	if err := conn.Exec(conn.ctx, statement); err != nil {
+		return fmt.Errorf("error while executing %s: %w", statement, err)
 	}
 	return nil
 }
 
 func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string, ops []*AlterTableOp) error {
-	fullName, err := GetFullTableName(schemaName, tableName)
+	statement, err := GetAlterTableStatement(schemaName, tableName, ops)
 	if err != nil {
 		return err
 	}
-	logger.Printf("Altering table %s", fullName)
-
-	total := len(ops)
-	if total == 0 {
-		logger.Printf("No statements to execute for altering table %s", fullName)
-		return nil
-	}
-
-	count := 0
-	var statementsBuilder strings.Builder
-	for _, op := range ops {
-		switch op.Op {
-		case Add:
-			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", op.Column, *op.Type))
-		case Modify:
-			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", op.Column, *op.Type))
-		case Drop:
-			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", op.Column))
-		}
-		if count < total-1 {
-			statementsBuilder.WriteString(", ")
-		}
-		count++
-	}
-
-	statements := statementsBuilder.String()
-	query := fmt.Sprintf("ALTER TABLE %s %s", fullName, statements)
-	logger.Printf("Executing query: %s", query)
-
-	if err := conn.Exec(conn.ctx, query); err != nil {
-		return err
+	if err := conn.Exec(conn.ctx, statement); err != nil {
+		return fmt.Errorf("error while executing %s: %w", statement, err)
 	}
 	return nil
 }
 
 func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
-	fullName, err := GetFullTableName(schemaName, tableName)
+	statement, err := GetTruncateTableStatement(schemaName, tableName)
 	if err != nil {
 		return err
 	}
-	logger.Printf("Truncating %s", fullName)
-
-	query := fmt.Sprintf("TRUNCATE TABLE %s", fullName)
-	logger.Printf("Executing query: %s", query)
-
-	if err := conn.Exec(conn.ctx, query); err != nil {
-		return err
+	if err := conn.Exec(conn.ctx, statement); err != nil {
+		return fmt.Errorf("error while executing %s: %w", statement, err)
 	}
 	return nil
 }
@@ -188,29 +129,27 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 func (conn *ClickHouseConnection) InsertBatch(fullTableName string, rows [][]interface{}) error {
 	batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
 	if err != nil {
-		return err
+		return fmt.Errorf("error while preparing a batch for %s: %w", fullTableName, err)
 	}
 	for _, row := range rows {
 		if err := batch.Append(row...); err != nil {
-			fmt.Printf("batch append error: %v\n", err)
-			return err
+			return fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
 		}
 	}
 	if err := batch.Send(); err != nil {
-		fmt.Printf("batch send error: %v\n", err)
-		return err
+		return fmt.Errorf("error while sending a batch to %s: %w", fullTableName, err)
 	}
 	return nil
 }
 
 func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
-	fullName, err := GetFullTableName(schemaName, tableName)
+	query, err := GetColumnTypesQuery(schemaName, tableName)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := conn.Query(conn.ctx, fmt.Sprintf("SELECT * FROM %s WHERE false", fullName))
+	rows, err := conn.Query(conn.ctx, query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while executing %s: %w", query, err)
 	}
 	defer rows.Close()
 	return rows.ColumnTypes(), nil
@@ -263,6 +202,9 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 			end = len(csv)
 		}
 		batch := csv[i:end]
+		if len(batch) == 0 {
+			break
+		}
 		insertRows := make([][]interface{}, len(batch))
 		for i, csvRow := range batch {
 			insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
@@ -299,6 +241,9 @@ func (conn *ClickHouseConnection) UpdateBatch(
 			end = len(csv)
 		}
 		batch := csv[i:end]
+		if len(batch) == 0 {
+			break
+		}
 		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
 		if err != nil {
 			return err
@@ -350,6 +295,9 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 			end = len(csv)
 		}
 		batch := csv[i:end]
+		if len(batch) == 0 {
+			break
+		}
 		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
 		if err != nil {
 			return err
@@ -403,11 +351,15 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	tableName := fmt.Sprintf("fivetran_destination_test_%s", id)
 
 	// Create test table
-	err := conn.CreateTable("", tableName, MakeTableDescription([]*ColumnDefinition{
+	tableDescription, err := MakeTableDescription([]*ColumnDefinition{
 		{Name: "Col1", Type: "UInt8", IsPrimaryKey: true},
 		{Name: "Col2", Type: "String"},
 		{Name: FivetranSynced, Type: "DateTime64(9, 'UTC')"},
-	}))
+	})
+	if err != nil {
+		return err
+	}
+	err = conn.CreateTable("", tableName, tableDescription)
 	if err != nil {
 		return err
 	}
@@ -489,15 +441,4 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 	logger.Printf("Mutation check passed")
 	return nil
-}
-
-func GetFullTableName(schemaName string, tableName string) (string, error) {
-	if tableName == "" {
-		return "", fmt.Errorf("table name is empty")
-	}
-	if schemaName == "" {
-		return fmt.Sprintf("`%s`", tableName), nil
-	} else {
-		return fmt.Sprintf("`%s`.`%s`", schemaName, tableName), nil
-	}
 }

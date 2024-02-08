@@ -45,6 +45,10 @@ func TestGetFivetranDataType(t *testing.T) {
 		assert.Nil(t, decimalParams, "Decimal params for CH type %s and Fivetran type %s should be nil", arg.string, arg.DataType.String())
 		assert.Equal(t, arg.DataType, dataType, "Fivetran type for CH type %s should be %s", arg.string, arg.DataType.String())
 	}
+
+	dataType, _, err := GetFivetranDataType("Array(String)")
+	assert.ErrorContains(t, err, "can't map type Array(String) to Fivetran types")
+	assert.Equal(t, pb.DataType_UNSPECIFIED, dataType)
 }
 
 func TestGetFivetranDataTypeDecimals(t *testing.T) {
@@ -149,14 +153,14 @@ func TestGetClickHouseDataTypeDecimals(t *testing.T) {
 		Scale:     2,
 	}})
 	assert.NoError(t, err)
-	assert.Equal(t, "Decimal(4, 2)", dataType)
+	assert.Equal(t, "Nullable(Decimal(4, 2))", dataType)
 
 	dataType, err = GetClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
 		Precision: 76,
 		Scale:     76,
 	}})
 	assert.NoError(t, err)
-	assert.Equal(t, "Decimal(76, 76)", dataType)
+	assert.Equal(t, "Nullable(Decimal(76, 76))", dataType)
 
 	// Precision and scale normalization
 	dataType, err = GetClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
@@ -164,19 +168,30 @@ func TestGetClickHouseDataTypeDecimals(t *testing.T) {
 		Scale:     76,
 	}})
 	assert.NoError(t, err)
-	assert.Equal(t, "Decimal(5, 5)", dataType)
+	assert.Equal(t, "Nullable(Decimal(5, 5))", dataType)
 
 	dataType, err = GetClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
 		Precision: 200,
 		Scale:     5,
 	}})
 	assert.NoError(t, err)
-	assert.Equal(t, "Decimal(76, 5)", dataType)
+	assert.Equal(t, "Nullable(Decimal(76, 5))", dataType)
 
 	dataType, err = GetClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
 		Precision: 200,
 		Scale:     200,
 	}})
 	assert.NoError(t, err)
-	assert.Equal(t, "Decimal(76, 76)", dataType)
+	assert.Equal(t, "Nullable(Decimal(76, 76))", dataType)
+
+	// PK Decimal is not nullable
+	dataType, err = GetClickHouseDataType(&pb.Column{
+		Type:       pb.DataType_DECIMAL,
+		PrimaryKey: true,
+		Decimal: &pb.DecimalParams{
+			Precision: 4,
+			Scale:     2,
+		}})
+	assert.NoError(t, err)
+	assert.Equal(t, "Decimal(4, 2)", dataType)
 }

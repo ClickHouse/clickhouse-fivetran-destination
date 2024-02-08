@@ -1,14 +1,9 @@
 package main
 
 import (
-	pb "fivetran.com/fivetran_sdk/proto"
-)
+	"fmt"
 
-const (
-	MaxDecimalPrecision = 76
-	FivetranID          = "_fivetran_id"
-	FivetranSynced      = "_fivetran_synced"
-	FivetranDeleted     = "_fivetran_deleted"
+	pb "fivetran.com/fivetran_sdk/proto"
 )
 
 type ColumnDefinition struct {
@@ -23,7 +18,10 @@ type TableDescription struct {
 	PrimaryKeys []string
 }
 
-func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescription {
+func MakeTableDescription(columnDefinitions []*ColumnDefinition) (*TableDescription, error) {
+	if columnDefinitions == nil || len(columnDefinitions) == 0 {
+		return nil, fmt.Errorf("expected non-empty list of column definitions")
+	}
 	mapping := make(map[string]string, len(columnDefinitions))
 	var primaryKeys []string
 	for _, col := range columnDefinitions {
@@ -36,10 +34,13 @@ func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescripti
 		Mapping:     mapping,
 		Columns:     columnDefinitions,
 		PrimaryKeys: primaryKeys,
-	}
+	}, nil
 }
 
 func ToFivetranColumns(description *TableDescription) ([]*pb.Column, error) {
+	if description == nil || len(description.Columns) == 0 {
+		return nil, fmt.Errorf("no columns in table description")
+	}
 	columns := make([]*pb.Column, len(description.Columns))
 	i := 0
 	for _, col := range description.Columns {
@@ -59,6 +60,9 @@ func ToFivetranColumns(description *TableDescription) ([]*pb.Column, error) {
 }
 
 func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
+	if table == nil || len(table.Columns) == 0 {
+		return nil, fmt.Errorf("no columns in Fivetran table definition")
+	}
 	result := make([]*ColumnDefinition, len(table.Columns))
 	for i, column := range table.Columns {
 		colType, err := GetClickHouseDataType(column)
@@ -71,7 +75,7 @@ func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
 			IsPrimaryKey: column.PrimaryKey,
 		}
 	}
-	return MakeTableDescription(result), nil
+	return MakeTableDescription(result)
 }
 
 type AlterTableOpType int
@@ -89,7 +93,7 @@ type AlterTableOp struct {
 }
 
 func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*AlterTableOp {
-	var ops []*AlterTableOp
+	var ops = make([]*AlterTableOp, 0)
 
 	// what columns are missing from the "current" or have a different Data type? (add + modify)
 	for _, col := range alter.Columns {
@@ -100,8 +104,7 @@ func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*Alt
 				Column: col.Name,
 				Type:   &col.Type,
 			})
-		}
-		if curColType != col.Type {
+		} else if curColType != col.Type {
 			ops = append(ops, &AlterTableOp{
 				Op:     Modify,
 				Column: col.Name,

@@ -42,6 +42,10 @@ lint:
 go-test:
 	go test fivetran.com/fivetran_sdk/destination -count=1 -v
 
+go-test-with-coverage:
+	go test fivetran.com/fivetran_sdk/destination/... -count=1 -coverprofile cover.out
+	go tool cover -html=cover.out
+
 compile:
 	rm -rf ./out
 	go build -o ./out/clickhouse_destination ./destination

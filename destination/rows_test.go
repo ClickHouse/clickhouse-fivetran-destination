@@ -183,7 +183,8 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 			dt64 DateTime64(9, 'UTC'),
 			dt   DateTime,
 			d    Date,
-			s    String
+			s    String,
+			j    JSON
 		) ENGINE Memory`, tableName))
 	assert.NoError(t, err)
 
@@ -201,6 +202,7 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		time.Date(2023, 5, 7, 18, 22, 44, 0, time.UTC),
 		time.Date(2019, 12, 15, 0, 0, 0, 0, time.UTC),
 		"test",
+		`{"key": "value"}`,
 	)
 	assert.NoError(t, err)
 	err = batch.Send()
@@ -276,6 +278,13 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		assert.NoError(t, err, "Expected no error for idx %d with key %s", i, arg.key)
 		assert.Equal(t, arg.key, key, "Expected key to be %s for idx %d", arg.key, i)
 	}
+
+	_, err = GetDatabaseRowMappingKey(dbRow, nil)
+	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
+
+	// JSON is not supported as a primary key atm
+	_, err = GetDatabaseRowMappingKey(dbRow, []*PrimaryKeyColumn{{Name: "j", Type: pb.DataType_JSON, Index: 11}})
+	assert.ErrorContains(t, err, "can't use type *map[string]interface {} as mapping key")
 }
 
 func Guid() string {

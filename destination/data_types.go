@@ -8,6 +8,13 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
+const (
+	MaxDecimalPrecision = 76
+	FivetranID          = "_fivetran_id"
+	FivetranSynced      = "_fivetran_synced"
+	FivetranDeleted     = "_fivetran_deleted"
+)
+
 var (
 	ClickHouseDataTypes = map[string]pb.DataType{
 		"Bool":                 pb.DataType_BOOLEAN,
@@ -77,13 +84,14 @@ func GetClickHouseDataType(col *pb.Column) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown datatype %s", col.Type.String())
 	}
+	res := colType
 	if colType == "Decimal" && col.Decimal != nil {
-		return ToDecimalTypeWithParams(col.Decimal), nil
+		res = ToDecimalTypeWithParams(col.Decimal)
 	}
-	if col.PrimaryKey || colType == "JSON" {
-		return colType, nil
+	if col.PrimaryKey || res == "JSON" {
+		return res, nil
 	}
-	return fmt.Sprintf("Nullable(%s)", colType), nil
+	return fmt.Sprintf("Nullable(%s)", res), nil
 }
 
 func ToDecimalTypeWithParams(decimalParams *pb.DecimalParams) string {
