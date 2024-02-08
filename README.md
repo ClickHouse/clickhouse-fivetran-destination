@@ -1,5 +1,5 @@
 <p align="center">
-<img src=".static/fivetran_logo.svg" width="200px" align="center">
+<img src="https://assets-global.website-files.com/6130fa1501794ed4d11867ba/65a87d992f467bd9ad9795a4_blue-logo-only.svg" height="200px" align="center">
 <img src=".static/logo.svg" width="200px" align="center">
 <h1 align="center">ClickHouse Fivetran Destination</h1>
 </p>
