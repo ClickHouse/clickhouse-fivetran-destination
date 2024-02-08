@@ -1,5 +1,9 @@
 fivetran_sdk
 proto
+sdk_tests/*.csv*
 
 .idea
 .vscode
+
+.DS_Store
+out

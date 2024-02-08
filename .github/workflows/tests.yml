@@ -1,0 +1,88 @@
+name: 'tests'
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'examples/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'examples/**'
+
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        go:
+          - "1.20"
+        clickhouse:
+          - "latest"
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Checkout SDK Repo
+        run: |
+          make prepare-fivetran-sdk
+
+      - name: Install Go ${{ matrix.go }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+
+      - name: Install Protoc-Gen-Go
+        run: |
+          make install-protoc-gen-go
+
+      - name: Generate proto files
+        run: |
+          make generate-proto
+
+      # TODO: enable it later. It exceeds timeout on GitHub Actions.
+      #      - name: Run linter
+      #        run: |
+      #          make lint
+
+      - name: Start ClickHouse (version - ${{ matrix.clickhouse }}) in Docker
+        uses: isbang/compose-action@v1.5.1
+        env:
+          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+        with:
+          compose-file: 'docker-compose.ci.yml'
+          down-flags: '--volumes'
+          services: 'clickhouse'
+
+      - name: Build app docker images
+        run: |
+          make compile
+          make build-docker
+
+      - name: Start the destination app in Docker
+        uses: isbang/compose-action@v1.5.1
+        env:
+          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+        with:
+          compose-file: 'docker-compose.ci.yml'
+          down-flags: '--volumes'
+          services: 'destination'
+
+      - name: Run Go tests
+        run: |
+          make go-test
+
+      - name: Run SDK tests
+        run: |
+          make test
