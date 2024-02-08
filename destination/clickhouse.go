@@ -87,10 +87,7 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			IsPrimaryKey: isPrimaryKey == 1,
 		})
 	}
-	if len(columns) == 0 {
-		return nil, fmt.Errorf("got empty list of columns with query %s", query)
-	}
-	return MakeTableDescription(columns)
+	return MakeTableDescription(columns), nil
 }
 
 func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription) error {
@@ -351,15 +348,11 @@ func (conn *ClickHouseConnection) MutationTest() error {
 	tableName := fmt.Sprintf("fivetran_destination_test_%s", id)
 
 	// Create test table
-	tableDescription, err := MakeTableDescription([]*ColumnDefinition{
+	err := conn.CreateTable("", tableName, MakeTableDescription([]*ColumnDefinition{
 		{Name: "Col1", Type: "UInt8", IsPrimaryKey: true},
 		{Name: "Col2", Type: "String"},
 		{Name: FivetranSynced, Type: "DateTime64(9, 'UTC')"},
-	})
-	if err != nil {
-		return err
-	}
-	err = conn.CreateTable("", tableName, tableDescription)
+	}))
 	if err != nil {
 		return err
 	}

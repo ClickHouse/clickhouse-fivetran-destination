@@ -8,15 +8,14 @@ import (
 )
 
 func TestMakeTableDescription(t *testing.T) {
-	description, err := MakeTableDescription([]*ColumnDefinition{})
-	assert.ErrorContains(t, err, "expected non-empty list of column definitions")
+	description := MakeTableDescription([]*ColumnDefinition{})
+	assert.Equal(t, description, &TableDescription{})
 
-	description, err = MakeTableDescription([]*ColumnDefinition{
+	description = MakeTableDescription([]*ColumnDefinition{
 		{Name: "id", Type: "Int32", IsPrimaryKey: true},
 		{Name: "name", Type: "String", IsPrimaryKey: false},
 		{Name: "age", Type: "Int32", IsPrimaryKey: false},
 	})
-	assert.NoError(t, err)
 	assert.Equal(t, description, &TableDescription{
 		Mapping: map[string]string{"id": "Int32", "name": "String", "age": "Int32"},
 		Columns: []*ColumnDefinition{
@@ -29,7 +28,7 @@ func TestMakeTableDescription(t *testing.T) {
 }
 
 func TestToFivetranColumns(t *testing.T) {
-	description, _ := MakeTableDescription([]*ColumnDefinition{
+	description := MakeTableDescription([]*ColumnDefinition{
 		{Name: "b", Type: "Bool", IsPrimaryKey: true},
 		{Name: "i16", Type: "Int16", IsPrimaryKey: false},
 		{Name: "i32", Type: "Int32", IsPrimaryKey: false},
@@ -62,11 +61,11 @@ func TestToFivetranColumns(t *testing.T) {
 		{Name: "str", Type: pb.DataType_STRING, PrimaryKey: false},
 	})
 
-	_, err = ToFivetranColumns(nil)
-	assert.ErrorContains(t, err, "no columns in table description")
+	columns, err = ToFivetranColumns(nil)
+	assert.Equal(t, columns, []*pb.Column{})
 
-	_, err = ToFivetranColumns(&TableDescription{})
-	assert.ErrorContains(t, err, "no columns in table description")
+	columns, err = ToFivetranColumns(&TableDescription{})
+	assert.Equal(t, columns, []*pb.Column{})
 
 	_, err = ToFivetranColumns(&TableDescription{Columns: []*ColumnDefinition{{Name: "a", Type: "Array(String)"}}})
 	assert.ErrorContains(t, err, "can't map type Array(String) to Fivetran types")

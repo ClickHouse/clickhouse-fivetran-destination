@@ -18,9 +18,9 @@ type TableDescription struct {
 	PrimaryKeys []string
 }
 
-func MakeTableDescription(columnDefinitions []*ColumnDefinition) (*TableDescription, error) {
-	if columnDefinitions == nil || len(columnDefinitions) == 0 {
-		return nil, fmt.Errorf("expected non-empty list of column definitions")
+func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescription {
+	if len(columnDefinitions) == 0 {
+		return &TableDescription{}
 	}
 	mapping := make(map[string]string, len(columnDefinitions))
 	var primaryKeys []string
@@ -34,12 +34,12 @@ func MakeTableDescription(columnDefinitions []*ColumnDefinition) (*TableDescript
 		Mapping:     mapping,
 		Columns:     columnDefinitions,
 		PrimaryKeys: primaryKeys,
-	}, nil
+	}
 }
 
 func ToFivetranColumns(description *TableDescription) ([]*pb.Column, error) {
 	if description == nil || len(description.Columns) == 0 {
-		return nil, fmt.Errorf("no columns in table description")
+		return []*pb.Column{}, nil
 	}
 	columns := make([]*pb.Column, len(description.Columns))
 	i := 0
@@ -75,7 +75,7 @@ func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
 			IsPrimaryKey: column.PrimaryKey,
 		}
 	}
-	return MakeTableDescription(result)
+	return MakeTableDescription(result), nil
 }
 
 type AlterTableOpType int
