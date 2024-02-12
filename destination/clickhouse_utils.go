@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	pb "fivetran.com/fivetran_sdk/proto"
 )
 
 func GetWithDefault(configuration map[string]string, key string, default_ string) string {
@@ -108,4 +110,67 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 	}
 	return fmt.Sprintf("SELECT name, type, is_in_primary_key FROM system.columns WHERE database = '%s' AND table = '%s'",
 		schemaName, tableName), nil
+}
+
+func MergeUpdatedRows(
+	batch CSV,
+	selectRows RowsByPrimaryKeyValue,
+	pkCols []*PrimaryKeyColumn,
+	table *pb.Table,
+	nullStr string,
+	unmodifiedStr string,
+) (insertRows [][]interface{}, skipIdx map[int]bool, err error) {
+	insertRows = make([][]interface{}, len(batch))
+	skipIdx = make(map[int]bool)
+	for j, csvRow := range batch {
+		mappingKey, err := GetCSVRowMappingKey(csvRow, pkCols)
+		if err != nil {
+			return nil, nil, err
+		}
+		dbRow, exists := selectRows[mappingKey]
+		if exists {
+			updatedRow, err := CSVRowToUpdatedDBRow(csvRow, dbRow, table, nullStr, unmodifiedStr)
+			if err != nil {
+				return nil, nil, err
+			}
+			insertRows[j] = updatedRow
+		} else {
+			// Shouldn't happen
+			LogWarn(fmt.Sprintf("[MergeUpdatedRows] Row with PK mapping %s does not exist", mappingKey))
+			skipIdx[j] = true
+			continue
+		}
+	}
+	return insertRows, skipIdx, nil
+}
+
+func MergeSoftDeletedRows(
+	batch CSV,
+	selectRows RowsByPrimaryKeyValue,
+	pkCols []*PrimaryKeyColumn,
+	fivetranSyncedIdx uint,
+	fivetranDeletedIdx uint,
+) (insertRows [][]interface{}, skipIdx map[int]bool, err error) {
+	insertRows = make([][]interface{}, len(batch))
+	skipIdx = make(map[int]bool)
+	for j, csvRow := range batch {
+		mappingKey, err := GetCSVRowMappingKey(csvRow, pkCols)
+		if err != nil {
+			return nil, nil, err
+		}
+		dbRow, exists := selectRows[mappingKey]
+		if exists {
+			softDeletedRow, err := CSVRowToSoftDeletedRow(csvRow, dbRow, fivetranSyncedIdx, fivetranDeletedIdx)
+			if err != nil {
+				return nil, nil, err
+			}
+			insertRows[j] = softDeletedRow
+		} else {
+			// Shouldn't happen
+			LogWarn(fmt.Sprintf("[MergeSoftDeletedRows] Row with PK mapping %s does not exist", mappingKey))
+			skipIdx[j] = true
+			continue
+		}
+	}
+	return insertRows, skipIdx, nil
 }

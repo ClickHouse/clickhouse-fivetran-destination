@@ -367,11 +367,7 @@ func TestCSVRowToUpdatedDBRow(t *testing.T) {
 
 func TestCSVRowToSoftDeletedRowValidation(t *testing.T) {
 	csvRow := []string{"null", "null", "2022-03-05T04:45:12.123456789Z", "false"}
-	_, err := CSVRowToSoftDeletedRow(nil, nil, -1, -1)
-	assert.ErrorContains(t, err, "can't find column _fivetran_deleted with index -1 in a CSV row")
-	_, err = CSVRowToSoftDeletedRow(nil, nil, -1, 1)
-	assert.ErrorContains(t, err, "can't find column _fivetran_deleted with index 1 in a CSV row")
-	_, err = CSVRowToSoftDeletedRow(csvRow, nil, 1, 4)
+	_, err := CSVRowToSoftDeletedRow(csvRow, nil, 1, 4)
 	assert.ErrorContains(t, err, "can't find column _fivetran_deleted with index 4 in a CSV row")
 	_, err = CSVRowToSoftDeletedRow(csvRow, nil, 5, 3)
 	assert.ErrorContains(t, err, "can't find column _fivetran_synced with index 5 in a CSV row")
@@ -393,4 +389,196 @@ func TestCSVRowToSoftDeletedRow(t *testing.T) {
 		[]string{"null", "null", "2022-03-05T04:45:12.123456789Z", "false"},
 		dbRow, 3, 3)
 	assert.ErrorContains(t, err, "can't parse value false as UTC datetime for column _fivetran_synced")
+}
+
+func TestCalcCSVIndicesForParallel(t *testing.T) {
+	res, err := CalcCSVSlicesGroupsForParallel(0, 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(res))
+
+	res, err = CalcCSVSlicesGroupsForParallel(2, 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 1}, // slice 1 in group 1
+		},
+		{ // parallel group 2
+			{1, 2}, // slice 1 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(1, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 1}, // slice 1 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(2, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 2}, // slice 1 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(3, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 2}, // slice 1 in group 1
+			{2, 3}, // slice 2 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(4, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 2}, // slice 1 in group 1
+			{2, 4}, // slice 2 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(5, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 2}, // slice 1 in group 1
+			{2, 4}, // slice 2 in group 1
+		},
+		{ // parallel group 2
+			{4, 5}, // slice 1 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(500, 100, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 100},   // slice 1 in group 1
+			{100, 200}, // slice 2 in group 1
+		},
+		{ // parallel group 2
+			{200, 300}, // slice 1 in group 2
+			{300, 400}, // slice 2 in group 2
+		},
+		{ // parallel group 3
+			{400, 500}, // slice 1 in group 3
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(10000, 1000, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 1000},    // slice 1 in group 1
+			{1000, 2000}, // slice 2 in group 1
+			{2000, 3000}, // slice 3 in group 1
+			{3000, 4000}, // slice 4 in group 1
+			{4000, 5000}, // slice 5 in group 1
+		},
+		{ // parallel group 2
+			{5000, 6000},  // slice 1 in group 2
+			{6000, 7000},  // slice 2 in group 2
+			{7000, 8000},  // slice 3 in group 2
+			{8000, 9000},  // slice 4 in group 2
+			{9000, 10000}, // slice 5 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(999, 100, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 100},   // slice 1 in group 1
+			{100, 200}, // slice 2 in group 1
+			{200, 300}, // slice 3 in group 1
+			{300, 400}, // slice 4 in group 1
+			{400, 500}, // slice 5 in group 1
+
+		},
+		{ // parallel group 2
+			{500, 600}, // slice 1 in group 2
+			{600, 700}, // slice 2 in group 2
+			{700, 800}, // slice 3 in group 2
+			{800, 900}, // slice 4 in group 2
+			{900, 999}, // slice 5 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(1001, 100, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{0, 100},   // slice 1 in group 1
+			{100, 200}, // slice 2 in group 1
+			{200, 300}, // slice 3 in group 1
+			{300, 400}, // slice 4 in group 1
+			{400, 500}, // slice 5 in group 1
+
+		},
+		{ // parallel group 2
+			{500, 600},  // slice 1 in group 2
+			{600, 700},  // slice 2 in group 2
+			{700, 800},  // slice 3 in group 2
+			{800, 900},  // slice 4 in group 2
+			{900, 1000}, // slice 5 in group 2
+		},
+		{ // parallel group 3
+			{1000, 1001}, // slice 1 in group 3
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(300_000, 100_000, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // only one slice in each group
+			{0, 100_000},
+		},
+		{
+			{100_000, 200_000},
+		},
+		{
+			{200_000, 300_000},
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(299_999, 100_000, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // only one slice in each group
+			{0, 100_000},
+		},
+		{
+			{100_000, 200_000},
+		},
+		{
+			{200_000, 299_999},
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(300_001, 100_000, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // only one slice in each group
+			{0, 100_000},
+		},
+		{
+			{100_000, 200_000},
+		},
+		{
+			{200_000, 300_000},
+		},
+		{
+			{300_000, 300_001},
+		},
+	}, res)
+
+	_, err = CalcCSVSlicesGroupsForParallel(0, 0, 1)
+	assert.ErrorContains(t, err, "batchSize can't be zero")
+
+	_, err = CalcCSVSlicesGroupsForParallel(0, 1, 0)
+	assert.ErrorContains(t, err, "maxParallelOperations can't be zero")
 }

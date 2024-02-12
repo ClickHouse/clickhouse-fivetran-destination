@@ -12,7 +12,7 @@ import (
 
 type (
 	PrimaryKeyColumn struct {
-		Index int
+		Index uint
 		Name  string
 		Type  pb.DataType
 	}
@@ -80,7 +80,7 @@ func CSVRowsToSelectQuery(batch CSV, fullTableName string, pkCols []*PrimaryKeyC
 	for i, row := range batch {
 		clauseBuilder.WriteRune('(')
 		for j, col := range pkCols {
-			if col.Index > len(row) {
+			if col.Index > uint(len(row)) {
 				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
 			}
 			clauseBuilder.WriteString(QuoteValue(col.Type, row[col.Index]))
@@ -131,11 +131,11 @@ func CSVRowToUpdatedDBRow(csvRow CSVRow, dbRow []any, table *pb.Table, nullStr s
 	return updatedRow, nil
 }
 
-func CSVRowToSoftDeletedRow(csvRow CSVRow, dbRow []any, fivetranSyncedIdx int, fivetranDeletedIdx int) ([]any, error) {
-	if fivetranDeletedIdx == -1 || fivetranDeletedIdx >= len(csvRow) {
+func CSVRowToSoftDeletedRow(csvRow CSVRow, dbRow []any, fivetranSyncedIdx uint, fivetranDeletedIdx uint) ([]any, error) {
+	if fivetranDeletedIdx >= uint(len(csvRow)) {
 		return nil, fmt.Errorf("can't find column %s with index %d in a CSV row", FivetranDeleted, fivetranDeletedIdx)
 	}
-	if fivetranSyncedIdx == -1 || fivetranSyncedIdx >= len(csvRow) {
+	if fivetranSyncedIdx >= uint(len(csvRow)) {
 		return nil, fmt.Errorf("can't find column %s with index %d in a CSV row", FivetranSynced, fivetranSyncedIdx)
 	}
 	if len(dbRow) < 2 {
@@ -240,4 +240,66 @@ func ParseValue(colName string, colType pb.DataType, val string) (any, error) {
 	default:
 		return nil, fmt.Errorf("no target type for column %s with type %s", colName, colType.String())
 	}
+}
+
+type CSVSliceIndices struct {
+	Start uint
+	End   uint
+}
+
+// CalcCSVSlicesGroupsForParallel
+// For example, if `fileLen` = 40, `batchSize` = 10, and `maxParallelOperations` = 2,
+// the result will be:
+//
+//		{
+//	        // Parallel group #1
+//			{
+//				{Start: 0, End: 9},   // Slice #1 of group #1
+//				{Start: 10, End: 19}, // Slice #2 of group #1
+//			},
+//	        // Parallel group #2
+//			{
+//				{Start: 20, End: 29}, // Slice #1 of group #2
+//				{Start: 30, End: 39}, // Slice #2 of group #2
+//			},
+//		}
+//
+// See the tests for more examples.
+// See ClickHouseConnection.UpdateBatch / ClickHouseConnection.SoftDeleteBatch for usage.
+func CalcCSVSlicesGroupsForParallel(
+	fileLen uint,
+	batchSize uint,
+	maxParallelOperations uint,
+) ([][]CSVSliceIndices, error) {
+	if maxParallelOperations == 0 {
+		return nil, fmt.Errorf("maxParallelOperations can't be zero")
+	}
+	if batchSize == 0 {
+		return nil, fmt.Errorf("batchSize can't be zero")
+	}
+	if fileLen == 0 {
+		return nil, nil
+	}
+	groupsCount := uint(0)
+	if fileLen%(batchSize*maxParallelOperations) > 0 {
+		groupsCount = (fileLen / batchSize / maxParallelOperations) + 1
+	} else {
+		groupsCount = fileLen / batchSize / maxParallelOperations
+	}
+	groups := make([][]CSVSliceIndices, groupsCount)
+	for i := uint(0); i < groupsCount; i++ {
+		groups[i] = make([]CSVSliceIndices, 0, maxParallelOperations)
+		for j := uint(0); j < maxParallelOperations; j++ {
+			start := i*maxParallelOperations*batchSize + j*batchSize
+			if start >= fileLen {
+				break
+			}
+			end := start + batchSize
+			if end > fileLen {
+				end = fileLen
+			}
+			groups[i] = append(groups[i], CSVSliceIndices{Start: start, End: end})
+		}
+	}
+	return groups, nil
 }
