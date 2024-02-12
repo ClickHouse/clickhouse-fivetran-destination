@@ -7,13 +7,17 @@ on:
       - main
     paths-ignore:
       - '**/*.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
       - 'LICENSE'
-      - 'examples/**'
+      - '.static/**'
   pull_request:
     paths-ignore:
       - '**/*.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
       - 'LICENSE'
-      - 'examples/**'
+      - '.static/**'
 
   schedule:
     - cron: '0 9 * * *'
