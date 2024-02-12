@@ -6,9 +6,6 @@ prepare-fivetran-sdk:
 	git clone --depth 1 https://github.com/fivetran/fivetran_sdk.git fivetran_sdk
 	mkdir -p proto
 
-start-docker:
-	docker-compose up clickhouse -d
-
 install-protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
@@ -25,6 +22,9 @@ generate-proto:
         --go-grpc_opt=paths=source_relative \
         common.proto \
         destination_sdk.proto
+
+start-docker:
+	docker-compose up clickhouse -d
 
 test:
 	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123
@@ -51,8 +51,8 @@ compile:
 	go build -o ./out/clickhouse_destination ./destination
 	chmod a+x ./out/clickhouse_destination
 
-build-docker:
-	docker compose -f docker-compose.ci.yml build --no-cache
+build-docker-ci:
+	docker compose -f docker-compose.ci.yml build destination --no-cache
 
 run:
 	go run destination/main.go

@@ -68,7 +68,7 @@ jobs:
       - name: Build app docker images
         run: |
           make compile
-          make build-docker
+          make build-docker-ci
 
       - name: Start the destination app in Docker
         uses: isbang/compose-action@v1.5.1

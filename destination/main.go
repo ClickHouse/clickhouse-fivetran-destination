@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-var port = flag.Int("port", 50052, "Listen port")
+var port = flag.Uint("port", 50052, "Listen port")
 var isDevelopment = flag.Bool("dev", false, "Whether the server is running in development mode, mainly for pretty logging")
 
 var replaceBatchSize = flag.Uint("replace-batch-size", 100_000, "Batch size for WriteBatch/Replace operations")

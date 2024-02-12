@@ -320,8 +320,9 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	for _, group := range groups {
 		eg := errgroup.Group{}
 		for _, slice := range group {
+			s := slice
 			eg.Go(func() error {
-				batch := csv[slice.Start:slice.End]
+				batch := csv[s.Start:s.End]
 				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
@@ -382,8 +383,9 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	for _, group := range groups {
 		eg := errgroup.Group{}
 		for _, slice := range group {
+			s := slice
 			eg.Go(func() error {
-				batch := csv[slice.Start:slice.End]
+				batch := csv[s.Start:s.End]
 				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
