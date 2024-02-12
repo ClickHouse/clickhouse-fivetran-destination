@@ -6,7 +6,8 @@
 
 ## Install Protoc and Go plugin
 
-Download the protocol buffer compiler suitable for your platform from the [releases page](https://github.com/protocolbuffers/protobuf/releases/tag/v25.2) and install it to `$HOME/.local`.
+Download the protocol buffer compiler suitable for your platform from
+the [releases page](https://github.com/protocolbuffers/protobuf/releases/tag/v25.2) and install it to `$HOME/.local`.
 
 For example (Linux x86_64):
 
@@ -22,7 +23,9 @@ make install-protoc-gen-go
 
 ## Generate Go code from the Protobuf definitions
 
-Clone the Fivetran SDK repo first. It contains the [protobuf definitions](https://github.com/fivetran/fivetran_sdk/blob/main/destination_sdk.proto) for the destination GRPC server.
+Clone the Fivetran SDK repo first. It contains
+the [protobuf definitions](https://github.com/fivetran/fivetran_sdk/blob/main/destination_sdk.proto) for the destination
+GRPC server.
 
 ```bash
 make prepare-fivetran-sdk
@@ -68,7 +71,8 @@ Run a particular input file, for example, `input_3.json`:
 TEST_ARGS=--input-file=input_3.json make test
 ```
 
-See Fivetran SDK tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester) for more details.
+See Fivetran SDK tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester) for
+more details.
 
 ## Lint
 
