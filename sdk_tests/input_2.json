@@ -1,22 +1,9 @@
 {
   "create_table": {
-    "foobar": {
+    "input2": {
       "columns": {
         "id": "INT",
-        "amount": "DOUBLE",
-        "desc": "STRING"
-      },
-      "primary_key": [
-        "id"
-      ]
-    }
-  },
-  "alter_table": {
-    "foobar": {
-      "columns": {
-        "id": "INT",
-        "amount": "FLOAT",
-        "desc": "STRING"
+        "name": "STRING"
       },
       "primary_key": [
         "id"
@@ -24,61 +11,64 @@
     }
   },
   "describe_table": [
-    "foobar"
+    "input2"
   ],
   "ops": [
     {
       "upsert": {
-        "foobar": [
+        "input2": [
           {
             "id": 1,
-            "amount": 100.45,
-            "desc": null
+            "name": null
           },
           {
             "id": 2,
-            "amount": 150.33,
-            "desc": "two"
+            "name": "two"
           },
           {
             "id": 3,
-            "amount": 777.777,
-            "desc": "seven-seven-seven"
+            "name": "three"
+          },
+          {
+            "id": 4,
+            "name": "four"
+          },
+          {
+            "id": 5,
+            "name": null
           }
         ]
       }
     },
     {
       "update": {
-        "foobar": [
+        "input2": [
           {
             "id": 1,
-            "amount": 200
-          }
-        ]
-      }
-    },
-    {
-      "upsert": {
-        "foobar": [
-          {
-            "id": 2,
-            "amount": 33.345,
-            "desc": "three-three"
+            "name": "1111"
           },
           {
             "id": 4,
-            "amount": 50,
-            "desc": "fifty"
+            "name": "four-four"
+          },
+          {
+            "id": 5,
+            "name": "it's 5"
           }
         ]
       }
     },
     {
       "delete": {
-        "foobar": [
+        "input2": [
           {
             "id": 3
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 5
           }
         ]
       }

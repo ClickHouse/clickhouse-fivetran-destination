@@ -7,3 +7,4 @@ sdk_tests/*.csv*
 
 .DS_Store
 out
+cover.out

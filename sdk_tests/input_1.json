@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "transaction": {
+    "input1": {
       "columns": {
         "id": "INT",
         "amount": "DOUBLE",
@@ -9,21 +9,10 @@
       "primary_key": [
         "id"
       ]
-    },
-    "campaign": {
-      "columns": {
-        "name": "STRING",
-        "num": {
-          "type": "DECIMAL",
-          "precision": 7,
-          "scale": 6
-        }
-      },
-      "primary_key": []
     }
   },
   "alter_table": {
-    "transaction": {
+    "input1": {
       "columns": {
         "id": "INT",
         "amount": "FLOAT",
@@ -35,17 +24,12 @@
     }
   },
   "describe_table": [
-    "transaction"
+    "input1"
   ],
   "ops": [
     {
-      "truncate": [
-        "transaction"
-      ]
-    },
-    {
       "upsert": {
-        "transaction": [
+        "input1": [
           {
             "id": 1,
             "amount": 100.45,
@@ -55,25 +39,18 @@
             "id": 2,
             "amount": 150.33,
             "desc": "two"
-          }
-        ],
-        "campaign": [
-          {
-            "_fivetran_id": "abc-123-xyz",
-            "name": "Christmas",
-            "num": 100.23
           },
           {
-            "_fivetran_id": "vbn-543-hjk",
-            "name": "New Year",
-            "num": 200.56
+            "id": 3,
+            "amount": 777.777,
+            "desc": "seven-seven-seven"
           }
         ]
       }
     },
     {
       "update": {
-        "transaction": [
+        "input1": [
           {
             "id": 1,
             "amount": 200
@@ -83,51 +60,28 @@
     },
     {
       "upsert": {
-        "transaction": [
+        "input1": [
           {
-            "id": 10,
-            "amount": 100,
-            "desc": "thee"
+            "id": 2,
+            "amount": 33.345,
+            "desc": "three-three"
           },
           {
-            "id": 20,
+            "id": 4,
             "amount": 50,
-            "desc": "mone"
-          }
-        ],
-        "campaign": [
-          {
-            "_fivetran_id": "dfg-890-lkj",
-            "name": "Christmas 2",
-            "num": 400.32
+            "desc": "fifty"
           }
         ]
       }
     },
     {
       "delete": {
-        "transaction": [
+        "input1": [
           {
             "id": 3
-          },
-          {
-            "id": 4
-          }
-        ],
-        "campaign": [
-          {
-            "_fivetran_id": "abc-123-xyz"
-          },
-          {
-            "_fivetran_id": "dfg-890-lkj"
           }
         ]
       }
-    },
-    {
-      "truncate": [
-        "transaction"
-      ]
     }
   ]
 }

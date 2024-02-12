@@ -40,10 +40,10 @@ lint:
 	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
 
 go-test:
-	go test fivetran.com/fivetran_sdk/destination -count=1 -v
+	go test fivetran.com/fivetran_sdk/destination -count=1 -v -replace-batch-size=2 -update-batch-size=2 delete-batch-size=2
 
 go-test-with-coverage:
-	go test fivetran.com/fivetran_sdk/destination/... -count=1 -coverprofile cover.out
+	go test fivetran.com/fivetran_sdk/destination/... -count=1 -v -coverprofile cover.out
 	go tool cover -html=cover.out
 
 compile:
@@ -57,4 +57,4 @@ build-docker-ci:
 run:
 	go run destination/main.go
 
-.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run test go-test compile
+.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run lint test go-test go-test-with-coverage compile clickhouse-query-for-tests build-docker-ci
