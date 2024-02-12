@@ -42,20 +42,22 @@ the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk).
 or [FixedString(N)](https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring) types), the coercion to the
 STRING type is currently not supported by Fivetran.
 
+NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`. `JSON` type
+columns, being non-nullable by design, will use an empty object `{}` to represent `NULL` values.
+
 ## Destination table
 
 The destination app will create a ClickHouse table
 using [ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
-engine versioned by `_fivetran_synced` column. Every column except primary keys and Fivetran metadata columns will be of
-type `Nullable(T)`.
+engine versioned by `_fivetran_synced` column.
 
 ### Single primary key in the source table
 
-For example, if the source table has primary key column `id` (Integer) and a regular column `name` (String), the
-destination table will look like this:
+For example, source table `users` has primary key column `id` (Integer) and a regular column `name` (String). The
+destination table will be defined like this:
 
 ```sql
-CREATE TABLE example
+CREATE TABLE `users`
 (
     `id`                Int32,
     `name`              Nullable(String),
@@ -73,11 +75,11 @@ In this case, the `id` column is chosen as a table sorting key.
 If the source table has multiple primary keys, they will be used in order of their appearance in the Fivetran table
 definition.
 
-For example, with primary key columns `id` (Integer) and `name` (String), and an
-additional regular column `description` (String), the destination table will look as follows:
+For example, there is a source table `items` with primary key columns `id` (Integer) and `name` (String), plus an
+additional regular column `description` (String). The destination table will be defined as follows:
 
 ```sql
-CREATE TABLE example
+CREATE TABLE `items`
 (
     `id`                Int32,
     `name`              String,
