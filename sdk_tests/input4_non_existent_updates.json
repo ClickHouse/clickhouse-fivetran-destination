@@ -1,0 +1,54 @@
+{
+  "create_table": {
+    "input4": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "input4"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "input4": [
+          {
+            "id": 1,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "input4": [
+          {
+            "id": 2,
+            "name": "four-four"
+          },
+          {
+            "id": 3,
+            "name": "it's 5"
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "input4": [
+          {
+            "id": 4
+          },
+          {
+            "id": 5
+          }
+        ]
+      }
+    }
+  ]
+}

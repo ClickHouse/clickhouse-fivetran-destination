@@ -1,0 +1,33 @@
+{
+  "describe_table": [
+    "input5"
+  ],
+  "create_table": {
+    "input5": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "ops": [
+    {
+      "upsert": {
+        "input5": [
+          {
+            "id": 1,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "truncate": [
+        "input5"
+      ]
+    }
+  ]
+}

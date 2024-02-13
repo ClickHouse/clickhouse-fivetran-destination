@@ -1,14 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
-	"errors"
 	"fmt"
 
 	pb "fivetran.com/fivetran_sdk/proto"
-	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
 const ConnectionTest = "connection"
@@ -60,12 +56,10 @@ func (s *server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 
 	tableDescription, err := conn.DescribeTable(in.SchemaName, in.TableName)
 	if err != nil {
-		chErr := &clickhouse.Exception{}
-		// Code 60 => UNKNOWN_TABLE
-		if errors.As(err, &chErr) && chErr.Code == 60 {
-			return NotFoundDescribeTableResponse(), nil
-		}
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
+	}
+	if tableDescription == nil || len(tableDescription.Columns) == 0 {
+		return NotFoundDescribeTableResponse(), nil
 	}
 
 	columns, err := ToFivetranColumns(tableDescription)
@@ -207,9 +201,9 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	}
 
 	for _, replaceFile := range in.ReplaceFiles {
-		csvData, failure := ReadAndDecryptWriteBatchFile(in.SchemaName, in.Table.Name, replaceFile, in.Keys, compression, encryption)
-		if failure != nil {
-			return failure, nil
+		csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
+		if err != nil {
+			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 		err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, *replaceBatchSize)
 		if err != nil {
@@ -217,9 +211,9 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		}
 	}
 	for _, updateFile := range in.UpdateFiles {
-		csvData, failure := ReadAndDecryptWriteBatchFile(in.SchemaName, in.Table.Name, updateFile, in.Keys, compression, encryption)
-		if failure != nil {
-			return failure, nil
+		csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
+		if err != nil {
+			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 		err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, nullStr, unmodifiedStr, *updateBatchSize, *maxParallelUpdates)
 		if err != nil {
@@ -227,9 +221,9 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		}
 	}
 	for _, deleteFile := range in.DeleteFiles {
-		csvData, failure := ReadAndDecryptWriteBatchFile(in.SchemaName, in.Table.Name, deleteFile, in.Keys, compression, encryption)
-		if failure != nil {
-			return failure, nil
+		csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
+		if err != nil {
+			return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 		}
 		err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, uint(fivetranSyncedIdx), uint(fivetranDeletedIdx), *deleteBatchSize, *maxParallelUpdates)
 		if err != nil {
@@ -242,37 +236,4 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 			Success: true,
 		},
 	}, nil
-}
-
-func ReadAndDecryptWriteBatchFile(
-	schemaName string,
-	tableName string,
-	fileName string,
-	keys map[string][]byte,
-	compression pb.Compression,
-	encryption pb.Encryption,
-) (CSV, *pb.WriteBatchResponse) {
-	readRes := ReadCSVFile(fileName, keys, compression, encryption)
-	switch readRes.Type {
-	case KeyNotFound:
-		return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("key for file %s not found", fileName))
-	case FileNotFound:
-		return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s not found", fileName))
-	case FailedToDecompress:
-		return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decompress file %s, cause: %w", fileName, *readRes.Error))
-	case FailedToDecrypt:
-		return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("failed to decrypt file %s, cause: %w", fileName, *readRes.Error))
-	case Success:
-		csvReader := csv.NewReader(bytes.NewReader(*readRes.Data))
-		records, err := csvReader.ReadAll()
-		if err != nil {
-			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("file %s is not a valid CSV, cause: %w", fileName, *readRes.Error))
-		}
-		if len(records) < 2 {
-			return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("expected to have more than 1 line in file %s", fileName))
-		}
-		return records[1:], nil // skip the column names
-	default:
-		return nil, FailedWriteBatchResponse(tableName, schemaName, fmt.Errorf("unexpected read CSV file result type: %d", readRes.Type))
-	}
 }

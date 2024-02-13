@@ -13,13 +13,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// See https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester for the SDK tester docs
-// See Makefile:test for the SDK tester run command
-// See sdk_tests/*.json for the input files
+// See also:
+// - https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester for the SDK tester docs
+// - Makefile:test for the SDK tester run command
+// - sdk_tests/*.json for the input files
 
 func TestSDKInputs(t *testing.T) {
 	go main()
 	time.Sleep(1 * time.Second)
+
+	largeTableName := "input_large_file"
+	expectedCSV := generateAndWriteInputFile(t, largeTableName, 150_000)
+	runSDKTestCommand(t, fmt.Sprintf("%s.json", largeTableName))
+	assertTableRowsWithPK(t, largeTableName, expectedCSV)
+	assertTableColumns(t, largeTableName,
+		"\"id\",\"Int64\"\n"+
+			"\"data\",\"Nullable(String)\"\n"+
+			"\"created_at\",\"Nullable(DateTime)\"\n"+
+			"\"_fivetran_synced\",\"DateTime64(9, 'UTC')\"\n"+
+			"\"_fivetran_deleted\",\"Bool\"\n")
 
 	runSDKTestCommand(t, "input1_upsert_after_alter.json")
 	assertTableRowsWithPK(t, "input1",
@@ -69,16 +81,23 @@ func TestSDKInputs(t *testing.T) {
 			"\"_fivetran_deleted\",\"Bool\"\n"+
 			"\"_fivetran_id\",\"String\"\n")
 
-	largeTableName := "input4_large_file"
-	expectedCSV := generateAndWriteInputFile(t, largeTableName, 150_000)
-	runSDKTestCommand(t, fmt.Sprintf("%s.json", largeTableName))
-	assertTableRowsWithPK(t, largeTableName, expectedCSV)
-	assertTableColumns(t, largeTableName,
-		"\"id\",\"Int64\"\n"+
-			"\"data\",\"Nullable(String)\"\n"+
-			"\"created_at\",\"Nullable(DateTime)\"\n"+
+	runSDKTestCommand(t, "input4_non_existent_updates.json")
+	assertTableRowsWithPK(t, "input4", "1,\\N,false\n")
+	assertTableColumns(t, "input4",
+		"\"id\",\"Int32\"\n"+
+			"\"name\",\"Nullable(String)\"\n"+
 			"\"_fivetran_synced\",\"DateTime64(9, 'UTC')\"\n"+
 			"\"_fivetran_deleted\",\"Bool\"\n")
+
+	runSDKTestCommand(t, "input5_truncate.json")
+	assertTableRowsWithPK(t, "input5", "")
+	assertTableColumns(t, "input5",
+		"\"id\",\"Int32\"\n"+
+			"\"name\",\"Nullable(String)\"\n"+
+			"\"_fivetran_synced\",\"DateTime64(9, 'UTC')\"\n"+
+			"\"_fivetran_deleted\",\"Bool\"\n")
+
+	runSDKTestCommand(t, "input6_table_not_found.json") // at least no SDK tester errors
 }
 
 func runSDKTestCommand(t *testing.T, inputFileName string) {
