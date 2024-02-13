@@ -88,17 +88,26 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 		var (
 			colName      string
 			colType      string
+			colComment   string
 			isPrimaryKey uint8
+			precision    *uint64
+			scale        *uint64
 		)
 		var columns []*ColumnDefinition
 		for rows.Next() {
-			if err = rows.Scan(&colName, &colType, &isPrimaryKey); err != nil {
+			if err = rows.Scan(&colName, &colType, &colComment, &isPrimaryKey, &precision, &scale); err != nil {
 				return nil, err
 			}
+			var decimalParams *DecimalParams = nil
+			if precision != nil && scale != nil {
+				decimalParams = &DecimalParams{Precision: *precision, Scale: *scale}
+			}
 			columns = append(columns, &ColumnDefinition{
-				Name:         colName,
-				Type:         colType,
-				IsPrimaryKey: isPrimaryKey == 1,
+				Name:          colName,
+				Type:          colType,
+				Comment:       colComment,
+				IsPrimaryKey:  isPrimaryKey == 1,
+				DecimalParams: decimalParams,
 			})
 		}
 		return MakeTableDescription(columns), nil

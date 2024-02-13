@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -13,7 +12,14 @@ const (
 	FivetranID          = "_fivetran_id"
 	FivetranSynced      = "_fivetran_synced"
 	FivetranDeleted     = "_fivetran_deleted"
+	FivetranBinary      = "BINARY"
+	FivetranXML         = "XML"
 )
+
+type ClickHouseType struct {
+	Type    string
+	Comment string
+}
 
 var (
 	ClickHouseDataTypes = map[string]pb.DataType{
@@ -30,40 +36,65 @@ var (
 		"JSON":                 pb.DataType_JSON,
 		"Object('json')":       pb.DataType_JSON,
 	}
-	FivetranDataTypes = map[pb.DataType]string{
-		pb.DataType_BOOLEAN:        "Bool",
-		pb.DataType_SHORT:          "Int16",
-		pb.DataType_INT:            "Int32",
-		pb.DataType_LONG:           "Int64",
-		pb.DataType_FLOAT:          "Float32",
-		pb.DataType_DOUBLE:         "Float64",
-		pb.DataType_DECIMAL:        "Decimal",
-		pb.DataType_STRING:         "String",
-		pb.DataType_NAIVE_DATE:     "Date",
-		pb.DataType_NAIVE_DATETIME: "DateTime",
-		pb.DataType_UTC_DATETIME:   "DateTime64(9, 'UTC')",
-		pb.DataType_JSON:           "JSON",
-		// Unclear CH mapping, may be removed
-		pb.DataType_BINARY: "String",
-		pb.DataType_XML:    "String",
+	FivetranDataTypes = map[pb.DataType]ClickHouseType{
+		pb.DataType_BOOLEAN:        {Type: "Bool"},
+		pb.DataType_SHORT:          {Type: "Int16"},
+		pb.DataType_INT:            {Type: "Int32"},
+		pb.DataType_LONG:           {Type: "Int64"},
+		pb.DataType_FLOAT:          {Type: "Float32"},
+		pb.DataType_DOUBLE:         {Type: "Float64"},
+		pb.DataType_DECIMAL:        {Type: "Decimal"},
+		pb.DataType_NAIVE_DATE:     {Type: "Date"},
+		pb.DataType_NAIVE_DATETIME: {Type: "DateTime"},
+		pb.DataType_UTC_DATETIME:   {Type: "DateTime64(9, 'UTC')"},
+		pb.DataType_STRING:         {Type: "String"},
+		pb.DataType_JSON:           {Type: "JSON"},
 	}
-	FivetranMetadataColumnTypes = map[string]string{
-		FivetranID:      "String",
-		FivetranSynced:  "DateTime64(9, 'UTC')",
-		FivetranDeleted: "Bool",
+	// FivetranDataTypesWithComments
+	// Fivetran STRING, XML, BINARY all are valid ClickHouse String types,
+	// and by default we don't have a way to get the original Fivetran type from just a ClickHouse String.
+	// So we add comments to the ClickHouse types (and columns, using COMMENT clause) to be able to distinguish them.
+	FivetranDataTypesWithComments = map[pb.DataType]ClickHouseType{
+		pb.DataType_BINARY: {Type: "String", Comment: FivetranBinary},
+		pb.DataType_XML:    {Type: "String", Comment: FivetranXML},
+	}
+	// ColumnCommentToFivetranType
+	// Mapping back to Fivetran types from FivetranDataTypesWithComments(ClickHouseType.Comment)
+	ColumnCommentToFivetranType = map[string]pb.DataType{
+		FivetranBinary: pb.DataType_BINARY,
+		FivetranXML:    pb.DataType_XML,
+	}
+	// FivetranMetadataColumnTypes
+	// Fivetran metadata columns have known constant names and types, and not Nullable.
+	FivetranMetadataColumnTypes = map[string]ClickHouseType{
+		FivetranID:      {Type: "String"},
+		FivetranSynced:  {Type: "DateTime64(9, 'UTC')"},
+		FivetranDeleted: {Type: "Bool"},
 	}
 )
 
-func GetFivetranDataType(colType string) (pb.DataType, *pb.DecimalParams, error) {
-	colType = RemoveNullable(colType)
-	decimalParams, err := GetDecimalParams(colType)
-	if err != nil {
-		return pb.DataType_UNSPECIFIED, nil, err
+// GetFivetranDataType
+// Maps ClickHouse data types to Fivetran data types, taking Nullable into consideration.
+// NB: STRING, XML, BINARY are all valid CH String types, we can only distinguish them by the column comment.
+func GetFivetranDataType(col *ColumnDefinition) (pb.DataType, *pb.DecimalParams, error) {
+	dataType, ok := ColumnCommentToFivetranType[col.Comment]
+	if ok {
+		return dataType, nil, nil
+	}
+	colType := RemoveNullable(col.Type)
+
+	var decimalParams *pb.DecimalParams = nil
+	if col.DecimalParams != nil {
+		decimalParams = &pb.DecimalParams{
+			Precision: uint32(col.DecimalParams.Precision),
+			Scale:     uint32(col.DecimalParams.Scale),
+		}
 	}
 	if decimalParams != nil {
 		return pb.DataType_DECIMAL, decimalParams, nil
 	}
-	dataType, ok := ClickHouseDataTypes[colType]
+
+	dataType, ok = ClickHouseDataTypes[colType]
 	if !ok { // shouldn't happen if the tables are created by the connector
 		return pb.DataType_UNSPECIFIED, nil, fmt.Errorf("can't map type %s to Fivetran types", colType)
 	}
@@ -75,31 +106,37 @@ func GetFivetranDataType(colType string) (pb.DataType, *pb.DecimalParams, error)
 // - JSON fields are not Nullable by ClickHouse design
 // - PrimaryKey fields are not Nullable (assumption)
 // - all other fields are Nullable by default
-func GetClickHouseDataType(col *pb.Column) (string, error) {
-	metaColType, ok := FivetranMetadataColumnTypes[col.Name]
+func GetClickHouseDataType(col *pb.Column) (ClickHouseType, error) {
+	metaType, ok := FivetranMetadataColumnTypes[col.Name]
 	if ok {
-		return metaColType, nil
+		return metaType, nil
 	}
-	colType, ok := FivetranDataTypes[col.Type]
+	chType, ok := FivetranDataTypes[col.Type]
 	if !ok {
-		return "", fmt.Errorf("unknown datatype %s", col.Type.String())
+		chType, ok = FivetranDataTypesWithComments[col.Type]
+		if !ok {
+			return ClickHouseType{}, fmt.Errorf("unknown datatype %s", col.Type.String())
+		}
 	}
-	res := colType
-	if colType == "Decimal" && col.Decimal != nil {
-		res = ToDecimalTypeWithParams(col.Decimal)
+	if chType.Type == "Decimal" && col.Decimal != nil {
+		chType.Type = ToDecimalTypeWithParams(col.Decimal)
 	}
-	if col.PrimaryKey || res == "JSON" {
-		return res, nil
+	if col.PrimaryKey || chType.Type == "JSON" {
+		return chType, nil
 	}
-	return fmt.Sprintf("Nullable(%s)", res), nil
+	chType.Type = fmt.Sprintf("Nullable(%s)", chType.Type)
+	return chType, nil
 }
 
+// ToDecimalTypeWithParams
+// If Fivetran decimal precision or scale is greater than the maximum allowed by ClickHouse (P = 76), we set 76 instead.
+// If Fivetran scale is greater than its precision, we set the scale equal to the precision.
+// See precision and scale valid ranges: https://clickhouse.com/docs/en/sql-reference/data-types/decimal
 func ToDecimalTypeWithParams(decimalParams *pb.DecimalParams) string {
 	var (
 		precision uint32
 		scale     uint32
 	)
-	// See precision and scale valid ranges: https://clickhouse.com/docs/en/sql-reference/data-types/decimal
 	if decimalParams.Precision > MaxDecimalPrecision {
 		precision = MaxDecimalPrecision
 	} else {
@@ -113,37 +150,11 @@ func ToDecimalTypeWithParams(decimalParams *pb.DecimalParams) string {
 	return fmt.Sprintf("Decimal(%d, %d)", precision, scale)
 }
 
+// RemoveNullable
+// Since LowCardinality is never applied by the destination app, we only need to handle Nullable.
 func RemoveNullable(colType string) string {
 	if strings.HasPrefix(colType, "Nullable") {
 		colType = colType[9 : len(colType)-1]
 	}
 	return colType
-}
-
-func GetDecimalParams(dataType string) (*pb.DecimalParams, error) {
-	if strings.HasPrefix(dataType, "Decimal(") {
-		decimalParams := strings.Split(dataType[8:len(dataType)-1], ",")
-		if len(decimalParams) != 2 {
-			return nil, fmt.Errorf("invalid decimal type %s, expected two parameters - precision and scale", dataType)
-		}
-		precision, err := strconv.Atoi(strings.TrimSpace(decimalParams[0]))
-		if err != nil {
-			return nil, fmt.Errorf("can't parse precision: %w", err)
-		}
-		if precision < 0 {
-			return nil, fmt.Errorf("invalid decimal type %s: precision can't be negative", dataType)
-		}
-		scale, err := strconv.Atoi(strings.TrimSpace(decimalParams[1]))
-		if err != nil {
-			return nil, fmt.Errorf("can't parse scale: %w", err)
-		}
-		if scale < 0 {
-			return nil, fmt.Errorf("invalid decimal type %s: scale can't be negative", dataType)
-		}
-		return &pb.DecimalParams{
-			Precision: uint32(precision),
-			Scale:     uint32(scale),
-		}, nil
-	}
-	return nil, nil
 }

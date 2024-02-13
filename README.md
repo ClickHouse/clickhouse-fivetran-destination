@@ -30,17 +30,16 @@ the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk).
 | NAIVE_DATE     | [Date](https://clickhouse.com/docs/en/sql-reference/data-types/date)                       |
 | NAIVE_DATETIME | [DateTime](https://clickhouse.com/docs/en/sql-reference/data-types/datetime)               |
 | UTC_DATETIME   | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) |
-| XML            | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
 | STRING         | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
-| JSON           | [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) &ast;                 |
-| BINARY         | Not supported &ast;&ast;                                                                   |
+| BINARY         | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
+| XML            | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
+| JSON           | [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) &ast;&ast;            |
 
-&ast; The destination app automatically uses the required `allow_experimental_object_type = 1` setting.
+&ast; ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used to represent
+an arbitrary set of bytes. The destination app will add a column comment to `BINARY` and `XML` types to indicate
+the original data type.
 
-&ast;&ast; Though ClickHouse supports binary data
-(using [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)
-or [FixedString(N)](https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring) types), the coercion to the
-STRING type is currently not supported by Fivetran.
+&ast;&ast; The destination app automatically uses the required `allow_experimental_object_type = 1` setting.
 
 NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`. `JSON` type
 columns, being non-nullable by design, will use an empty object `{}` to represent `NULL` values.

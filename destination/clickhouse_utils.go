@@ -40,9 +40,21 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*AlterTab
 	for _, op := range ops {
 		switch op.Op {
 		case Add:
+			if op.Type == nil {
+				return "", fmt.Errorf("type for column %s is not specified", op.Column)
+			}
 			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", op.Column, *op.Type))
+			if op.Comment != nil && *op.Comment != "" {
+				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
+			}
 		case Modify:
+			if op.Type == nil {
+				return "", fmt.Errorf("type for column %s is not specified", op.Column)
+			}
 			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", op.Column, *op.Type))
+			if op.Comment != nil && *op.Comment != "" {
+				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
+			}
 		case Drop:
 			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", op.Column))
 		}
@@ -70,6 +82,9 @@ func GetCreateTableStatement(schemaName string, tableName string, tableDescripti
 	count := 0
 	for _, col := range tableDescription.Columns {
 		columnsBuilder.WriteString(fmt.Sprintf("%s %s", col.Name, col.Type))
+		if col.Comment != "" {
+			columnsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", col.Comment))
+		}
 		if col.IsPrimaryKey {
 			orderByCols = append(orderByCols, col.Name)
 		}
@@ -108,7 +123,7 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 	if tableName == "" {
 		return "", fmt.Errorf("table name is empty")
 	}
-	return fmt.Sprintf("SELECT name, type, is_in_primary_key FROM system.columns WHERE database = '%s' AND table = '%s'",
+	return fmt.Sprintf("SELECT name, type, comment, is_in_primary_key, numeric_precision, numeric_scale FROM system.columns WHERE database = '%s' AND table = '%s'",
 		schemaName, tableName), nil
 }
 

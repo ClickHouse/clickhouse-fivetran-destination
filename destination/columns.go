@@ -6,10 +6,17 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
+type DecimalParams struct {
+	Precision uint64
+	Scale     uint64
+}
+
 type ColumnDefinition struct {
-	Name         string
-	Type         string
-	IsPrimaryKey bool
+	Name          string
+	Type          string
+	Comment       string
+	IsPrimaryKey  bool
+	DecimalParams *DecimalParams // only for Decimal types, nil otherwise
 }
 
 type TableDescription struct {
@@ -44,7 +51,7 @@ func ToFivetranColumns(description *TableDescription) ([]*pb.Column, error) {
 	columns := make([]*pb.Column, len(description.Columns))
 	i := 0
 	for _, col := range description.Columns {
-		fivetranType, decimalParams, err := GetFivetranDataType(col.Type)
+		fivetranType, decimalParams, err := GetFivetranDataType(col)
 		if err != nil {
 			return nil, err
 		}
@@ -65,13 +72,14 @@ func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
 	}
 	result := make([]*ColumnDefinition, len(table.Columns))
 	for i, column := range table.Columns {
-		colType, err := GetClickHouseDataType(column)
+		chType, err := GetClickHouseDataType(column)
 		if err != nil {
 			return nil, err
 		}
 		result[i] = &ColumnDefinition{
 			Name:         column.Name,
-			Type:         colType,
+			Type:         chType.Type,
+			Comment:      chType.Comment,
 			IsPrimaryKey: column.PrimaryKey,
 		}
 	}
@@ -87,9 +95,10 @@ const (
 )
 
 type AlterTableOp struct {
-	Op     AlterTableOpType
-	Column string
-	Type   *string // not needed for Drop
+	Op      AlterTableOpType
+	Column  string
+	Type    *string // not needed for Drop
+	Comment *string // not needed for Drop
 }
 
 func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*AlterTableOp {
@@ -100,15 +109,17 @@ func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*Alt
 		curColType, ok := current.Mapping[col.Name]
 		if !ok {
 			ops = append(ops, &AlterTableOp{
-				Op:     Add,
-				Column: col.Name,
-				Type:   &col.Type,
+				Op:      Add,
+				Column:  col.Name,
+				Type:    &col.Type,
+				Comment: &col.Comment,
 			})
 		} else if curColType != col.Type {
 			ops = append(ops, &AlterTableOp{
-				Op:     Modify,
-				Column: col.Name,
-				Type:   &col.Type,
+				Op:      Modify,
+				Column:  col.Name,
+				Type:    &col.Type,
+				Comment: &col.Comment,
 			})
 		}
 	}

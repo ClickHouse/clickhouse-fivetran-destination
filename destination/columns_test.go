@@ -35,7 +35,7 @@ func TestToFivetranColumns(t *testing.T) {
 		{Name: "i64", Type: "Int64", IsPrimaryKey: false},
 		{Name: "f32", Type: "Float32", IsPrimaryKey: false},
 		{Name: "f64", Type: "Float64", IsPrimaryKey: false},
-		{Name: "dec", Type: "Decimal(10, 4)", IsPrimaryKey: false},
+		{Name: "dec", Type: "Decimal(10, 4)", IsPrimaryKey: false, DecimalParams: &DecimalParams{Precision: 10, Scale: 4}},
 		{Name: "d", Type: "Date", IsPrimaryKey: false},
 		{Name: "dt", Type: "DateTime", IsPrimaryKey: false},
 		{Name: "dt_utc", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true},
@@ -137,6 +137,7 @@ func TestToClickHouseColumns(t *testing.T) {
 func TestGetAlterTableOps(t *testing.T) {
 	int64Type := "Int64"
 	int16Type := "Int16"
+	emptyComment := ""
 	ops := GetAlterTableOps(
 		&TableDescription{
 			Mapping: map[string]string{"qaz": "Int32", "qux": "String"},
@@ -152,7 +153,7 @@ func TestGetAlterTableOps(t *testing.T) {
 				{Name: "qux", Type: "Int64", IsPrimaryKey: false},
 			},
 		})
-	assert.Equal(t, ops, []*AlterTableOp{{Op: Modify, Column: "qux", Type: &int64Type}})
+	assert.Equal(t, ops, []*AlterTableOp{{Op: Modify, Column: "qux", Type: &int64Type, Comment: &emptyComment}})
 
 	ops = GetAlterTableOps(
 		&TableDescription{
@@ -169,7 +170,7 @@ func TestGetAlterTableOps(t *testing.T) {
 				{Name: "qux", Type: "String", IsPrimaryKey: false},
 				{Name: "zaq", Type: "Int64", IsPrimaryKey: false},
 			}})
-	assert.Equal(t, ops, []*AlterTableOp{{Op: Add, Column: "zaq", Type: &int64Type}})
+	assert.Equal(t, ops, []*AlterTableOp{{Op: Add, Column: "zaq", Type: &int64Type, Comment: &emptyComment}})
 
 	ops = GetAlterTableOps(
 		&TableDescription{
@@ -184,7 +185,7 @@ func TestGetAlterTableOps(t *testing.T) {
 			Columns: []*ColumnDefinition{
 				{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			}})
-	assert.Equal(t, ops, []*AlterTableOp{{Op: Drop, Column: "qux"}})
+	assert.Equal(t, ops, []*AlterTableOp{{Op: Drop, Column: "qux", Type: nil, Comment: nil}})
 
 	ops = GetAlterTableOps(
 		&TableDescription{
@@ -201,9 +202,9 @@ func TestGetAlterTableOps(t *testing.T) {
 				{Name: "zaq", Type: "Int16", IsPrimaryKey: false},
 			}})
 	assert.Equal(t, ops, []*AlterTableOp{
-		{Op: Modify, Column: "qux", Type: &int64Type},
-		{Op: Add, Column: "zaq", Type: &int16Type},
-		{Op: Drop, Column: "qaz"},
+		{Op: Modify, Column: "qux", Type: &int64Type, Comment: &emptyComment},
+		{Op: Add, Column: "zaq", Type: &int16Type, Comment: &emptyComment},
+		{Op: Drop, Column: "qaz", Type: nil, Comment: nil},
 	})
 
 	// Equal tables
@@ -216,4 +217,29 @@ func TestGetAlterTableOps(t *testing.T) {
 	}
 	ops = GetAlterTableOps(td, td)
 	assert.Equal(t, ops, []*AlterTableOp{})
+
+	// With comments; comment changes without changing types are ignored atm
+	comment1 := "foo"
+	comment2 := "bar"
+	comment3 := "qaz"
+	comment4 := "qux"
+	ops = GetAlterTableOps(
+		&TableDescription{
+			Mapping: map[string]string{"qaz": "Int32", "qux": "String"},
+			Columns: []*ColumnDefinition{
+				{Name: "qaz", Type: "Int32", IsPrimaryKey: true, Comment: comment1},
+				{Name: "qux", Type: "String", IsPrimaryKey: false, Comment: comment2},
+			},
+		},
+		&TableDescription{
+			Mapping: map[string]string{"qux": "Int64", "zaq": "Int16"},
+			Columns: []*ColumnDefinition{
+				{Name: "qux", Type: "Int64", IsPrimaryKey: false, Comment: comment3},
+				{Name: "zaq", Type: "Int16", IsPrimaryKey: false, Comment: comment4},
+			}})
+	assert.Equal(t, ops, []*AlterTableOp{
+		{Op: Modify, Column: "qux", Type: &int64Type, Comment: &comment3},
+		{Op: Add, Column: "zaq", Type: &int16Type, Comment: &comment4},
+		{Op: Drop, Column: "qaz", Type: nil, Comment: nil},
+	})
 }
