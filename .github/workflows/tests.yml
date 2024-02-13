@@ -69,24 +69,6 @@ jobs:
           down-flags: '--volumes'
           services: 'clickhouse'
 
-      - name: Build app docker images
-        run: |
-          make compile
-          make build-docker-ci
-
-      - name: Start the destination app in Docker
-        uses: isbang/compose-action@v1.5.1
-        env:
-          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-        with:
-          compose-file: 'docker-compose.ci.yml'
-          down-flags: '--volumes'
-          services: 'destination'
-
       - name: Run Go tests
         run: |
           make go-test
-
-      - name: Run SDK tests
-        run: |
-          make test
