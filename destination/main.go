@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	pb "fivetran.com/fivetran_sdk/proto"
 	"google.golang.org/grpc"
@@ -27,21 +30,37 @@ var retryDelayMilliseconds = flag.Uint("retry-delay-ms", 1000, "Delay in millise
 func main() {
 	flag.Parse()
 	InitLogger(*isDevelopment)
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		LogError(fmt.Errorf("failed to listen: %w", err))
 		os.Exit(1)
 	}
 	s := grpc.NewServer()
 	pb.RegisterDestinationServer(s, &server{})
-	LogInfo(fmt.Sprintf("Server listening at %v, dev mode: %t. "+
-		"Client settings: max open connections: %d, max idle connections: %d. "+
-		"Batch sizes: replace - %d, update - %d, delete - %d, max parallel updates - %d. "+
-		"Retry settings: max retries - %d, delay - %d ms.",
-		lis.Addr(), *isDevelopment, *maxOpenConnections, *maxIdleConnections,
-		*replaceBatchSize, *updateBatchSize, *deleteBatchSize, *maxParallelUpdates,
-		*maxRetries, *retryDelayMilliseconds))
-	if err = s.Serve(lis); err != nil {
+
+	errChan := make(chan error)
+	exitChan := make(chan os.Signal)
+	signal.Notify(exitChan, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		var sb strings.Builder
+		flag.VisitAll(func(f *flag.Flag) {
+			sb.WriteString(fmt.Sprintf("%s: %s, ", f.Name, f.Value))
+		})
+		flagsValues := sb.String()
+		LogInfo(fmt.Sprintf("Server is ready. Flags: %s", flagsValues[:len(flagsValues)-2]))
+		err := s.Serve(listener)
+		if err != nil {
+			errChan <- err
+		}
+	}()
+
+	select {
+	case <-exitChan:
+		LogInfo("Shutting down the server...")
+		s.GracefulStop()
+		os.Exit(0)
+	case err = <-errChan:
 		LogError(fmt.Errorf("failed to serve: %w", err))
 		os.Exit(1)
 	}
