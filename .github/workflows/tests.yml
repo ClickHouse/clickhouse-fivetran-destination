@@ -69,6 +69,10 @@ jobs:
           down-flags: '--volumes'
           services: 'clickhouse'
 
+      - name: Add ClickHouse to /etc/hosts
+        run: |
+          sudo echo "127.0.0.1 clickhouse" | sudo tee -a /etc/hosts
+
       - name: Run Go tests
         run: |
           make go-test
