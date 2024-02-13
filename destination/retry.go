@@ -21,7 +21,7 @@ func RetryNetError(op retry.RetryableFunc, ctx context.Context, opName string) e
 		retry.RetryIf(IsNetError),
 		retry.Context(ctx))
 	if err != nil {
-		return fmt.Errorf("failed to execute %s after %d retries: %w", opName, *maxRetries, err)
+		return fmt.Errorf("failed to execute %s: %w", opName, err)
 	}
 	return nil
 }
@@ -38,7 +38,7 @@ func RetryNetErrorWithData[T any](op retry.RetryableFuncWithData[T], ctx context
 		retry.Context(ctx))
 	if err != nil {
 		var empty T
-		return empty, fmt.Errorf("failed to execute %s after %d retries: %w", opName, *maxRetries, err)
+		return empty, fmt.Errorf("failed to execute %s: %w", opName, err)
 	}
 	return data, nil
 }
