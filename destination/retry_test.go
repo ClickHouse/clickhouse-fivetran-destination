@@ -60,7 +60,7 @@ func TestRetryNetError(t *testing.T) {
 
 	err := RetryNetError(func() error {
 		return nil
-	}, context.Background(), "TestRetryNetError")
+	}, context.Background(), "TestRetryNetError", false)
 	assert.NoError(t, err)
 
 	count := 0
@@ -70,7 +70,7 @@ func TestRetryNetError(t *testing.T) {
 			return nil
 		}
 		return makeNetError()
-	}, context.Background(), "TestRetryNetError")
+	}, context.Background(), "TestRetryNetError", false)
 	assert.NoError(t, err)
 
 	count = 0
@@ -80,7 +80,7 @@ func TestRetryNetError(t *testing.T) {
 			return nil
 		}
 		return makeNetError()
-	}, context.Background(), "TestRetryNetError")
+	}, context.Background(), "TestRetryNetError", false)
 	assert.ErrorContains(t, err, "failed to execute TestRetryNetError after 2 attempts")
 }
 
@@ -93,7 +93,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 
 	data, err := RetryNetErrorWithData(func() (int, error) {
 		return 42, nil
-	}, context.Background(), "TestRetryNetErrorWithData")
+	}, context.Background(), "TestRetryNetErrorWithData", false)
 	assert.NoError(t, err)
 	assert.Equal(t, 42, data)
 
@@ -104,7 +104,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 			return 144, nil
 		}
 		return 0, makeNetError()
-	}, context.Background(), "TestRetryNetErrorWithData")
+	}, context.Background(), "TestRetryNetErrorWithData", false)
 	assert.NoError(t, err)
 	assert.Equal(t, 144, data)
 
@@ -115,13 +115,13 @@ func TestRetryNetErrorWithData(t *testing.T) {
 			return 1, nil
 		}
 		return 0, makeNetError()
-	}, context.Background(), "TestRetryNetErrorWithData")
+	}, context.Background(), "TestRetryNetErrorWithData", false)
 	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData after 2 attempts")
 
 	// also works with an arbitrary type
 	dataT, err := RetryNetErrorWithData(func() (myType, error) {
 		return myType{42}, nil
-	}, context.Background(), "TestRetryNetErrorWithData(T)")
+	}, context.Background(), "TestRetryNetErrorWithData(T)", false)
 	assert.NoError(t, err)
 	assert.Equal(t, myType{42}, dataT)
 
@@ -132,7 +132,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 			return myType{144}, nil
 		}
 		return myType{}, makeNetError()
-	}, context.Background(), "TestRetryNetErrorWithData(T)")
+	}, context.Background(), "TestRetryNetErrorWithData(T)", false)
 	assert.NoError(t, err)
 	assert.Equal(t, myType{144}, dataT)
 
@@ -143,7 +143,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 			return myType{42}, nil
 		}
 		return myType{}, makeNetError()
-	}, context.Background(), "TestRetryNetErrorWithData(T)")
+	}, context.Background(), "TestRetryNetErrorWithData(T)", false)
 	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData(T) after 2 attempts")
 }
 
@@ -163,7 +163,7 @@ func TestRetryNetErrorDelayConfiguration(t *testing.T) {
 			return nil
 		}
 		return makeNetError()
-	}, context.Background(), "TestRetryNetError")
+	}, context.Background(), "TestRetryNetError", false)
 	assert.NoError(t, err)
 	assert.GreaterOrEqual(t, time.Since(start).Milliseconds(), int64(50*2))
 
@@ -175,7 +175,7 @@ func TestRetryNetErrorDelayConfiguration(t *testing.T) {
 			return 144, nil
 		}
 		return 0, makeNetError()
-	}, context.Background(), "TestRetryNetErrorWithData")
+	}, context.Background(), "TestRetryNetErrorWithData", false)
 	assert.NoError(t, err)
 	assert.Equal(t, 144, data)
 	assert.GreaterOrEqual(t, time.Since(start).Milliseconds(), int64(50*2))

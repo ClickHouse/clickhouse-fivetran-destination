@@ -206,7 +206,7 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 			if err != nil {
 				return err
 			}
-			err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, *replaceBatchSize)
+			err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, *writeBatchSize)
 			if err != nil {
 				return err
 			}
@@ -223,7 +223,9 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 			if err != nil {
 				return err
 			}
-			err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, nullStr, unmodifiedStr, *updateBatchSize, *maxParallelUpdates)
+			err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
+				nullStr, unmodifiedStr,
+				*writeBatchSize, *selectBatchSize, *maxParallelSelects)
 			if err != nil {
 				return err
 			}
@@ -240,13 +242,18 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 			if err != nil {
 				return err
 			}
-			err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData, uint(fivetranSyncedIdx), uint(fivetranDeletedIdx), *deleteBatchSize, *maxParallelUpdates)
+			err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
+				uint(fivetranSyncedIdx), uint(fivetranDeletedIdx),
+				*writeBatchSize, *selectBatchSize, *maxParallelSelects)
 			if err != nil {
 				return err
 			}
 		}
 		return nil
 	}, "WriteBatchRequest(Delete)")
+	if err != nil {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+	}
 
 	return &pb.WriteBatchResponse{
 		Response: &pb.WriteBatchResponse_Success{

@@ -13,7 +13,7 @@ import (
 
 type RowsByPrimaryKeyValue map[string][]interface{}
 
-func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint32) [][]interface{} {
+func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint) [][]interface{} {
 	dbRows := make([][]interface{}, n)
 	for i := range dbRows {
 		dbRow := make([]interface{}, len(columnTypes))

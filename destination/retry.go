@@ -11,11 +11,20 @@ import (
 // RetryNetError retries the given operation only if it returns a net.Error using exponential backoff strategy.
 // Any other error will be returned immediately.
 // Execution time of all operations is measured and logged as notice.
-func RetryNetError(op func() error, ctx context.Context, opName string) (err error) {
+func RetryNetError(
+	op func() error,
+	ctx context.Context,
+	opName string,
+	benchmark bool,
+) (err error) {
 	initialDelay, maxDelay := GetRetryDelayConfig()
 	failCount := uint(0)
 	for {
-		err = BenchmarkAndNotice(op, opName)
+		if benchmark {
+			err = BenchmarkAndNotice(op, opName)
+		} else {
+			err = op()
+		}
 		if err == nil {
 			return nil
 		}
@@ -44,11 +53,20 @@ func RetryNetError(op func() error, ctx context.Context, opName string) (err err
 // RetryNetErrorWithData retries the given operation only if it returns a net.Error using exponential backoff strategy.
 // Any other error will be returned immediately.
 // Execution time of all operations is measured and logged as notice.
-func RetryNetErrorWithData[T any](op func() (T, error), ctx context.Context, opName string) (data T, err error) {
+func RetryNetErrorWithData[T any](
+	op func() (T, error),
+	ctx context.Context,
+	opName string,
+	benchmark bool,
+) (data T, err error) {
 	initialDelay, maxDelay := GetRetryDelayConfig()
 	failCount := uint(0)
 	for {
-		data, err = BenchmarkAndNoticeWithData(op, opName)
+		if benchmark {
+			data, err = BenchmarkAndNoticeWithData(op, opName)
+		} else {
+			data, err = op()
+		}
 		if err == nil {
 			return data, nil
 		}

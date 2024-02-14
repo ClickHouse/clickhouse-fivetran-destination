@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -22,129 +23,133 @@ type ClickHouseConnection struct {
 }
 
 func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
-	return RetryNetErrorWithData(func() (*ClickHouseConnection, error) {
-		hostname := fmt.Sprintf("%s:%s",
-			GetWithDefault(configuration, "hostname", "localhost"),
-			GetWithDefault(configuration, "port", "9000"))
-		username := GetWithDefault(configuration, "username", "default")
-		password := GetWithDefault(configuration, "password", "")
-		database := GetWithDefault(configuration, "database", "default")
-		options := &clickhouse.Options{
-			Addr: []string{hostname},
-			Auth: clickhouse.Auth{
-				Username: username,
-				Password: password,
-				Database: database,
+	hostname := fmt.Sprintf("%s:%s",
+		GetWithDefault(configuration, "hostname", "localhost"),
+		GetWithDefault(configuration, "port", "9000"))
+	username := GetWithDefault(configuration, "username", "default")
+	password := GetWithDefault(configuration, "password", "")
+	database := GetWithDefault(configuration, "database", "default")
+	options := &clickhouse.Options{
+		Addr: []string{hostname},
+		Auth: clickhouse.Auth{
+			Username: username,
+			Password: password,
+			Database: database,
+		},
+		Protocol: clickhouse.Native,
+		Settings: clickhouse.Settings{
+			"allow_experimental_object_type": 1,
+			"date_time_input_format":         "best_effort",
+		},
+		MaxOpenConns: int(*maxOpenConnections),
+		MaxIdleConns: int(*maxIdleConnections),
+		ClientInfo: clickhouse.ClientInfo{
+			Products: []struct {
+				Name    string
+				Version string
+			}{
+				{Name: "fivetran-destination", Version: Version},
 			},
-			Protocol: clickhouse.Native,
-			Settings: clickhouse.Settings{
-				"allow_experimental_object_type": 1,
-			},
-			MaxOpenConns: int(*maxOpenConnections),
-			MaxIdleConns: int(*maxIdleConnections),
-			ClientInfo: clickhouse.ClientInfo{
-				Products: []struct {
-					Name    string
-					Version string
-				}{
-					{Name: "fivetran-destination", Version: Version},
-				},
-			},
-		}
-		ssl := GetWithDefault(configuration, "ssl", "false")
-		if ssl == "true" {
-			options.TLS = &tls.Config{InsecureSkipVerify: true}
-		}
-		conn, err := clickhouse.Open(options)
-		if err != nil {
-			LogError(fmt.Errorf("error while opening a connection to ClickHouse: %w", err))
-			return nil, err
-		}
-		return &ClickHouseConnection{ctx, conn}, nil
-	}, ctx, string(getConnection))
+		},
+	}
+	ssl := GetWithDefault(configuration, "ssl", "false")
+	if ssl == "true" {
+		options.TLS = &tls.Config{InsecureSkipVerify: true}
+	}
+	conn, err := RetryNetErrorWithData(func() (driver.Conn, error) {
+		return clickhouse.Open(options)
+	}, ctx, string(getConnection), false)
+	if err != nil {
+		LogError(fmt.Errorf("error while opening a connection to ClickHouse: %w", err))
+		return nil, err
+	}
+	return &ClickHouseConnection{ctx, conn}, nil
 }
 
 func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
-	return RetryNetErrorWithData(func() (*TableDescription, error) {
-		query, err := GetDescribeTableQuery(schemaName, tableName)
-		if err != nil {
+	query, err := GetDescribeTableQuery(schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := RetryNetErrorWithData(func() (driver.Rows, error) {
+		return conn.Query(conn.ctx, query)
+	}, conn.ctx, string(describeTable), false)
+	if err != nil {
+		LogError(fmt.Errorf("error while executing %s: %w", query, err))
+		return nil, err
+	}
+	defer rows.Close()
+	var (
+		colName      string
+		colType      string
+		colComment   string
+		isPrimaryKey uint8
+		precision    *uint64
+		scale        *uint64
+	)
+	var columns []*ColumnDefinition
+	for rows.Next() {
+		if err = rows.Scan(&colName, &colType, &colComment, &isPrimaryKey, &precision, &scale); err != nil {
 			return nil, err
 		}
-		rows, err := conn.Query(conn.ctx, query)
-		if err != nil {
-			LogError(fmt.Errorf("error while executing %s: %w", query, err))
-			return nil, err
+		var decimalParams *DecimalParams = nil
+		if precision != nil && scale != nil {
+			decimalParams = &DecimalParams{Precision: *precision, Scale: *scale}
 		}
-		defer rows.Close()
-		var (
-			colName      string
-			colType      string
-			colComment   string
-			isPrimaryKey uint8
-			precision    *uint64
-			scale        *uint64
-		)
-		var columns []*ColumnDefinition
-		for rows.Next() {
-			if err = rows.Scan(&colName, &colType, &colComment, &isPrimaryKey, &precision, &scale); err != nil {
-				return nil, err
-			}
-			var decimalParams *DecimalParams = nil
-			if precision != nil && scale != nil {
-				decimalParams = &DecimalParams{Precision: *precision, Scale: *scale}
-			}
-			columns = append(columns, &ColumnDefinition{
-				Name:          colName,
-				Type:          colType,
-				Comment:       colComment,
-				IsPrimaryKey:  isPrimaryKey == 1,
-				DecimalParams: decimalParams,
-			})
-		}
-		return MakeTableDescription(columns), nil
-	}, conn.ctx, string(describeTable))
+		columns = append(columns, &ColumnDefinition{
+			Name:          colName,
+			Type:          colType,
+			Comment:       colComment,
+			IsPrimaryKey:  isPrimaryKey == 1,
+			DecimalParams: decimalParams,
+		})
+	}
+	return MakeTableDescription(columns), nil
 }
 
 func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription) error {
-	return RetryNetError(func() error {
-		statement, err := GetCreateTableStatement(schemaName, tableName, tableDescription)
-		if err != nil {
-			return err
-		}
-		if err = conn.Exec(conn.ctx, statement); err != nil {
-			LogError(fmt.Errorf("error while executing %s: %w", statement, err))
-			return err
-		}
-		return nil
-	}, conn.ctx, string(createTable))
+	statement, err := GetCreateTableStatement(schemaName, tableName, tableDescription)
+	if err != nil {
+		return err
+	}
+	err = RetryNetError(func() error {
+		return conn.Exec(conn.ctx, statement)
+	}, conn.ctx, string(createTable), false)
+	if err != nil {
+		LogError(fmt.Errorf("error while executing %s: %w", statement, err))
+		return err
+	}
+	return nil
 }
 
 func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string, ops []*AlterTableOp) error {
-	return RetryNetError(func() error {
-		statement, err := GetAlterTableStatement(schemaName, tableName, ops)
-		if err != nil {
-			return err
-		}
-		if err = conn.Exec(conn.ctx, statement); err != nil {
-			LogError(fmt.Errorf("error while executing %s: %w", statement, err))
-			return err
-		}
-		return nil
-	}, conn.ctx, string(alterTable))
+	statement, err := GetAlterTableStatement(schemaName, tableName, ops)
+	if err != nil {
+		return err
+	}
+	err = RetryNetError(func() error {
+		return conn.Exec(conn.ctx, statement)
+	}, conn.ctx, string(alterTable), false)
+	if err != nil {
+		LogError(fmt.Errorf("error while executing %s: %w", statement, err))
+		return err
+	}
+	return nil
 }
 
 func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
-	return RetryNetError(func() error {
-		statement, err := GetTruncateTableStatement(schemaName, tableName)
-		if err != nil {
-			return err
-		}
-		if err = conn.Exec(conn.ctx, statement); err != nil {
-			LogError(fmt.Errorf("error while executing %s: %w", statement, err))
-			return err
-		}
-		return nil
-	}, conn.ctx, string(truncateTable))
+	statement, err := GetTruncateTableStatement(schemaName, tableName)
+	if err != nil {
+		return err
+	}
+	err = RetryNetError(func() error {
+		return conn.Exec(conn.ctx, statement)
+	}, conn.ctx, string(truncateTable), false)
+	if err != nil {
+		LogError(fmt.Errorf("error while executing %s: %w", statement, err))
+		return err
+	}
+	return nil
 }
 
 func (conn *ClickHouseConnection) InsertBatch(
@@ -152,21 +157,15 @@ func (conn *ClickHouseConnection) InsertBatch(
 	rows [][]interface{},
 	skipIdx map[int]bool,
 	opName string,
-	async bool,
 ) error {
-	ctx := conn.ctx
-	if async {
-		ctx = clickhouse.Context(conn.ctx, clickhouse.WithSettings(clickhouse.Settings{
-			"async_insert":          1,
-			"wait_for_async_insert": 1,
-		}))
+	if len(skipIdx) == len(rows) {
+		LogWarn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, fullTableName))
+		return nil
 	}
-	return RetryNetError(func() error {
-		if len(skipIdx) == len(rows) {
-			LogWarn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, fullTableName))
-			return nil
-		}
-		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
+	return BenchmarkAndNotice(func() error {
+		batch, err := RetryNetErrorWithData(func() (driver.Batch, error) {
+			return conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
+		}, conn.ctx, fmt.Sprintf("%s(%s)", opName, "PrepareBatch"), false)
 		if err != nil {
 			LogError(fmt.Errorf("error while preparing batch for %s: %w", fullTableName, err))
 			return err
@@ -175,7 +174,10 @@ func (conn *ClickHouseConnection) InsertBatch(
 			if skipIdx[i] {
 				continue
 			}
-			if err = batch.Append(row...); err != nil {
+			err = RetryNetError(func() error {
+				return batch.Append(row...)
+			}, conn.ctx, fmt.Sprintf("%s(%s)", opName, "Append"), false)
+			if err != nil {
 				return fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
 			}
 		}
@@ -184,56 +186,85 @@ func (conn *ClickHouseConnection) InsertBatch(
 			return err
 		}
 		return nil
-	}, ctx, opName)
+	}, opName)
 }
 
 func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
-	return RetryNetErrorWithData(func() ([]driver.ColumnType, error) {
-		query, err := GetColumnTypesQuery(schemaName, tableName)
-		if err != nil {
-			return nil, err
-		}
-		rows, err := conn.Query(conn.ctx, query)
-		if err != nil {
-			LogError(fmt.Errorf("error while executing %s: %w", query, err))
-			return nil, err
-		}
-		defer rows.Close()
-		return rows.ColumnTypes(), nil
-	}, conn.ctx, string(getColumnTypes))
+	query, err := GetColumnTypesQuery(schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := RetryNetErrorWithData(func() (driver.Rows, error) {
+		return conn.Query(conn.ctx, query)
+	}, conn.ctx, string(getColumnTypes), false)
+	if err != nil {
+		LogError(fmt.Errorf("error while executing %s: %w", query, err))
+		return nil, err
+	}
+	defer rows.Close()
+	return rows.ColumnTypes(), nil
+
 }
 
+// SelectByPrimaryKeys selects rows from the table by primary keys found in the CSV.
+// The CSV is split into groups, and each group is processed in parallel.
+// The results are merged into a map of primary key values to the rows.
 func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	fullTableName string,
 	columnTypes []driver.ColumnType,
 	pkCols []*PrimaryKeyColumn,
 	csv CSV,
+	selectBatchSize uint,
+	maxParallelSelects uint,
 ) (RowsByPrimaryKeyValue, error) {
-	return RetryNetErrorWithData(func() (RowsByPrimaryKeyValue, error) {
-		query, err := CSVRowsToSelectQuery(csv, fullTableName, pkCols)
+	return BenchmarkAndNoticeWithData(func() (RowsByPrimaryKeyValue, error) {
+		scanRows := ColumnTypesToEmptyRows(columnTypes, uint(len(csv)))
+		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), selectBatchSize, maxParallelSelects)
 		if err != nil {
 			return nil, err
 		}
-		scanRows := ColumnTypesToEmptyRows(columnTypes, uint32(len(csv)))
-		rows, err := conn.Query(conn.ctx, query)
-		if err != nil {
-			LogError(fmt.Errorf("error while executing %s: %w", query, err))
-			return nil, err
-		}
-		defer rows.Close()
-		rowsByPKValues := make(map[string][]interface{})
-		for i := 0; rows.Next(); i++ {
-			if err = rows.Scan(scanRows[i]...); err != nil {
-				return nil, err
+		var mutex = new(sync.Mutex)
+		rowsByPKValues := make(map[string][]interface{}, len(csv))
+		for _, group := range groups {
+			eg := errgroup.Group{}
+			for _, slice := range group {
+				s := slice
+				eg.Go(func() error {
+					batch := csv[s.Start:s.End]
+					query, err := CSVRowsToSelectQuery(batch, fullTableName, pkCols)
+					if err != nil {
+						return err
+					}
+					rows, err := RetryNetErrorWithData(func() (driver.Rows, error) {
+						return conn.Query(conn.ctx, query)
+					}, conn.ctx, string(selectByPrimaryKeys), false)
+					if err != nil {
+						LogError(fmt.Errorf("error while executing %s: %w", query, err))
+						return err
+					}
+					defer rows.Close()
+					mutex.Lock()
+					defer mutex.Unlock()
+					for i := 0; rows.Next(); i++ {
+						if err = rows.Scan(scanRows[i]...); err != nil {
+							return err
+						}
+						mappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+						if err != nil {
+							return err
+						}
+						rowsByPKValues[mappingKey] = scanRows[i]
+					}
+					return nil
+				})
 			}
-			mappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+			err = eg.Wait()
 			if err != nil {
 				return nil, err
 			}
-			rowsByPKValues[mappingKey] = scanRows[i]
 		}
 		return rowsByPKValues, nil
-	}, conn.ctx, string(selectByPrimaryKeys))
+	}, string(selectByPrimaryKeys))
 }
 
 // ReplaceBatch inserts the records from one of "replace" CSV into the table.
@@ -257,8 +288,6 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 		if err != nil {
 			return err
 		}
-		// Each group here will contain only one slice, as we don't need parallel operations
-		// Using it just for consistency with UpdateBatch and SoftDeleteBatch
 		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, 1)
 		if err != nil {
 			return err
@@ -274,7 +303,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 					}
 					insertRows[j] = insertRow
 				}
-				err = conn.InsertBatch(fullName, insertRows, nil, string(insertBatchReplaceTask), false)
+				err = conn.InsertBatch(fullName, insertRows, nil, string(insertBatchReplaceTask))
 				if err != nil {
 					return err
 				}
@@ -286,10 +315,8 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 
 // UpdateBatch uses one of "update" CSV to insert the updated versions of the records into the table.
 //
-// Executes operations in groups of batches, i.e. `maxParallelOperations` x `updateBatchSize` records at a time in total.
-// `deleteBatchSize` should be relatively low, as we generate a large SELECT statement (see CSVRowsToSelectQuery).
+// Selects rows by PK found in CSV, merges these rows with the CSV values, and inserts them back.
 //
-// In every batch, we select the records from the table by primary keys, update them in memory, and insert them back.
 // If a record is not found in the table, it is skipped (though it should not usually happen).
 // If a record is found, it is updated with the new values from the CSV.
 // If a CSV column value equals to `unmodifiedStr`, that means that the original value should be preserved.
@@ -299,7 +326,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 // Any duplicates are also handled by ReplacingMergeTree itself (during merges or when using SELECT FINAL),
 // so it's safe to retry and not care about inserting the same record several times.
 //
-// NB: retries are handled by SelectByPrimaryKeys / InsertBatch for each task within a group separately.
+// NB: retries are handled by SelectByPrimaryKeys and InsertBatch.
 func (conn *ClickHouseConnection) UpdateBatch(
 	schemaName string,
 	table *pb.Table,
@@ -308,38 +335,31 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	csv CSV,
 	nullStr string,
 	unmodifiedStr string,
-	batchSize uint,
-	maxParallelOperations uint,
+	writeBatchSize uint,
+	selectBatchSize uint,
+	maxParallelSelects uint,
 ) error {
 	return BenchmarkAndNotice(func() error {
 		fullName, err := GetFullTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, maxParallelOperations)
+		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), writeBatchSize, 1)
+		if err != nil {
+			return err
+		}
+		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, csv, selectBatchSize, maxParallelSelects)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
-			eg := errgroup.Group{}
 			for _, slice := range group {
-				s := slice
-				eg.Go(func() error {
-					batch := csv[s.Start:s.End]
-					selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
-					if err != nil {
-						return err
-					}
-					insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, pkCols, table, nullStr, unmodifiedStr)
-					if err != nil {
-						return err
-					}
-					return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdateTask), true)
-				})
-			}
-			err = eg.Wait()
-			if err != nil {
-				return err
+				batch := csv[slice.Start:slice.End]
+				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, pkCols, table, nullStr, unmodifiedStr)
+				if err != nil {
+					return err
+				}
+				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdateTask))
 			}
 		}
 		return nil
@@ -347,13 +367,10 @@ func (conn *ClickHouseConnection) UpdateBatch(
 }
 
 // SoftDeleteBatch uses one of "delete" CSV to mark the records as deleted (_fivetran_deleted = True),
-// and update their Fivetran sync time (_fivetran_synced) to the CSV row value;
-// updated records are inserted into the table as usual.
+// and update their Fivetran sync time (_fivetran_synced) to the CSV row value.
 //
-// Executes operations in groups of batches, i.e. `maxParallelOperations` x `deleteBatchSize` records at a time in total.
-// `deleteBatchSize` should be relatively low, as we generate a large SELECT statement (see CSVRowsToSelectQuery).
+// Selects rows by PK found in CSV, merges these rows with the CSV values, and inserts them back.
 //
-// In every batch, we select the records from the table by primary keys, update them in memory, and insert them back.
 // If a record is not found in the table, it is skipped (though it should not usually happen).
 // If a record is found, `_fivetran_deleted` is set to True,
 // and `_fivetran_synced` is updated with a new value from the CSV.
@@ -364,7 +381,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 // Any duplicates are also handled by ReplacingMergeTree itself (during merges or when using SELECT FINAL),
 // so it's safe to retry and not care about inserting the same record several times.
 //
-// NB: retries are handled by SelectByPrimaryKeys / InsertBatch for each task within a group separately.
+// NB: retries are handled by SelectByPrimaryKeys and InsertBatch.
 func (conn *ClickHouseConnection) SoftDeleteBatch(
 	schemaName string,
 	table *pb.Table,
@@ -373,38 +390,31 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	csv CSV,
 	fivetranSyncedIdx uint,
 	fivetranDeletedIdx uint,
-	batchSize uint,
-	maxParallelOperations uint,
+	writeBatchSize uint,
+	selectBatchSize uint,
+	maxParallelSelects uint,
 ) error {
 	return BenchmarkAndNotice(func() error {
 		fullName, err := GetFullTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, maxParallelOperations)
+		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), writeBatchSize, 1)
+		if err != nil {
+			return err
+		}
+		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, csv, selectBatchSize, maxParallelSelects)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
-			eg := errgroup.Group{}
 			for _, slice := range group {
-				s := slice
-				eg.Go(func() error {
-					batch := csv[s.Start:s.End]
-					selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
-					if err != nil {
-						return err
-					}
-					insertRows, skipIdx, err := MergeSoftDeletedRows(batch, selectRows, pkCols, fivetranSyncedIdx, fivetranDeletedIdx)
-					if err != nil {
-						return err
-					}
-					return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDeleteTask), true)
-				})
-			}
-			err = eg.Wait()
-			if err != nil {
-				return err
+				batch := csv[slice.Start:slice.End]
+				insertRows, skipIdx, err := MergeSoftDeletedRows(batch, selectRows, pkCols, fivetranSyncedIdx, fivetranDeletedIdx)
+				if err != nil {
+					return err
+				}
+				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDeleteTask))
 			}
 		}
 		return nil
@@ -412,20 +422,20 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 }
 
 func (conn *ClickHouseConnection) ConnectionTest() error {
-	return RetryNetError(func() error {
-		describeResult, err := conn.DescribeTable("system", "numbers")
-		if err != nil {
-			return err
-		}
-		col, exists := describeResult.Mapping["number"]
-		if !exists || col.Type != "UInt64" {
-			return fmt.Errorf(
-				"unexpected describe system.numbers output, expected result map to contain number:UInt64, got: %v",
-				describeResult)
-		}
-		LogInfo("Connection check passed")
-		return nil
-	}, conn.ctx, string(connectionTest))
+	describeResult, err := RetryNetErrorWithData(func() (*TableDescription, error) {
+		return conn.DescribeTable("system", "numbers")
+	}, conn.ctx, string(connectionTest), false)
+	if err != nil {
+		return err
+	}
+	col, exists := describeResult.Mapping["number"]
+	if !exists || col.Type != "UInt64" {
+		return fmt.Errorf(
+			"unexpected describe system.numbers output, expected result map to contain number:UInt64, got: %v",
+			describeResult)
+	}
+	LogInfo("Connection check passed")
+	return nil
 }
 
 func (conn *ClickHouseConnection) MutationTest() error {
@@ -519,7 +529,7 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 		LogInfo("Mutation check passed")
 		return nil
-	}, conn.ctx, string(mutationTest))
+	}, conn.ctx, string(mutationTest), false)
 }
 
 type connectionOpType string

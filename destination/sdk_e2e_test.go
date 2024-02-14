@@ -230,16 +230,14 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 		assertRows[i][3] = "false"
 		if i%20 == 0 {
 			updatedData := fmt.Sprintf("%d:%d:%d", i+1, i+2, i+3)
-			updateRows[i/20] = Row{
-				Id:   i + 1,
-				Data: updatedData,
-			}
+			j := i / 20
+			updateRows[j] = row
+			updateRows[j].Data = updatedData
 			assertRows[i][1] = updatedData
 		}
 		if i%50 == 0 {
-			deleteRows[i/50] = Row{
-				Id: i + 1,
-			}
+			j := i / 50
+			deleteRows[j] = row
 			assertRows[i][3] = "true"
 		}
 	}
