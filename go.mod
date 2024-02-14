@@ -4,7 +4,6 @@ go 1.20
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.17.1
-	github.com/avast/retry-go/v4 v4.5.1
 	github.com/google/uuid v1.5.0
 	github.com/klauspost/compress v1.16.7
 	github.com/rs/zerolog v1.32.0
@@ -18,7 +17,6 @@ require (
 require (
 	github.com/ClickHouse/ch-go v0.58.2 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
-	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.6.1 // indirect

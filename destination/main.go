@@ -13,10 +13,13 @@ import (
 	"google.golang.org/grpc"
 )
 
+const Version = "0.0.1"
+
 var port = flag.Uint("port", 50052, "Listen port")
 var isDevelopment = flag.Bool("dev", false, "Whether the server is running in development mode, mainly for pretty logging")
+var logLevel = flag.String("log-level", "notice", "Log level: notice, info, warning, severe")
 
-var replaceBatchSize = flag.Uint("replace-batch-size", 100_000, "Batch size for WriteBatch/Replace operations")
+var replaceBatchSize = flag.Uint("replace-batch-size", 1_000_000, "Batch size for WriteBatch/Replace operations")
 var updateBatchSize = flag.Uint("update-batch-size", 1000, "Batch size for WriteBatch/Update operations")
 var deleteBatchSize = flag.Uint("delete-batch-size", 1000, "Batch size for WriteBatch/Delete operations")
 
@@ -24,12 +27,17 @@ var maxParallelUpdates = flag.Uint("max-parallel-updates", 5, "Max number of par
 var maxIdleConnections = flag.Uint("max-idle-connections", 5, "Max number of idle connections for ClickHouse client")
 var maxOpenConnections = flag.Uint("max-open-connections", 10, "Max number of open connections for ClickHouse client (recommended: max-idle-connections + 5)")
 
-var maxRetries = flag.Uint("max-retries", 30, "Max number of retries for ClickHouse client in case of network errors")
-var retryDelayMilliseconds = flag.Uint("retry-delay-ms", 1000, "Delay in milliseconds for retries in case of network errors")
+var maxRetries = flag.Uint("max-retries", 10, "Max number of retries for ClickHouse client in case of network errors")
+var initialRetryDelayMilliseconds = flag.Uint("initial-retry-delay-ms", 100, "Initial delay in milliseconds for backoff retries in case of network errors")
+var maxRetryDelayMilliseconds = flag.Uint("max-retry-delay-ms", 10_000, "Max delay in milliseconds for backoff retries in case of network errors")
 
 func main() {
 	flag.Parse()
-	InitLogger(*isDevelopment)
+	err := InitLogger(*isDevelopment)
+	if err != nil {
+		LogError(fmt.Errorf("failed to initialize logger: %w", err))
+		os.Exit(1)
+	}
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		LogError(fmt.Errorf("failed to listen: %w", err))

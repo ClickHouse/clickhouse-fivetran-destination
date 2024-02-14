@@ -14,19 +14,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type WriteBatchOpType string
-
-const (
-	Replace    WriteBatchOpType = "Replace"
-	Update     WriteBatchOpType = "Update"
-	SoftDelete WriteBatchOpType = "SoftDelete"
-)
-
 // ClickHouseConnection
 // TODO: on premise cluster setup for DDL
 type ClickHouseConnection struct {
-	Database string
-	ctx      context.Context
+	ctx context.Context
 	driver.Conn
 }
 
@@ -48,7 +39,6 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 			Protocol: clickhouse.Native,
 			Settings: clickhouse.Settings{
 				"allow_experimental_object_type": 1,
-				"date_time_input_format":         "best_effort",
 			},
 			MaxOpenConns: int(*maxOpenConnections),
 			MaxIdleConns: int(*maxIdleConnections),
@@ -70,8 +60,8 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 			LogError(fmt.Errorf("error while opening a connection to ClickHouse: %w", err))
 			return nil, err
 		}
-		return &ClickHouseConnection{database, ctx, conn}, nil
-	}, ctx, "GetClickHouseConnection")
+		return &ClickHouseConnection{ctx, conn}, nil
+	}, ctx, string(getConnection))
 }
 
 func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
@@ -112,7 +102,7 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			})
 		}
 		return MakeTableDescription(columns), nil
-	}, conn.ctx, "DescribeTable")
+	}, conn.ctx, string(describeTable))
 }
 
 func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription) error {
@@ -126,7 +116,7 @@ func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName strin
 			return err
 		}
 		return nil
-	}, conn.ctx, "CreateTable")
+	}, conn.ctx, string(createTable))
 }
 
 func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string, ops []*AlterTableOp) error {
@@ -140,7 +130,7 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 			return err
 		}
 		return nil
-	}, conn.ctx, "AlterTable")
+	}, conn.ctx, string(alterTable))
 }
 
 func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
@@ -154,14 +144,14 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 			return err
 		}
 		return nil
-	}, conn.ctx, "TruncateTable")
+	}, conn.ctx, string(truncateTable))
 }
 
 func (conn *ClickHouseConnection) InsertBatch(
 	fullTableName string,
 	rows [][]interface{},
 	skipIdx map[int]bool,
-	opType WriteBatchOpType,
+	opName string,
 	async bool,
 ) error {
 	ctx := conn.ctx
@@ -173,7 +163,7 @@ func (conn *ClickHouseConnection) InsertBatch(
 	}
 	return RetryNetError(func() error {
 		if len(skipIdx) == len(rows) {
-			LogWarn(fmt.Sprintf("[InsertBatch - %s] All rows are skipped for %s", opType, fullTableName))
+			LogWarn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, fullTableName))
 			return nil
 		}
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
@@ -194,7 +184,7 @@ func (conn *ClickHouseConnection) InsertBatch(
 			return err
 		}
 		return nil
-	}, ctx, fmt.Sprintf("InsertBatch - %s", opType))
+	}, ctx, opName)
 }
 
 func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
@@ -210,7 +200,7 @@ func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName st
 		}
 		defer rows.Close()
 		return rows.ColumnTypes(), nil
-	}, conn.ctx, "GetColumnTypes")
+	}, conn.ctx, string(getColumnTypes))
 }
 
 func (conn *ClickHouseConnection) SelectByPrimaryKeys(
@@ -243,7 +233,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 			rowsByPKValues[mappingKey] = scanRows[i]
 		}
 		return rowsByPKValues, nil
-	}, conn.ctx, "SelectByPrimaryKeys")
+	}, conn.ctx, string(selectByPrimaryKeys))
 }
 
 // ReplaceBatch inserts the records from one of "replace" CSV into the table.
@@ -283,7 +273,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 				}
 				insertRows[j] = insertRow
 			}
-			err = conn.InsertBatch(fullName, insertRows, nil, Replace, false)
+			err = conn.InsertBatch(fullName, insertRows, nil, string(insertBatchReplace), false)
 			if err != nil {
 				return err
 			}
@@ -341,7 +331,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				if err != nil {
 					return err
 				}
-				return conn.InsertBatch(fullName, insertRows, skipIdx, Update, true)
+				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdate), true)
 			})
 		}
 		err = eg.Wait()
@@ -404,7 +394,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 				if err != nil {
 					return err
 				}
-				return conn.InsertBatch(fullName, insertRows, skipIdx, SoftDelete, true)
+				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDelete), true)
 			})
 		}
 		err = eg.Wait()
@@ -429,7 +419,7 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 		}
 		LogInfo("Connection check passed")
 		return nil
-	}, conn.ctx, "ConnectionTest")
+	}, conn.ctx, string(connectionTest))
 }
 
 func (conn *ClickHouseConnection) MutationTest() error {
@@ -523,5 +513,22 @@ func (conn *ClickHouseConnection) MutationTest() error {
 
 		LogInfo("Mutation check passed")
 		return nil
-	}, conn.ctx, "MutationTest")
+	}, conn.ctx, string(mutationTest))
 }
+
+type connectionOpType string
+
+const (
+	getConnection       connectionOpType = "GetClickHouseConnection"
+	describeTable       connectionOpType = "DescribeTable"
+	createTable         connectionOpType = "CreateTable"
+	alterTable          connectionOpType = "AlterTable"
+	truncateTable       connectionOpType = "TruncateTable"
+	insertBatchReplace  connectionOpType = "InsertBatch(Replace)"
+	insertBatchUpdate   connectionOpType = "InsertBatch(Update)"
+	insertBatchDelete   connectionOpType = "InsertBatch(Delete)"
+	getColumnTypes      connectionOpType = "GetColumnTypes"
+	selectByPrimaryKeys connectionOpType = "SelectByPrimaryKeys"
+	connectionTest      connectionOpType = "ConnectionTest"
+	mutationTest        connectionOpType = "MutationTest"
+)

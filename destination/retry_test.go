@@ -2,12 +2,58 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestIsNetError(t *testing.T) {
+	assert.True(t, IsNetError(makeNetError()))
+	assert.False(t, IsNetError(errors.New("not a net.Error")))
+}
+
+func TestGetBackoffDelay(t *testing.T) {
+	assert.Equal(t, time.Duration(10), GetBackoffDelay(10, 100, 0))
+	assert.Equal(t, time.Duration(10), GetBackoffDelay(10, 100, 1))
+	assert.Equal(t, time.Duration(20), GetBackoffDelay(10, 100, 2))
+	assert.Equal(t, time.Duration(40), GetBackoffDelay(10, 100, 3))
+	assert.Equal(t, time.Duration(80), GetBackoffDelay(10, 100, 4))
+	assert.Equal(t, time.Duration(100), GetBackoffDelay(10, 100, 5))
+	assert.Equal(t, time.Duration(100), GetBackoffDelay(10, 100, 6))
+	assert.Equal(t, time.Duration(100), GetBackoffDelay(10, 100, 64))
+}
+
+func TestGetRetryDelayConfig(t *testing.T) {
+	td := teardown()
+	defer td(t)
+
+	*initialRetryDelayMilliseconds = 0
+	*maxRetryDelayMilliseconds = 10
+	initial, max := GetRetryDelayConfig()
+	assert.Equal(t, time.Second, initial)
+	assert.Equal(t, time.Millisecond*10, max)
+
+	*initialRetryDelayMilliseconds = 50
+	*maxRetryDelayMilliseconds = 0
+	initial, max = GetRetryDelayConfig()
+	assert.Equal(t, time.Millisecond*50, initial)
+	assert.Equal(t, time.Millisecond*50, max)
+
+	*initialRetryDelayMilliseconds = 42
+	*maxRetryDelayMilliseconds = 144
+	initial, max = GetRetryDelayConfig()
+	assert.Equal(t, time.Millisecond*42, initial)
+	assert.Equal(t, time.Millisecond*144, max)
+
+	*initialRetryDelayMilliseconds = 144
+	*maxRetryDelayMilliseconds = 42
+	initial, max = GetRetryDelayConfig()
+	assert.Equal(t, time.Millisecond*144, initial)
+	assert.Equal(t, time.Millisecond*144, max)
+}
 
 func TestRetryNetError(t *testing.T) {
 	defer setupSuite()(t)
@@ -35,7 +81,7 @@ func TestRetryNetError(t *testing.T) {
 		}
 		return makeNetError()
 	}, context.Background(), "TestRetryNetError")
-	assert.ErrorContains(t, err, "failed to execute TestRetryNetError: All attempts fail")
+	assert.ErrorContains(t, err, "failed to execute TestRetryNetError after 2 attempts")
 }
 
 func TestRetryNetErrorWithData(t *testing.T) {
@@ -70,7 +116,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 		}
 		return 0, makeNetError()
 	}, context.Background(), "TestRetryNetErrorWithData")
-	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData: All attempts fail")
+	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData after 2 attempts")
 
 	// also works with an arbitrary type
 	dataT, err := RetryNetErrorWithData(func() (myType, error) {
@@ -98,14 +144,14 @@ func TestRetryNetErrorWithData(t *testing.T) {
 		}
 		return myType{}, makeNetError()
 	}, context.Background(), "TestRetryNetErrorWithData(T)")
-	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData(T): All attempts fail")
+	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData(T) after 2 attempts")
 }
 
 func TestRetryNetErrorDelayConfiguration(t *testing.T) {
 	defer func() func(t *testing.T) {
 		td := teardown()
 		*maxRetries = 3
-		*retryDelayMilliseconds = 50
+		*initialRetryDelayMilliseconds = 50
 		return td
 	}()(t)
 
@@ -138,16 +184,16 @@ func TestRetryNetErrorDelayConfiguration(t *testing.T) {
 func setupSuite() func(t *testing.T) {
 	td := teardown()
 	*maxRetries = 2
-	*retryDelayMilliseconds = 10
+	*initialRetryDelayMilliseconds = 10
 	return td
 }
 
 func teardown() func(t *testing.T) {
 	currentMaxRetries := *maxRetries
-	currentMaxDelayMs := *retryDelayMilliseconds
+	currentMaxDelayMs := *initialRetryDelayMilliseconds
 	return func(t *testing.T) {
 		*maxRetries = currentMaxRetries
-		*retryDelayMilliseconds = currentMaxDelayMs
+		*initialRetryDelayMilliseconds = currentMaxDelayMs
 	}
 }
 
