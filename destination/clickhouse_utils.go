@@ -44,7 +44,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*AlterTab
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
 			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", op.Column, *op.Type))
-			if op.Comment != nil && *op.Comment != "" {
+			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
 		case Modify:
@@ -52,7 +52,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*AlterTab
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
 			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", op.Column, *op.Type))
-			if op.Comment != nil && *op.Comment != "" {
+			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
 		case Drop:

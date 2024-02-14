@@ -85,7 +85,7 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			LogError(fmt.Errorf("error while executing %s: %w", query, err))
 			return nil, err
 		}
-                defer rows.Close()
+		defer rows.Close()
 		var (
 			colName      string
 			colType      string
@@ -421,8 +421,8 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 		if err != nil {
 			return err
 		}
-		colType, exists := describeResult.Mapping["number"]
-		if !exists || colType != "UInt64" {
+		col, exists := describeResult.Mapping["number"]
+		if !exists || col.Type != "UInt64" {
 			return fmt.Errorf(
 				"unexpected describe system.numbers output, expected result map to contain number:UInt64, got: %v",
 				describeResult)

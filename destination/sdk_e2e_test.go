@@ -51,20 +51,23 @@ func TestAllDataTypes(t *testing.T) {
 		{"_fivetran_id", "String", ""}})
 }
 
-func TestUpsertAfterAlter(t *testing.T) {
-	fileName := "input_upsert_after_alter.json"
-	tableName := "upsert_after_alter"
+func TestMutateAfterAlter(t *testing.T) {
+	fileName := "input_mutate_after_alter.json"
+	tableName := "mutate_after_alter"
 	StartServer(t)
 	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
-		{"1", "200", "\\N", "false"},
-		{"2", "33.345", "three-three", "false"},
-		{"3", "777.777", "seven-seven-seven", "true"},
-		{"4", "50", "fifty", "false"}})
+		{"1", "200", "asd", "zxc", "\\N", "\\N", "false"},
+		{"2", "50", "\\N", "\\N", "<c>99</c>", "DD", "false"},
+		{"3", "777.777", "<b>42</b>", "AA", "qaz", "qux", "true"},
+		{"4", "20.5", "x", "\\N", "<d>77</d>", "\\N", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"amount", "Nullable(Float32)", ""},
-		{"desc", "Nullable(String)", ""},
+		{"s1", "Nullable(String)", ""},
+		{"s2", "Nullable(String)", ""},
+		{"s3", "Nullable(String)", "XML"},
+		{"s4", "Nullable(String)", "BINARY"},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
 		{"_fivetran_deleted", "Bool", ""}})
 }

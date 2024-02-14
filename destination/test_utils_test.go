@@ -18,6 +18,8 @@ const dialTimeout = 10 * time.Millisecond
 const maxDialRetries = 300
 const clickHousePortHTTP = 8123
 
+var clickHouseURL = fmt.Sprintf("http://localhost:%d", clickHousePortHTTP)
+
 func StartClickHouse(t *testing.T) {
 	if isClickHouseReady(t) {
 		return
@@ -83,13 +85,12 @@ func waitPortIsReady(t *testing.T, port uint) {
 			return
 		}
 	}
-	t.Fatal(fmt.Sprintf("Port is not ready after %d retries", maxDialRetries))
+	t.Fatalf("Port is not ready after %d retries", maxDialRetries)
 }
 
 func isClickHouseReady(t *testing.T) (isReady bool) {
 	if isPortReady(t, clickHousePortHTTP) {
-		cmd := exec.Command("curl", fmt.Sprintf("http://localhost:%d", clickHousePortHTTP),
-			"--data-binary", "SELECT 1")
+		cmd := exec.Command("curl", clickHouseURL, "--data-binary", "SELECT 1")
 		_, err := cmd.Output()
 		return err == nil
 	}
@@ -104,5 +105,5 @@ func waitClickHouseIsReady(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal(fmt.Sprintf("ClickHouse is not ready after %d retries", maxDialRetries))
+	t.Fatalf("ClickHouse is not ready after %d retries", maxDialRetries)
 }

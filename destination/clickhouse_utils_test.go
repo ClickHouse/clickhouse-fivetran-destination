@@ -23,11 +23,18 @@ func TestGetAlterTableStatement(t *testing.T) {
 	intType := "Int32"
 	strType := "String"
 	comment := "foobar"
+	emptyComment := ""
 	statement, err := GetAlterTableStatement("foo", "bar", []*AlterTableOp{
 		{Add, "qaz", &intType, nil},
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN qaz Int32", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Add, "qaz", &intType, &emptyComment},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN qaz Int32 COMMENT ''", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
 		{Add, "qaz", &intType, &comment},
@@ -42,10 +49,22 @@ func TestGetAlterTableStatement(t *testing.T) {
 	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN qaz", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Drop, "qaz", &strType, &comment}, // Type and Comment are ignored with Drop
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN qaz", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
 		{Modify, "qaz", &strType, nil},
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN qaz String", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Modify, "qaz", &strType, &emptyComment},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN qaz String COMMENT ''", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
 		{Modify, "qaz", &strType, &comment},
@@ -56,10 +75,13 @@ func TestGetAlterTableStatement(t *testing.T) {
 	statement, err = GetAlterTableStatement("", "bar", []*AlterTableOp{
 		{Add, "qaz", &strType, &comment},
 		{Drop, "qux", nil, nil},
-		{Modify, "zaq", &intType, nil},
+		{Modify, "zaq", &intType, &emptyComment},
+		{Modify, "qwe", &strType, nil},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `bar` ADD COLUMN qaz String COMMENT 'foobar', DROP COLUMN qux, MODIFY COLUMN zaq Int32", statement)
+	assert.Equal(t,
+		"ALTER TABLE `bar` ADD COLUMN qaz String COMMENT 'foobar', DROP COLUMN qux, MODIFY COLUMN zaq Int32 COMMENT '', MODIFY COLUMN qwe String",
+		statement)
 
 	_, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{})
 	assert.ErrorContains(t, err, "no statements to execute for altering table `foo`.`bar`")
