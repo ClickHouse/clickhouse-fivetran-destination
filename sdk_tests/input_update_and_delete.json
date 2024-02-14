@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "input2": {
+    "updated_and_delete": {
       "columns": {
         "id": "INT",
         "name": "STRING"
@@ -11,12 +11,12 @@
     }
   },
   "describe_table": [
-    "input2"
+    "updated_and_delete"
   ],
   "ops": [
     {
       "upsert": {
-        "input2": [
+        "updated_and_delete": [
           {
             "id": 1,
             "name": null
@@ -42,7 +42,7 @@
     },
     {
       "update": {
-        "input2": [
+        "updated_and_delete": [
           {
             "id": 1,
             "name": "1111"
@@ -60,7 +60,7 @@
     },
     {
       "delete": {
-        "input2": [
+        "updated_and_delete": [
           {
             "id": 3
           },

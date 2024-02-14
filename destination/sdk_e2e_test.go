@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,51 +19,19 @@ import (
 // - Makefile:test for the SDK tester run command
 // - sdk_tests/*.json for the input files
 
-var isStarted atomic.Bool
-
-func TestUpsertAfterAlter(t *testing.T) {
-	startServer(t)
-	runSDKTestCommand(t, "input1_upsert_after_alter.json")
-	assertTableRowsWithPK(t, "input1", [][]string{
-		{"1", "200", "\\N", "false"},
-		{"2", "33.345", "three-three", "false"},
-		{"3", "777.777", "seven-seven-seven", "true"},
-		{"4", "50", "fifty", "false"}})
-	assertTableColumns(t, "input1", [][]string{
-		{"id", "Int32", ""},
-		{"amount", "Nullable(Float32)", ""},
-		{"desc", "Nullable(String)", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_deleted", "Bool", ""}})
-}
-
-func TestUpdateAndDelete(t *testing.T) {
-	startServer(t)
-	runSDKTestCommand(t, "input2_update_and_delete.json")
-	assertTableRowsWithPK(t, "input2", [][]string{
-		{"1", "1111", "false"},
-		{"2", "two", "false"},
-		{"3", "three", "true"},
-		{"4", "four-four", "true"},
-		{"5", "it's 5", "true"}})
-	assertTableColumns(t, "input2", [][]string{
-		{"id", "Int32", ""},
-		{"name", "Nullable(String)", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_deleted", "Bool", ""}})
-}
-
 func TestAllDataTypes(t *testing.T) {
-	startServer(t)
-	runSDKTestCommand(t, "input3_all_data_types.json")
-	assertTableRowsWithFivetranId(t, "input3", [][]string{
+	fileName := "input_all_data_types.json"
+	tableName := "all_data_types"
+	StartServer(t)
+	runSDKTestCommand(t, fileName)
+	assertTableRowsWithFivetranId(t, tableName, [][]string{
 		{"true", "42", "144", "100500", "100.5", "200.5", "42.42",
 			"2024-05-07", "2024-04-05 15:33:14", "2024-02-03 12:44:22.123456789",
 			"foo", "1", "2", "0", "0", "<a>1</a>", "YmFzZTY0", "false", "abc-123-xyz"},
 		{"false", "-42", "-144", "-100500", "-100.5", "-200.5", "-42.42",
 			"2021-02-03", "2021-06-15 04:15:16", "2021-02-03 14:47:45.234567890",
 			"bar", "0", "0", "3", "4", "<b>42</b>", "YmFzZTY0", "false", "vbn-543-hjk"}})
-	assertTableColumns(t, "input3", [][]string{
+	assertTableColumns(t, tableName, [][]string{
 		{"b", "Nullable(Bool)", ""},
 		{"i16", "Nullable(Int16)", ""},
 		{"i32", "Nullable(Int32)", ""},
@@ -85,12 +51,50 @@ func TestAllDataTypes(t *testing.T) {
 		{"_fivetran_id", "String", ""}})
 }
 
+func TestUpsertAfterAlter(t *testing.T) {
+	fileName := "input_upsert_after_alter.json"
+	tableName := "upsert_after_alter"
+	StartServer(t)
+	runSDKTestCommand(t, fileName)
+	assertTableRowsWithPK(t, tableName, [][]string{
+		{"1", "200", "\\N", "false"},
+		{"2", "33.345", "three-three", "false"},
+		{"3", "777.777", "seven-seven-seven", "true"},
+		{"4", "50", "fifty", "false"}})
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float32)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
+func TestUpdateAndDelete(t *testing.T) {
+	fileName := "input_update_and_delete.json"
+	tableName := "update_and_delete"
+	StartServer(t)
+	runSDKTestCommand(t, fileName)
+	assertTableRowsWithPK(t, tableName, [][]string{
+		{"1", "1111", "false"},
+		{"2", "two", "false"},
+		{"3", "three", "true"},
+		{"4", "four-four", "true"},
+		{"5", "it's 5", "true"}})
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"name", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
 func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
-	startServer(t)
-	runSDKTestCommand(t, "input4_non_existent_updates.json")
-	assertTableRowsWithPK(t, "input4", [][]string{
+	fileName := "input_non_existent_updates.json"
+	tableName := "non_existent_updates"
+	StartServer(t)
+	runSDKTestCommand(t, fileName)
+	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "\\N", "false"}})
-	assertTableColumns(t, "input4", [][]string{
+	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"name", "Nullable(String)", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
@@ -98,10 +102,12 @@ func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
 }
 
 func TestTruncate(t *testing.T) {
-	startServer(t)
-	runSDKTestCommand(t, "input5_truncate.json")
-	assertTableRowsWithPK(t, "input5", nil)
-	assertTableColumns(t, "input5", [][]string{
+	fileName := "input_truncate.json"
+	tableName := "table_to_truncate"
+	StartServer(t)
+	runSDKTestCommand(t, fileName)
+	assertTableRowsWithPK(t, tableName, nil)
+	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"name", "Nullable(String)", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
@@ -109,13 +115,14 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestTableNotFound(t *testing.T) {
-	startServer(t)
-	runSDKTestCommand(t, "input6_table_not_found.json") // verify at least no SDK tester errors
+	fileName := "input6_table_not_found.json"
+	StartServer(t)
+	runSDKTestCommand(t, fileName) // verify at least no SDK tester errors
 }
 
 func TestLargeInputFile(t *testing.T) {
-	startServer(t)
 	fileName := "input_large_file"
+	StartServer(t)
 	expectedCSV := generateAndWriteInputFile(t, fileName, 150_000)
 	runSDKTestCommand(t, fmt.Sprintf("%s.json", fileName))
 	assertTableRowsWithPK(t, fileName, expectedCSV)
@@ -128,8 +135,8 @@ func TestLargeInputFile(t *testing.T) {
 }
 
 func runSDKTestCommand(t *testing.T, inputFileName string) {
-	projectRootDir := getProjectRootDir(t)
-	cmd := exec.Command("make", "test")
+	projectRootDir := GetProjectRootDir(t)
+	cmd := exec.Command("make", "sdk-test")
 	cmd.Dir = projectRootDir
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("TEST_ARGS=--input-file=%s", inputFileName))
@@ -144,23 +151,9 @@ func runSDKTestCommand(t *testing.T, inputFileName string) {
 	assert.Contains(t, out, "[Test mutation operations]: PASSED")
 }
 
-func runQuery(t *testing.T, query string) string {
-	projectRootDir := getProjectRootDir(t)
-	cmd := exec.Command("docker", "exec", "fivetran-destination-clickhouse-server",
-		"clickhouse-client", "--query", query)
-	cmd.Dir = projectRootDir
-	byteOut, err := cmd.Output()
-	var exitError *exec.ExitError
-	if errors.As(err, &exitError) {
-		t.Error(string(exitError.Stderr))
-	}
-	assert.NoError(t, err)
-	return string(byteOut)
-}
-
 func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY id FORMAT CSV", tableName)
-	out := runQuery(t, query)
+	out := RunQuery(t, query)
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	assert.NoError(t, err)
 	assert.Equal(t, expectedOutput, records)
@@ -168,7 +161,7 @@ func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]st
 
 func assertTableRowsWithFivetranId(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY _fivetran_id FORMAT CSV", tableName)
-	out := runQuery(t, query)
+	out := RunQuery(t, query)
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	assert.NoError(t, err)
 	assert.Equal(t, expectedOutput, records)
@@ -176,39 +169,10 @@ func assertTableRowsWithFivetranId(t *testing.T, tableName string, expectedOutpu
 
 func assertTableColumns(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT name, type, comment FROM system.columns WHERE database = 'tester' AND table = '%s' FORMAT CSV", tableName)
-	out := runQuery(t, query)
+	out := RunQuery(t, query)
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	assert.NoError(t, err)
 	assert.Equal(t, expectedOutput, records)
-}
-
-func getProjectRootDir(t *testing.T) string {
-	cwd, err := os.Getwd()
-	assert.NoError(t, err)
-	var result string
-	if strings.HasSuffix(cwd, "/destination") {
-		result = cwd[:len(cwd)-12]
-	}
-	return result
-}
-
-func startServer(t *testing.T) {
-	if !isStarted.Load() {
-		go main()
-		timeout := 10 * time.Millisecond
-		count := 0
-		for count < 300 {
-			count++
-			address := net.JoinHostPort("localhost", fmt.Sprintf("%d", *port))
-			conn, _ := net.DialTimeout("tcp", address, timeout)
-			if conn != nil {
-				err := conn.Close()
-				assert.NoError(t, err)
-				isStarted.Store(true)
-				break
-			}
-		}
-	}
 }
 
 type TableDefinitionColumns struct {
@@ -276,7 +240,7 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 			assertRows[i][3] = "true"
 		}
 	}
-	cwd := getProjectRootDir(t)
+	cwd := GetProjectRootDir(t)
 	inputFile := InputFile{
 		CreateTable: map[string]TableDefinition{
 			tableName: {

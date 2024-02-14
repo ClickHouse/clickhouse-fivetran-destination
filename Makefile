@@ -23,10 +23,7 @@ generate-proto:
         common.proto \
         destination_sdk.proto
 
-start-docker:
-	docker-compose up clickhouse -d
-
-test:
+sdk-test:
 	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123
 	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
 	docker run --mount type=bind,source=$$PWD/sdk_tests,target=/data \
@@ -34,19 +31,19 @@ test:
 		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=172.17.0.1 \
 		--network=host \
-		fivetrandocker/sdk-destination-tester:024.0202.001 $$TEST_ARGS
+		fivetrandocker/sdk-destination-tester:024.0213.001 $$TEST_ARGS
 
 lint:
 	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
 
-go-test:
+test:
 	go test fivetran.com/fivetran_sdk/destination -count=1 -v
 
-go-test-with-coverage:
+test-with-coverage:
 	go test fivetran.com/fivetran_sdk/destination/... -count=1 -v -coverprofile cover.out
 	go tool cover -html=cover.out
 
-compile:
+build:
 	rm -rf ./out
 	go build -o ./out/clickhouse_destination ./destination
 	chmod a+x ./out/clickhouse_destination
@@ -57,4 +54,4 @@ build-docker-ci:
 run:
 	go run destination/main.go
 
-.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run lint test go-test go-test-with-coverage compile clickhouse-query-for-tests build-docker-ci
+.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run lint test go-test go-test-with-coverage build clickhouse-query-for-tests build-docker-ci

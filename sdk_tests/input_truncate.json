@@ -1,9 +1,9 @@
 {
   "describe_table": [
-    "input5"
+    "table_to_truncate"
   ],
   "create_table": {
-    "input5": {
+    "table_to_truncate": {
       "columns": {
         "id": "INT",
         "name": "STRING"
@@ -16,7 +16,7 @@
   "ops": [
     {
       "upsert": {
-        "input5": [
+        "table_to_truncate": [
           {
             "id": 1,
             "name": null
@@ -26,7 +26,7 @@
     },
     {
       "truncate": [
-        "input5"
+        "table_to_truncate"
       ]
     }
   ]

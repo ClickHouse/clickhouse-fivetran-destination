@@ -39,7 +39,7 @@ func main() {
 	pb.RegisterDestinationServer(s, &server{})
 
 	errChan := make(chan error)
-	exitChan := make(chan os.Signal)
+	exitChan := make(chan os.Signal, 1)
 	signal.Notify(exitChan, syscall.SIGTERM, syscall.SIGINT)
 
 	go func() {
@@ -59,7 +59,6 @@ func main() {
 	case <-exitChan:
 		LogInfo("Shutting down the server...")
 		s.GracefulStop()
-		os.Exit(0)
 	case err = <-errChan:
 		LogError(fmt.Errorf("failed to serve: %w", err))
 		os.Exit(1)

@@ -39,40 +39,45 @@ make generate-proto
 
 ## Running Go tests
 
-Start the ClickHouse server in Docker first, as some of the tests require a database connection:
+Test files marked as `_integration_test` will start ClickHouse server in Docker, if it's not already running.
 
-```bash
-docker-compose up -d
-```
+Test files marked as `_e2e_test` (like [destination/sdk_e2e_test.go](./destination/sdk_e2e_test.go))
+will also start the destination GRPC server.
 
 Run the tests:
-
-```bash
-make go-tests
-```
-
-## Running tests with Fivetran SDK tester
-
-Having ClickHouse server started, run the destination app:
-
-```bash
-make start
-```
-
-Run the tests (all input files, see [sdk_tests](./sdk_tests) directory):
 
 ```bash
 make test
 ```
 
-Run a particular input file, for example, `input_3.json`:
+## Running tests with Fivetran SDK tester
+
+Fivetran SDK tests are part of the normal Go test run,
+see [destination/sdk_e2e_test.go](./destination/sdk_e2e_test.go);
+however, it is possible to execute them in a stand-alone mode, which might be useful for debugging purposes,
+if you don't want to modify the test code in Go.
+
+Start the destination app (it will also start ClickHouse if it's not already started):
 
 ```bash
-TEST_ARGS=--input-file=input_3.json make test
+make start
 ```
 
-See Fivetran SDK tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester) for
-more details.
+Run the SDK tester with a particular input file from [sdk_tests](./sdk_tests) directory,
+for example, `input_all_data_types.json`:
+
+```bash
+TEST_ARGS=--input-file=input_all_data_types.json make sdk-test
+```
+
+Run the SDK tester with all input JSON files (see [sdk_tests](./sdk_tests) directory):
+
+```bash
+make sdk-test
+```
+
+See also: Fivetran SDK
+tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester).
 
 ## Lint
 
@@ -85,7 +90,7 @@ make lint
 ## Building a Docker image
 
 ```bash
-make compile
+make build
 docker build . -t clickhouse-fivetran-destination
 ```
 
@@ -97,25 +102,11 @@ docker run clickhouse-fivetran-destination
 
 ## Available flags
 
+List of available flags for the destination app:
+
+```sh
+make build
+./out/clickhouse_destination -h
 ```
-  -delete-batch-size uint
-        Batch size for WriteBatch/Delete operations (default 1000)
-  -dev boolean
-        Whether the server is running in development mode, mainly for pretty logging (default false)
-  -max-idle-connections uint
-        Max number of idle connections for ClickHouse client (default 5)
-  -max-open-connections uint
-        Max number of open connections for ClickHouse client (recommended: max-idle-connections + 5) (default 10)
-  -max-parallel-updates uint
-        Max number of parallel batches to insert for WriteBatch/Update or WriteBatch/Delete operations (default 5)
-  -max-retries uint
-        Max number of retries for ClickHouse client in case of network errors (default 30)
-  -port uint
-        Listen port (default 50052)
-  -replace-batch-size uint
-        Batch size for WriteBatch/Replace operations (default 100000)
-  -retry-delay-ms uint
-        Delay in milliseconds for retries in case of network errors (default 1000)
-  -update-batch-size uint
-        Batch size for WriteBatch/Update operations (default 1000)
-```
+
+Check the [main.go](./destination/main.go) file for more details.

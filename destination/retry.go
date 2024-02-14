@@ -12,7 +12,7 @@ import (
 
 // RetryNetError retries the given operation only if it returns a net.Error.
 // Any other error will be returned immediately.
-func RetryNetError(op retry.RetryableFunc, ctx context.Context, opName string) error {
+func RetryNetError(op func() error, ctx context.Context, opName string) error {
 	err := retry.Do(
 		op,
 		retry.Attempts(*maxRetries),
@@ -28,7 +28,7 @@ func RetryNetError(op retry.RetryableFunc, ctx context.Context, opName string) e
 
 // RetryNetErrorWithData retries the given operation only if it returns a net.Error.
 // Any other error will be returned immediately.
-func RetryNetErrorWithData[T any](op retry.RetryableFuncWithData[T], ctx context.Context, opName string) (T, error) {
+func RetryNetErrorWithData[T any](op func() (T, error), ctx context.Context, opName string) (T, error) {
 	data, err := retry.DoWithData(
 		op,
 		retry.Attempts(*maxRetries),

@@ -63,7 +63,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 	assert.Equal(t, 144, data)
 
 	count = 0
-	data, err = RetryNetErrorWithData(func() (int, error) {
+	_, err = RetryNetErrorWithData(func() (int, error) {
 		count++
 		if count == 3 { // max retries == 2, will fail anyway
 			return 1, nil
@@ -91,7 +91,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 	assert.Equal(t, myType{144}, dataT)
 
 	count = 0
-	dataT, err = RetryNetErrorWithData(func() (myType, error) {
+	_, err = RetryNetErrorWithData(func() (myType, error) {
 		count++
 		if count == 3 { // max retries == 2, will fail anyway
 			return myType{42}, nil

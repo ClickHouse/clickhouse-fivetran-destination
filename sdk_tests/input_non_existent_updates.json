@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "input4": {
+    "non_existent_updates": {
       "columns": {
         "id": "INT",
         "name": "STRING"
@@ -11,12 +11,12 @@
     }
   },
   "describe_table": [
-    "input4"
+    "non_existent_updates"
   ],
   "ops": [
     {
       "upsert": {
-        "input4": [
+        "non_existent_updates": [
           {
             "id": 1,
             "name": null
@@ -26,7 +26,7 @@
     },
     {
       "update": {
-        "input4": [
+        "non_existent_updates": [
           {
             "id": 2,
             "name": "four-four"
@@ -40,7 +40,7 @@
     },
     {
       "delete": {
-        "input4": [
+        "non_existent_updates": [
           {
             "id": 4
           },

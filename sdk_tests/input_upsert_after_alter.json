@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "input1": {
+    "upsert_after_alter": {
       "columns": {
         "id": "INT",
         "amount": "DOUBLE",
@@ -12,7 +12,7 @@
     }
   },
   "alter_table": {
-    "input1": {
+    "upsert_after_alter": {
       "columns": {
         "id": "INT",
         "amount": "FLOAT",
@@ -24,12 +24,12 @@
     }
   },
   "describe_table": [
-    "input1"
+    "upsert_after_alter"
   ],
   "ops": [
     {
       "upsert": {
-        "input1": [
+        "upsert_after_alter": [
           {
             "id": 1,
             "amount": 100.45,
@@ -50,7 +50,7 @@
     },
     {
       "update": {
-        "input1": [
+        "upsert_after_alter": [
           {
             "id": 1,
             "amount": 200
@@ -60,7 +60,7 @@
     },
     {
       "upsert": {
-        "input1": [
+        "upsert_after_alter": [
           {
             "id": 2,
             "amount": 33.345,
@@ -76,7 +76,7 @@
     },
     {
       "delete": {
-        "input1": [
+        "upsert_after_alter": [
           {
             "id": 3
           }

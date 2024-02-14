@@ -27,12 +27,12 @@ func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 
 	switch in.Name {
 	case ConnectionTest:
-		err := conn.ConnectionTest()
+		err = conn.ConnectionTest()
 		if err != nil {
 			return FailedTestResponse(in.Name, err), nil
 		}
 	case MutationTest:
-		err := conn.MutationTest()
+		err = conn.MutationTest()
 		if err != nil {
 			return FailedTestResponse(in.Name, err), nil
 		}

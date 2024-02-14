@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "input3": {
+    "all_data_types": {
       "columns": {
         "b": "BOOLEAN",
         "i16": "SHORT",
@@ -25,12 +25,12 @@
     }
   },
   "describe_table": [
-    "input3"
+    "all_data_types"
   ],
   "ops": [
     {
       "upsert": {
-        "input3": [
+        "all_data_types": [
           {
             "_fivetran_id": "abc-123-xyz",
             "b": true,
@@ -46,7 +46,7 @@
             "s": "foo",
             "j": "{\"a\": 1,\"b\": 2}",
             "x": "<a>1</a>",
-            "bin": "YmFzZTY0"
+            "bin": "FFFA"
           },
           {
             "_fivetran_id": "vbn-543-hjk",
@@ -63,7 +63,7 @@
             "s": "bar",
             "j": "{\"c\": 3,\"d\": 4}",
             "x": "<b>42</b>",
-            "bin": "YmFzZTY0"
+            "bin": "FFFE"
           }
         ]
       }
