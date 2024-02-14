@@ -359,7 +359,10 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				if err != nil {
 					return err
 				}
-				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdateTask))
+				err = conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdateTask))
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -414,7 +417,10 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 				if err != nil {
 					return err
 				}
-				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDeleteTask))
+				err = conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDeleteTask))
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
