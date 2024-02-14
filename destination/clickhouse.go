@@ -85,6 +85,7 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			LogError(fmt.Errorf("error while executing %s: %w", query, err))
 			return nil, err
 		}
+                defer rows.Close()
 		var (
 			colName      string
 			colType      string
