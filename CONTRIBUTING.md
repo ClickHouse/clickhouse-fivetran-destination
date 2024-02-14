@@ -60,7 +60,7 @@ if you don't want to modify the test code in Go.
 Start the destination app (it will also start ClickHouse if it's not already started):
 
 ```bash
-make start
+make run
 ```
 
 Run the SDK tester with a particular input file from [sdk_tests](./sdk_tests) directory,

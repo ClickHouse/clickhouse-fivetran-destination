@@ -14,17 +14,11 @@ import (
 func RetryNetError(op func() error, ctx context.Context, opName string) (err error) {
 	initialDelay, maxDelay := GetRetryDelayConfig()
 	failCount := uint(0)
-	var start time.Time
-	var elapsed time.Duration
 	for {
-		start = time.Now()
-		err = op()
-		elapsed = time.Since(start) / time.Millisecond
+		err = BenchmarkAndNotice(op, opName)
 		if err == nil {
-			LogNotice(fmt.Sprintf("%s completed in %d ms", opName, elapsed))
 			return nil
 		}
-		LogNotice(fmt.Sprintf("%s failed after %d ms: %s", opName, elapsed, err))
 		if !IsNetError(err) {
 			return err
 		}
@@ -53,17 +47,11 @@ func RetryNetError(op func() error, ctx context.Context, opName string) (err err
 func RetryNetErrorWithData[T any](op func() (T, error), ctx context.Context, opName string) (data T, err error) {
 	initialDelay, maxDelay := GetRetryDelayConfig()
 	failCount := uint(0)
-	var start time.Time
-	var elapsed time.Duration
 	for {
-		start = time.Now()
-		data, err = op()
-		elapsed = time.Since(start) / time.Millisecond
+		data, err = BenchmarkAndNoticeWithData(op, opName)
 		if err == nil {
-			LogNotice(fmt.Sprintf("%s completed in %d ms", opName, elapsed))
 			return data, nil
 		}
-		LogNotice(fmt.Sprintf("%s failed after %d ms: %s", opName, elapsed, err))
 		if !IsNetError(err) {
 			var empty T
 			return empty, err

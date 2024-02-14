@@ -52,6 +52,7 @@ build-docker-ci:
 	docker compose -f docker-compose.ci.yml build destination --no-cache
 
 run:
-	go run destination/main.go
+	make build
+	./out/clickhouse_destination
 
 .PHONY: _ prepare-fivetran-sdk generate-proto start-docker run lint test go-test go-test-with-coverage build clickhouse-query-for-tests build-docker-ci

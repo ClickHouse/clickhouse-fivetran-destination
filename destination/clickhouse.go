@@ -252,34 +252,36 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	nullStr string,
 	batchSize uint,
 ) error {
-	fullName, err := GetFullTableName(schemaName, table.Name)
-	if err != nil {
-		return err
-	}
-	// Each group here will contain only one slice, as we don't need parallel operations
-	// Using it just for consistency with UpdateBatch and SoftDeleteBatch
-	groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, 1)
-	if err != nil {
-		return err
-	}
-	for _, group := range groups {
-		for _, slice := range group {
-			batch := csv[slice.Start:slice.End]
-			insertRows := make([][]interface{}, len(batch))
-			for j, csvRow := range batch {
-				insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
+	return BenchmarkAndNotice(func() error {
+		fullName, err := GetFullTableName(schemaName, table.Name)
+		if err != nil {
+			return err
+		}
+		// Each group here will contain only one slice, as we don't need parallel operations
+		// Using it just for consistency with UpdateBatch and SoftDeleteBatch
+		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, 1)
+		if err != nil {
+			return err
+		}
+		for _, group := range groups {
+			for _, slice := range group {
+				batch := csv[slice.Start:slice.End]
+				insertRows := make([][]interface{}, len(batch))
+				for j, csvRow := range batch {
+					insertRow, err := CSVRowToInsertValues(csvRow, table, nullStr)
+					if err != nil {
+						return err
+					}
+					insertRows[j] = insertRow
+				}
+				err = conn.InsertBatch(fullName, insertRows, nil, string(insertBatchReplaceTask), false)
 				if err != nil {
 					return err
 				}
-				insertRows[j] = insertRow
-			}
-			err = conn.InsertBatch(fullName, insertRows, nil, string(insertBatchReplace), false)
-			if err != nil {
-				return err
 			}
 		}
-	}
-	return nil
+		return nil
+	}, string(insertBatchReplace))
 }
 
 // UpdateBatch uses one of "update" CSV to insert the updated versions of the records into the table.
@@ -309,37 +311,39 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	batchSize uint,
 	maxParallelOperations uint,
 ) error {
-	fullName, err := GetFullTableName(schemaName, table.Name)
-	if err != nil {
-		return err
-	}
-	groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, maxParallelOperations)
-	if err != nil {
-		return err
-	}
-	for _, group := range groups {
-		eg := errgroup.Group{}
-		for _, slice := range group {
-			s := slice
-			eg.Go(func() error {
-				batch := csv[s.Start:s.End]
-				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
-				if err != nil {
-					return err
-				}
-				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, pkCols, table, nullStr, unmodifiedStr)
-				if err != nil {
-					return err
-				}
-				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdate), true)
-			})
-		}
-		err = eg.Wait()
+	return BenchmarkAndNotice(func() error {
+		fullName, err := GetFullTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-	}
-	return nil
+		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, maxParallelOperations)
+		if err != nil {
+			return err
+		}
+		for _, group := range groups {
+			eg := errgroup.Group{}
+			for _, slice := range group {
+				s := slice
+				eg.Go(func() error {
+					batch := csv[s.Start:s.End]
+					selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
+					if err != nil {
+						return err
+					}
+					insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, pkCols, table, nullStr, unmodifiedStr)
+					if err != nil {
+						return err
+					}
+					return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdateTask), true)
+				})
+			}
+			err = eg.Wait()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, string(insertBatchUpdate))
 }
 
 // SoftDeleteBatch uses one of "delete" CSV to mark the records as deleted (_fivetran_deleted = True),
@@ -372,37 +376,39 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	batchSize uint,
 	maxParallelOperations uint,
 ) error {
-	fullName, err := GetFullTableName(schemaName, table.Name)
-	if err != nil {
-		return err
-	}
-	groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, maxParallelOperations)
-	if err != nil {
-		return err
-	}
-	for _, group := range groups {
-		eg := errgroup.Group{}
-		for _, slice := range group {
-			s := slice
-			eg.Go(func() error {
-				batch := csv[s.Start:s.End]
-				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
-				if err != nil {
-					return err
-				}
-				insertRows, skipIdx, err := MergeSoftDeletedRows(batch, selectRows, pkCols, fivetranSyncedIdx, fivetranDeletedIdx)
-				if err != nil {
-					return err
-				}
-				return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDelete), true)
-			})
-		}
-		err = eg.Wait()
+	return BenchmarkAndNotice(func() error {
+		fullName, err := GetFullTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-	}
-	return nil
+		groups, err := CalcCSVSlicesGroupsForParallel(uint(len(csv)), batchSize, maxParallelOperations)
+		if err != nil {
+			return err
+		}
+		for _, group := range groups {
+			eg := errgroup.Group{}
+			for _, slice := range group {
+				s := slice
+				eg.Go(func() error {
+					batch := csv[s.Start:s.End]
+					selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch)
+					if err != nil {
+						return err
+					}
+					insertRows, skipIdx, err := MergeSoftDeletedRows(batch, selectRows, pkCols, fivetranSyncedIdx, fivetranDeletedIdx)
+					if err != nil {
+						return err
+					}
+					return conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDeleteTask), true)
+				})
+			}
+			err = eg.Wait()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, string(insertBatchDelete))
 }
 
 func (conn *ClickHouseConnection) ConnectionTest() error {
@@ -519,16 +525,19 @@ func (conn *ClickHouseConnection) MutationTest() error {
 type connectionOpType string
 
 const (
-	getConnection       connectionOpType = "GetClickHouseConnection"
-	describeTable       connectionOpType = "DescribeTable"
-	createTable         connectionOpType = "CreateTable"
-	alterTable          connectionOpType = "AlterTable"
-	truncateTable       connectionOpType = "TruncateTable"
-	insertBatchReplace  connectionOpType = "InsertBatch(Replace)"
-	insertBatchUpdate   connectionOpType = "InsertBatch(Update)"
-	insertBatchDelete   connectionOpType = "InsertBatch(Delete)"
-	getColumnTypes      connectionOpType = "GetColumnTypes"
-	selectByPrimaryKeys connectionOpType = "SelectByPrimaryKeys"
-	connectionTest      connectionOpType = "ConnectionTest"
-	mutationTest        connectionOpType = "MutationTest"
+	getConnection          connectionOpType = "GetClickHouseConnection"
+	describeTable          connectionOpType = "DescribeTable"
+	createTable            connectionOpType = "CreateTable"
+	alterTable             connectionOpType = "AlterTable"
+	truncateTable          connectionOpType = "TruncateTable"
+	insertBatchReplace     connectionOpType = "InsertBatch(Replace)"
+	insertBatchReplaceTask connectionOpType = "InsertBatch(Replace task)"
+	insertBatchUpdate      connectionOpType = "InsertBatch(Update)"
+	insertBatchUpdateTask  connectionOpType = "InsertBatch(Update task)"
+	insertBatchDelete      connectionOpType = "InsertBatch(Delete)"
+	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
+	getColumnTypes         connectionOpType = "GetColumnTypes"
+	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
+	connectionTest         connectionOpType = "ConnectionTest"
+	mutationTest           connectionOpType = "MutationTest"
 )
