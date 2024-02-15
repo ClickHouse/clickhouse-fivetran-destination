@@ -3,6 +3,7 @@ proto
 
 sdk_tests/*.csv*
 sdk_tests/input_large_file.json
+sdk_tests/configuration.json
 
 .idea
 .vscode
