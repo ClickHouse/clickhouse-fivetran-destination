@@ -151,7 +151,6 @@ func runSDKTestCommand(t *testing.T, inputFileName string) {
 	assert.NoError(t, err)
 	out := string(byteOut)
 	assert.Contains(t, out, "[Test connection and basic operations]: PASSED")
-	assert.Contains(t, out, "[Test mutation operations]: PASSED")
 }
 
 func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]string) {

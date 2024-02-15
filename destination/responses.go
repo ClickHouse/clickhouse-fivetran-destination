@@ -72,10 +72,6 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 			Name:  ConnectionTest,
 			Label: "Test connection and basic operations",
 		},
-		{
-			Name:  MutationTest,
-			Label: "Test mutation operations",
-		},
 	},
 }
 

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,16 +18,24 @@ import (
 
 const dialTimeout = 10 * time.Millisecond
 const maxDialRetries = 300
-const clickHousePortHTTP = 8123
 
-var clickHouseURL = fmt.Sprintf("http://localhost:%d", clickHousePortHTTP)
+var sdkConfig atomic.Value
+
+type SDKConfig struct {
+	hostname string
+	port     string
+	database string
+	username string
+	password string
+	ssl      bool
+}
 
 func StartClickHouse(t *testing.T) {
 	if isClickHouseReady(t) {
 		return
 	}
 	cmd := exec.Command("docker-compose", "up", "-d", "clickhouse")
-	cmd.Dir = GetProjectRootDir(nil)
+	cmd.Dir = GetProjectRootDir(t)
 	err := cmd.Run()
 	assert.NoError(t, err)
 	waitClickHouseIsReady(t)
@@ -37,6 +47,8 @@ func StartServer(t *testing.T) {
 	}
 	StartClickHouse(t)
 	go main()
+	RunQuery(t, "DROP DATABASE IF EXISTS tester")
+	RunQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
 	waitPortIsReady(t, *port)
 }
 
@@ -50,9 +62,44 @@ func GetProjectRootDir(t *testing.T) string {
 	return result
 }
 
+func ReadConfiguration(t *testing.T) SDKConfig {
+	if sdkConfig.Load() != nil {
+		return sdkConfig.Load().(SDKConfig)
+	}
+	rootDir := GetProjectRootDir(t)
+	configBytes, err := os.ReadFile(fmt.Sprintf("%s/sdk_tests/configuration.json", rootDir))
+	assert.NoError(t, err,
+		"copy the default configuration first: cp sdk_tests/default_configuration.json sdk_tests/configuration.json")
+	configMap := make(map[string]string)
+	err = json.Unmarshal(configBytes, &configMap)
+	assert.NoError(t, err)
+	res := SDKConfig{
+		hostname: configMap["hostname"],
+		port:     configMap["port"],
+		database: configMap["database"],
+		username: configMap["username"],
+		password: configMap["password"],
+		ssl:      configMap["ssl"] == "true",
+	}
+	sdkConfig.Store(res)
+	return res
+}
+
 func RunQuery(t *testing.T, query string) string {
-	cmd := exec.Command("docker", "exec", "fivetran-destination-clickhouse-server",
-		"clickhouse-client", "--query", query)
+	conf := ReadConfiguration(t)
+	cmdArgs := []string{
+		"exec", "fivetran-destination-clickhouse-server",
+		"clickhouse-client", "--query", query,
+		"--host", conf.hostname,
+		"--port", conf.port,
+		"--database", conf.database,
+		"--user", conf.username,
+		"--password", conf.password,
+	}
+	if conf.ssl {
+		cmdArgs = append(cmdArgs, "--secure")
+	}
+	cmd := exec.Command("docker", cmdArgs...)
 	out, err := cmd.Output()
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
@@ -89,8 +136,8 @@ func waitPortIsReady(t *testing.T, port uint) {
 }
 
 func isClickHouseReady(t *testing.T) (isReady bool) {
-	if isPortReady(t, clickHousePortHTTP) {
-		cmd := exec.Command("curl", clickHouseURL, "--data-binary", "SELECT 1")
+	if isPortReady(t, 8123) {
+		cmd := exec.Command("curl", "http://localhost:8123", "--data-binary", "SELECT 1")
 		_, err := cmd.Output()
 		return err == nil
 	}

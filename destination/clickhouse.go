@@ -4,14 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"strings"
 	"sync"
-	"time"
 
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -349,13 +346,13 @@ func (conn *ClickHouseConnection) UpdateBatch(
 		if err != nil {
 			return err
 		}
-		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, csv, selectBatchSize, maxParallelSelects)
-		if err != nil {
-			return err
-		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
+				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				if err != nil {
+					return err
+				}
 				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, pkCols, table, nullStr, unmodifiedStr)
 				if err != nil {
 					return err
@@ -407,13 +404,13 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 		if err != nil {
 			return err
 		}
-		selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, csv, selectBatchSize, maxParallelSelects)
-		if err != nil {
-			return err
-		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
+				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				if err != nil {
+					return err
+				}
 				insertRows, skipIdx, err := MergeSoftDeletedRows(batch, selectRows, pkCols, fivetranSyncedIdx, fivetranDeletedIdx)
 				if err != nil {
 					return err
@@ -443,100 +440,6 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 	}
 	LogInfo("Connection check passed")
 	return nil
-}
-
-func (conn *ClickHouseConnection) MutationTest() error {
-	return RetryNetError(func() error {
-		id := strings.Replace(uuid.New().String(), "-", "", -1)
-		tableName := fmt.Sprintf("fivetran_destination_test_%s", id)
-
-		// Create test table
-		err := conn.CreateTable("", tableName, MakeTableDescription([]*ColumnDefinition{
-			{Name: "Col1", Type: "UInt8", IsPrimaryKey: true},
-			{Name: "Col2", Type: "String"},
-			{Name: FivetranSynced, Type: "DateTime64(9, 'UTC')"},
-		}))
-		if err != nil {
-			return err
-		}
-
-		// Insert test Data
-		batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO `%s`", tableName))
-		if err != nil {
-			LogError(fmt.Errorf("error while preparing a batch for %s: %w", tableName, err))
-			return err
-		}
-		now := time.Now()
-		err = batch.Append(uint8(42), "ClickHouse", now)
-		if err != nil {
-			return fmt.Errorf("error appending row to a batch for %s: %w", tableName, err)
-		}
-		err = batch.Send()
-		if err != nil {
-			LogError(fmt.Errorf("error while sending a batch to %s: %w", tableName, err))
-			return err
-		}
-
-		// Alter
-		dbType := "FixedString(10)"
-		err = conn.AlterTable("", tableName, []*AlterTableOp{
-			{Op: Modify, Column: "Col2", Type: &dbType},
-		})
-		if err != nil {
-			return err
-		}
-
-		// Check the inserted Data
-		row := conn.QueryRow(conn.ctx, fmt.Sprintf("SELECT * FROM `%s`", tableName))
-		var (
-			col1 uint8
-			col2 string
-			col3 *time.Time
-		)
-		if err = row.Scan(&col1, &col2, &col3); err != nil {
-			LogError(fmt.Errorf("error while scanning row from %s: %w", tableName, err))
-			return err
-		}
-		if col1 != uint8(42) || col2 != "ClickHouse" {
-			return fmt.Errorf("unexpected Data check output, expected 42/ClickHouse/abc, got: %d/%s/%s", col1, col2, col3)
-		}
-
-		// Truncate
-		err = conn.TruncateTable("", tableName)
-		if err != nil {
-			return err
-		}
-
-		// Check the table is empty
-		row = conn.QueryRow(conn.ctx, fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName))
-		var count uint64
-		if err = row.Scan(&count); err != nil {
-			LogError(fmt.Errorf("error while scanning count from %s: %w", tableName, err))
-			return err
-		}
-		if count != 0 {
-			return fmt.Errorf("truncated table count is not zero, got: %d", count)
-		}
-
-		// Drop
-		if err = conn.Exec(conn.ctx, fmt.Sprintf("DROP TABLE `%s`", tableName)); err != nil {
-			LogError(fmt.Errorf("error while dropping table %s: %w", tableName, err))
-			return err
-		}
-
-		// Check the table does not exist
-		row = conn.QueryRow(conn.ctx, fmt.Sprintf("SELECT COUNT(*) FROM system.tables WHERE name = '%s'", tableName))
-		if err = row.Scan(&count); err != nil {
-			LogError(fmt.Errorf("error while scanning count from system.tables: %w", err))
-			return err
-		}
-		if count != 0 {
-			return fmt.Errorf("table %s still exists after drop", tableName)
-		}
-
-		LogInfo("Mutation check passed")
-		return nil
-	}, conn.ctx, string(mutationTest), false)
 }
 
 type connectionOpType string
