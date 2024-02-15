@@ -159,7 +159,11 @@ func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]st
 	out := RunQuery(t, query)
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	assert.NoError(t, err)
-	assert.Equal(t, expectedOutput, records)
+	for i, record := range records {
+		if !assert.Equal(t, expectedOutput[i], record) {
+			t.Fatal("Expected:", expectedOutput[i], "Actual:", record)
+		}
+	}
 }
 
 func assertTableRowsWithFivetranId(t *testing.T, tableName string, expectedOutput [][]string) {
@@ -190,10 +194,10 @@ type TableDefinition struct {
 }
 
 type Row struct {
-	Id              uint   `json:"id"`
-	Data            string `json:"data,omitempty"`
-	CreatedAt       string `json:"created_at,omitempty"`
-	FivetranDeleted bool   `json:"_fivetran_deleted,omitempty"`
+	Id              uint    `json:"id"`
+	Data            *string `json:"data,omitempty"`
+	CreatedAt       *string `json:"created_at,omitempty"`
+	FivetranDeleted *bool   `json:"_fivetran_deleted,omitempty"`
 }
 
 type Operation struct {
@@ -216,28 +220,25 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 	createdAt := time.Date(2021, 2, 15, 14, 13, 12, 0, time.UTC)
 	for i := uint(0); i < n; i++ {
 		rowCreatedAt := createdAt.Add(time.Duration(i) * time.Second)
-		row := Row{
-			Id:        i + 1,
-			Data:      fmt.Sprintf("%d:%d:%d", i, i+1, i+2),
-			CreatedAt: rowCreatedAt.Format("2006-01-02T15:04:05"),
-		}
+		createdAtStr := rowCreatedAt.Format("2006-01-02T15:04:05")
+		data := fmt.Sprintf("original for %d", i)
+		row := Row{Id: i, Data: &data, CreatedAt: &createdAtStr}
 		rows[i] = row
 		// id, data, created_at, _fivetran_deleted
 		assertRows[i] = make([]string, 4)
 		assertRows[i][0] = fmt.Sprintf("%d", row.Id)
-		assertRows[i][1] = row.Data
+		assertRows[i][1] = *row.Data
 		assertRows[i][2] = rowCreatedAt.Format("2006-01-02 15:04:05") // ClickHouse "simple" format (no T)
 		assertRows[i][3] = "false"
 		if i%20 == 0 {
-			updatedData := fmt.Sprintf("%d:%d:%d", i+1, i+2, i+3)
 			j := i / 20
-			updateRows[j] = row
-			updateRows[j].Data = updatedData
+			updatedData := fmt.Sprintf("updated for %d", i)
+			updateRows[j] = Row{Id: row.Id, Data: &updatedData}
 			assertRows[i][1] = updatedData
 		}
 		if i%50 == 0 {
 			j := i / 50
-			deleteRows[j] = row
+			deleteRows[j] = Row{Id: row.Id}
 			assertRows[i][3] = "true"
 		}
 	}

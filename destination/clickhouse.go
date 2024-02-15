@@ -162,10 +162,8 @@ func (conn *ClickHouseConnection) InsertBatch(
 		LogWarn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, fullTableName))
 		return nil
 	}
-	return BenchmarkAndNotice(func() error {
-		batch, err := RetryNetErrorWithData(func() (driver.Batch, error) {
-			return conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
-		}, conn.ctx, fmt.Sprintf("%s(%s)", opName, "PrepareBatch"), false)
+	return RetryNetError(func() error {
+		batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
 		if err != nil {
 			LogError(fmt.Errorf("error while preparing batch for %s: %w", fullTableName, err))
 			return err
@@ -174,19 +172,18 @@ func (conn *ClickHouseConnection) InsertBatch(
 			if skipIdx[i] {
 				continue
 			}
-			err = RetryNetError(func() error {
-				return batch.Append(row...)
-			}, conn.ctx, fmt.Sprintf("%s(%s)", opName, "Append"), false)
+			err = batch.Append(row...)
 			if err != nil {
 				return fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
 			}
 		}
-		if err = batch.Send(); err != nil {
+		err = batch.Send()
+		if err != nil {
 			LogError(fmt.Errorf("error while sending batch for %s: %w", fullTableName, err))
 			return err
 		}
 		return nil
-	}, opName)
+	}, conn.ctx, opName, true)
 }
 
 func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
@@ -245,13 +242,17 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					defer rows.Close()
 					mutex.Lock()
 					defer mutex.Unlock()
-					for i := 0; rows.Next(); i++ {
+					for i := s.Num * selectBatchSize; rows.Next(); i++ {
 						if err = rows.Scan(scanRows[i]...); err != nil {
 							return err
 						}
 						mappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
 						if err != nil {
 							return err
+						}
+						_, ok := rowsByPKValues[mappingKey]
+						if ok {
+							LogError(fmt.Errorf("primary key mapping collision: %s", mappingKey))
 						}
 						rowsByPKValues[mappingKey] = scanRows[i]
 					}
@@ -318,7 +319,6 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 // Selects rows by PK found in CSV, merges these rows with the CSV values, and inserts them back.
 //
 // If a record is not found in the table, it is skipped (though it should not usually happen).
-// If a record is found, it is updated with the new values from the CSV.
 // If a CSV column value equals to `unmodifiedStr`, that means that the original value should be preserved.
 // If a CSV column value equals to `nullStr`, that means that the column value should be set to NULL.
 //

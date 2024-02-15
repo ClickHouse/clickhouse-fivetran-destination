@@ -242,7 +242,12 @@ func ParseValue(colName string, colType pb.DataType, val string) (any, error) {
 	}
 }
 
+// CSVSliceIndices
+// Num of the slice in the group (see ClickHouseConnection.SelectByPrimaryKeys)
+// Start index in the file
+// End index in the file
 type CSVSliceIndices struct {
+	Num   uint
 	Start uint
 	End   uint
 }
@@ -254,18 +259,21 @@ type CSVSliceIndices struct {
 //		{
 //	        // Parallel group #1
 //			{
-//				{Start: 0, End: 9},   // Slice #1 of group #1
-//				{Start: 10, End: 19}, // Slice #2 of group #1
+//				{Num: 0, Start: 0, End: 9},   // Slice #1 of group #1
+//				{Num: 1, Start: 10, End: 19}, // Slice #2 of group #1
 //			},
 //	        // Parallel group #2
 //			{
-//				{Start: 20, End: 29}, // Slice #1 of group #2
-//				{Start: 30, End: 39}, // Slice #2 of group #2
+//				{Num: 3, Start: 20, End: 29}, // Slice #1 of group #2
+//				{Num: 4, Start: 30, End: 39}, // Slice #2 of group #2
 //			},
 //		}
 //
 // See the tests for more examples.
-// See ClickHouseConnection.UpdateBatch / ClickHouseConnection.SoftDeleteBatch for usage.
+//
+// See usage in:
+// - ClickHouseConnection.SelectByPrimaryKeys (since SELECT is limited by the size of the query and amount of IN values)
+// - ClickHouseConnection.UpdateBatch / ClickHouseConnection.SoftDeleteBatch (batching for sequential operations)
 func CalcCSVSlicesGroupsForParallel(
 	fileLen uint,
 	batchSize uint,
@@ -298,7 +306,7 @@ func CalcCSVSlicesGroupsForParallel(
 			if end > fileLen {
 				end = fileLen
 			}
-			groups[i] = append(groups[i], CSVSliceIndices{Start: start, End: end})
+			groups[i] = append(groups[i], CSVSliceIndices{Num: j + i*maxParallelOperations, Start: start, End: end})
 		}
 	}
 	return groups, nil

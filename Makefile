@@ -37,10 +37,11 @@ lint:
 	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v1.55.2 golangci-lint run -v
 
 test:
-	go test fivetran.com/fivetran_sdk/destination -count=1 -v
+	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json sdk_tests/configuration.json
+	go test fivetran.com/fivetran_sdk/destination -count=1 -v -race $$TEST_ARGS
 
 test-with-coverage:
-	go test fivetran.com/fivetran_sdk/destination/... -count=1 -v -coverprofile cover.out
+	TEST_ARGS="-coverprofile cover.out" make test
 	go tool cover -html=cover.out
 
 build:
