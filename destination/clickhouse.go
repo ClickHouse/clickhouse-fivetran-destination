@@ -54,7 +54,8 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	}
 	ssl := GetWithDefault(configuration, "ssl", "false")
 	if ssl == "true" {
-		options.TLS = &tls.Config{InsecureSkipVerify: true}
+		skipVerify := GetWithDefault(configuration, "ssl_skip_verification", "false")
+		options.TLS = &tls.Config{InsecureSkipVerify: skipVerify == "true"}
 	}
 	conn, err := RetryNetErrorWithData(func() (driver.Conn, error) {
 		return clickhouse.Open(options)

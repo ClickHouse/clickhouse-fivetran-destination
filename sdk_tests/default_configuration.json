@@ -1,1 +1,9 @@
-{"hostname":"clickhouse","database":"default","password":"","port":"9000","ssl":"false","username":"default"}
+{
+  "hostname": "clickhouse",
+  "database": "default",
+  "password": "",
+  "port": "9000",
+  "ssl": "false",
+  "ssl_skip_verification": "false",
+  "username": "default"
+}

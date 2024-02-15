@@ -21,7 +21,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 		{
 			Name:     "port",
 			Label:    "Port",
-			Required: false,
+			Required: true,
 			Type: &pb.FormField_TextField{
 				TextField: pb.TextField_PlainText,
 			},
@@ -29,7 +29,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 		{
 			Name:     "database",
 			Label:    "Database",
-			Required: false,
+			Required: true,
 			Type: &pb.FormField_TextField{
 				TextField: pb.TextField_PlainText,
 			},
@@ -37,7 +37,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 		{
 			Name:     "username",
 			Label:    "Username",
-			Required: false,
+			Required: true,
 			Type: &pb.FormField_TextField{
 				TextField: pb.TextField_Password,
 			},
@@ -45,14 +45,22 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 		{
 			Name:     "password",
 			Label:    "Password",
-			Required: false,
+			Required: true,
 			Type: &pb.FormField_TextField{
 				TextField: pb.TextField_Password,
 			},
 		},
 		{
 			Name:     "ssl",
-			Label:    "SSL",
+			Label:    "Use SSL",
+			Required: false,
+			Type: &pb.FormField_ToggleField{
+				ToggleField: &pb.ToggleField{},
+			},
+		},
+		{
+			Name:     "ssl_skip_verification",
+			Label:    "Skip SSL verification",
 			Required: false,
 			Type: &pb.FormField_ToggleField{
 				ToggleField: &pb.ToggleField{},
