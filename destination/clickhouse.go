@@ -12,8 +12,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ClickHouseConnection
-// TODO: on premise cluster setup for DDL
 type ClickHouseConnection struct {
 	ctx context.Context
 	driver.Conn
@@ -24,7 +22,6 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
 	}
-	hostname := fmt.Sprintf("%s:%d", config.Hostname, config.Port)
 	settings := clickhouse.Settings{}
 	if config.DeploymentType == SDKConfigDeploymentTypeClickHouseCloud {
 		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
@@ -33,10 +30,8 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 		settings["mutations_sync"] = 2
 		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
 		settings["select_sequential_consistency"] = 1
-	} else {
-		// Required to work with JSON data type, see https://clickhouse.com/docs/en/sql-reference/data-types/json
-		settings["allow_experimental_object_type"] = 1
 	}
+	hostname := fmt.Sprintf("%s:%d", config.Hostname, config.Port)
 	options := &clickhouse.Options{
 		Addr: []string{hostname},
 		Auth: clickhouse.Auth{
@@ -99,6 +94,9 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 		return nil, err
 	}
 	rows, err := conn.ExecQuery(query, describeTable, false)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var (
 		colName      string
@@ -134,6 +132,9 @@ func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName st
 		return nil, err
 	}
 	rows, err := conn.ExecQuery(query, getColumnTypes, false)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	return rows.ColumnTypes(), nil
 }
@@ -230,6 +231,9 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 						return err
 					}
 					rows, err := conn.ExecQuery(query, selectByPrimaryKeys, true)
+					if err != nil {
+						return err
+					}
 					defer rows.Close()
 					mutex.Lock()
 					defer mutex.Unlock()

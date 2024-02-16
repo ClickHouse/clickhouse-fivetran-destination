@@ -33,11 +33,7 @@ func CSVRowToInsertValues(row CSVRow, table *pb.Table, nullStr string) ([]any, e
 	result := make([]any, len(row))
 	for i, col := range table.Columns {
 		if row[i] == nullStr {
-			if col.Type == pb.DataType_JSON {
-				result[i] = "{}" // JSON can't be nullable, so we use an empty object instead
-			} else {
-				result[i] = nil
-			}
+			result[i] = nil
 			continue
 		}
 		value, err := ParseValue(col.Name, col.Type, row[i])

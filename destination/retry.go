@@ -32,6 +32,7 @@ func RetryNetError(
 			return err
 		}
 		failCount++
+		LogError(fmt.Errorf("retrying %s, cause: %w", opName, err))
 		if failCount < *maxRetries {
 			delay := GetBackoffDelay(initialDelay, maxDelay, failCount)
 			select {
@@ -75,6 +76,7 @@ func RetryNetErrorWithData[T any](
 			return empty, err
 		}
 		failCount++
+		LogError(fmt.Errorf("retrying %s, cause: %w", opName, err))
 		if failCount < *maxRetries {
 			delay := GetBackoffDelay(initialDelay, maxDelay, failCount)
 			select {

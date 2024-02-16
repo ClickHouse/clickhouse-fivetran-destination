@@ -12,6 +12,7 @@ const (
 	FivetranID          = "_fivetran_id"
 	FivetranSynced      = "_fivetran_synced"
 	FivetranDeleted     = "_fivetran_deleted"
+	FivetranJSON        = "JSON"
 	FivetranBinary      = "BINARY"
 	FivetranXML         = "XML"
 )
@@ -33,8 +34,6 @@ var (
 		"DateTime":             pb.DataType_NAIVE_DATETIME,
 		"DateTime64(9, 'UTC')": pb.DataType_UTC_DATETIME,
 		"String":               pb.DataType_STRING,
-		"JSON":                 pb.DataType_JSON,
-		"Object('json')":       pb.DataType_JSON,
 	}
 	FivetranDataTypes = map[pb.DataType]ClickHouseType{
 		pb.DataType_BOOLEAN:        {Type: "Bool"},
@@ -48,19 +47,22 @@ var (
 		pb.DataType_NAIVE_DATETIME: {Type: "DateTime"},
 		pb.DataType_UTC_DATETIME:   {Type: "DateTime64(9, 'UTC')"},
 		pb.DataType_STRING:         {Type: "String"},
-		pb.DataType_JSON:           {Type: "JSON"},
 	}
 	// FivetranDataTypesWithComments
-	// Fivetran STRING, XML, BINARY all are valid ClickHouse String types,
+	// Fivetran STRING, XML, BINARY, JSON all are valid ClickHouse String types,
 	// and by default we don't have a way to get the original Fivetran type from just a ClickHouse String.
-	// So we add comments to the ClickHouse types (and columns, using COMMENT clause) to be able to distinguish them.
+	// So we add comments to the table columns using COMMENT clause to be able to distinguish them.
+	// NB: ClickHouse has JSON data type, see https://clickhouse.com/docs/en/sql-reference/data-types/json
+	// however, it's marked as experimental and not production ready, so we use String instead.
 	FivetranDataTypesWithComments = map[pb.DataType]ClickHouseType{
+		pb.DataType_JSON:   {Type: "String", Comment: FivetranJSON},
 		pb.DataType_BINARY: {Type: "String", Comment: FivetranBinary},
 		pb.DataType_XML:    {Type: "String", Comment: FivetranXML},
 	}
 	// ColumnCommentToFivetranType
 	// Mapping back to Fivetran types from FivetranDataTypesWithComments(ClickHouseType.Comment)
 	ColumnCommentToFivetranType = map[string]pb.DataType{
+		FivetranJSON:   pb.DataType_JSON,
 		FivetranBinary: pb.DataType_BINARY,
 		FivetranXML:    pb.DataType_XML,
 	}
@@ -75,7 +77,7 @@ var (
 
 // GetFivetranDataType
 // Maps ClickHouse data types to Fivetran data types, taking Nullable into consideration.
-// NB: STRING, XML, BINARY are all valid CH String types, we can only distinguish them by the column comment.
+// NB: STRING, JSON, XML, BINARY are all valid CH String types, we can only distinguish them by the column comment.
 func GetFivetranDataType(col *ColumnDefinition) (pb.DataType, *pb.DecimalParams, error) {
 	dataType, ok := ColumnCommentToFivetranType[col.Comment]
 	if ok {
@@ -103,7 +105,6 @@ func GetFivetranDataType(col *ColumnDefinition) (pb.DataType, *pb.DecimalParams,
 
 // GetClickHouseDataType
 // - Fivetran Metadata fields have known types and are not Nullable
-// - JSON fields are not Nullable by ClickHouse design
 // - PrimaryKey fields are not Nullable (assumption)
 // - all other fields are Nullable by default
 func GetClickHouseDataType(col *pb.Column) (ClickHouseType, error) {
@@ -121,7 +122,7 @@ func GetClickHouseDataType(col *pb.Column) (ClickHouseType, error) {
 	if chType.Type == "Decimal" && col.Decimal != nil {
 		chType.Type = ToDecimalTypeWithParams(col.Decimal)
 	}
-	if col.PrimaryKey || chType.Type == "JSON" {
+	if col.PrimaryKey {
 		return chType, nil
 	}
 	chType.Type = fmt.Sprintf("Nullable(%s)", chType.Type)

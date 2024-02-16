@@ -41,8 +41,7 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 			dt64  DateTime64(9, 'UTC'),
 			ndt64 Nullable(DateTime64(9, 'UTC')),
 			s     String,
-			ns    Nullable(String),
-			j     JSON
+			ns    Nullable(String)
 		) ENGINE Memory`, tableName))
 	assert.NoError(t, err)
 
@@ -64,11 +63,10 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 	dec := new(decimal.Decimal)
 	d := new(time.Time)
 	s := new(string)
-	j := new(map[string]interface{})
 
 	/// Non-nullable is *Type, nullable is **Type (see ddl)
 	for i, row := range emptyRows {
-		assert.Equal(t, 23, len(row))
+		assert.Equal(t, 22, len(row))
 
 		// Boolean
 		assert.IsType(t, b, row[0], "Expected idx 0 of row %d to be *bool", i)
@@ -113,9 +111,6 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 		// String
 		assert.IsType(t, s, row[20], "Expected idx 20 of row %d to be *string", i)
 		assert.IsType(t, &s, row[21], "Expected idx 21 of row %d to be **string", i)
-
-		// JSON is not nullable only
-		assert.IsType(t, j, row[22], "Expected idx 22 of row %d to be *map[string]interface{}", i)
 	}
 }
 
@@ -126,7 +121,6 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 	defer conn.Close()
 
 	// Create a table with all possible destination types and a single record
-	// JSON is not supported as a primary key atm
 	tableName := fmt.Sprintf("test_get_db_row_key_%s", Guid())
 	err = conn.Exec(context.Background(), fmt.Sprintf(`
 		CREATE OR REPLACE TABLE %s (
@@ -140,8 +134,7 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 			dt64 DateTime64(9, 'UTC'),
 			dt   DateTime,
 			d    Date,
-			s    String,
-			j    JSON
+			s    String
 		) ENGINE Memory`, tableName))
 	assert.NoError(t, err)
 
@@ -159,7 +152,6 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		time.Date(2023, 5, 7, 18, 22, 44, 0, time.UTC),
 		time.Date(2019, 12, 15, 0, 0, 0, 0, time.UTC),
 		"test",
-		`{"key": "value"}`,
 	)
 	assert.NoError(t, err)
 	err = batch.Send()
@@ -238,8 +230,4 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 
 	_, err = GetDatabaseRowMappingKey(dbRow, nil)
 	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
-
-	// JSON is not supported as a primary key atm
-	_, err = GetDatabaseRowMappingKey(dbRow, []*PrimaryKeyColumn{{Name: "j", Type: pb.DataType_JSON, Index: 11}})
-	assert.ErrorContains(t, err, "can't use type *map[string]interface {} as mapping key")
 }

@@ -236,26 +236,20 @@ func TestCSVRowToInsertValuesNullStr(t *testing.T) {
 	row, err := CSVRowToInsertValues([]string{
 		"my-null-str", "foo", "true", `{"foo": "bar"}`,
 	}, table, "my-null-str")
-	assert.Equal(t, []any{
-		nil, "foo", true, `{"foo": "bar"}`,
-	}, row)
+	assert.Equal(t, []any{nil, "foo", true, `{"foo": "bar"}`}, row)
 	assert.NoError(t, err)
 
 	row, err = CSVRowToInsertValues([]string{
 		"42", "my-null-str", "false", "my-null-str",
 	}, table, "my-null-str")
 	assert.NoError(t, err)
-	assert.Equal(t, []any{
-		int64(42), nil, false, "{}", // <- JSON can't be nullable, so we use an empty object instead
-	}, row)
+	assert.Equal(t, []any{int64(42), nil, false, nil}, row)
 
 	row, err = CSVRowToInsertValues([]string{
 		"43", "bar", "my-null-str", `{"foo": "bar"}`,
 	}, table, "my-null-str")
 	assert.NoError(t, err)
-	assert.Equal(t, []any{
-		int64(43), "bar", nil, `{"foo": "bar"}`,
-	}, row)
+	assert.Equal(t, []any{int64(43), "bar", nil, `{"foo": "bar"}`}, row)
 }
 
 func TestCSVRowsToSelectQueryValidation(t *testing.T) {

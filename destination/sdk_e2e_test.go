@@ -27,10 +27,10 @@ func TestAllDataTypes(t *testing.T) {
 	assertTableRowsWithFivetranId(t, tableName, [][]string{
 		{"true", "42", "144", "100500", "100.5", "200.5", "42.42",
 			"2024-05-07", "2024-04-05 15:33:14", "2024-02-03 12:44:22.123456789",
-			"foo", "1", "2", "0", "0", "<a>1</a>", "FFFA", "false", "abc-123-xyz"},
+			"foo", "{\"a\": 1,\"b\": 2}", "<a>1</a>", "FFFA", "false", "abc-123-xyz"},
 		{"false", "-42", "-144", "-100500", "-100.5", "-200.5", "-42.42",
 			"2021-02-03", "2021-06-15 04:15:16", "2021-02-03 14:47:45.234567890",
-			"bar", "0", "0", "3", "4", "<b>42</b>", "FFFE", "false", "vbn-543-hjk"}})
+			"bar", "{\"c\": 3,\"d\": 4}", "<b>42</b>", "FFFE", "false", "vbn-543-hjk"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"b", "Nullable(Bool)", ""},
 		{"i16", "Nullable(Int16)", ""},
@@ -43,7 +43,7 @@ func TestAllDataTypes(t *testing.T) {
 		{"dt", "Nullable(DateTime)", ""},
 		{"utc", "Nullable(DateTime64(9, 'UTC'))", ""},
 		{"s", "Nullable(String)", ""},
-		{"j", "Object('json')", ""},
+		{"j", "Nullable(String)", "JSON"},
 		{"x", "Nullable(String)", "XML"},
 		{"bin", "Nullable(String)", "BINARY"},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
@@ -138,6 +138,8 @@ func TestLargeInputFile(t *testing.T) {
 }
 
 func runSDKTestCommand(t *testing.T, inputFileName string) {
+	RunQuery(t, "DROP DATABASE IF EXISTS tester")
+	RunQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
 	projectRootDir := GetProjectRootDir(t)
 	cmd := exec.Command("make", "sdk-test")
 	cmd.Dir = projectRootDir
@@ -153,32 +155,34 @@ func runSDKTestCommand(t *testing.T, inputFileName string) {
 	assert.Contains(t, out, "[Test connection and basic operations]: PASSED")
 }
 
-func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]string) {
-	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY id FORMAT CSV", tableName)
-	out := RunQuery(t, query)
-	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+func assertDatabaseRecords(t *testing.T, tableName string, expectedRecords [][]string, dbRecordsCSVStr string) {
+	dbRecords, err := csv.NewReader(strings.NewReader(dbRecordsCSVStr)).ReadAll()
 	assert.NoError(t, err)
-	for i, record := range records {
-		if !assert.Equal(t, expectedOutput[i], record) {
-			t.Fatal("Expected:", expectedOutput[i], "Actual:", record)
+	assert.Equal(t, len(expectedRecords), len(dbRecords),
+		"Expected %d, but got %d database records", len(expectedRecords), len(dbRecords))
+	for i, expected := range expectedRecords {
+		if !assert.Equal(t, expected, dbRecords[i]) {
+			t.Fatal("Expected:", expected, "Actual:", dbRecords[i])
 		}
 	}
 }
 
+func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]string) {
+	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY id FORMAT CSV", tableName)
+	dbRecordsCSVStr := RunQuery(t, query)
+	assertDatabaseRecords(t, tableName, expectedOutput, dbRecordsCSVStr)
+}
+
 func assertTableRowsWithFivetranId(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY _fivetran_id FORMAT CSV", tableName)
-	out := RunQuery(t, query)
-	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
-	assert.NoError(t, err)
-	assert.Equal(t, expectedOutput, records)
+	dbRecordsCSVStr := RunQuery(t, query)
+	assertDatabaseRecords(t, tableName, expectedOutput, dbRecordsCSVStr)
 }
 
 func assertTableColumns(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT name, type, comment FROM system.columns WHERE database = 'tester' AND table = '%s' FORMAT CSV", tableName)
-	out := RunQuery(t, query)
-	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
-	assert.NoError(t, err)
-	assert.Equal(t, expectedOutput, records)
+	dbRecordsCSVStr := RunQuery(t, query)
+	assertDatabaseRecords(t, tableName, expectedOutput, dbRecordsCSVStr)
 }
 
 type TableDefinitionColumns struct {

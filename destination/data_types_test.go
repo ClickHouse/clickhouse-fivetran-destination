@@ -36,8 +36,6 @@ func TestGetFivetranDataType(t *testing.T) {
 		{"Nullable(DateTime64(9, 'UTC'))", pb.DataType_UTC_DATETIME},
 		{"String", pb.DataType_STRING},
 		{"Nullable(String)", pb.DataType_STRING},
-		{"JSON", pb.DataType_JSON}, // JSON can't be nullable in CH
-		{"Object('json')", pb.DataType_JSON},
 	}
 	for _, arg := range args {
 		dataType, decimalParams, err := GetFivetranDataType(&ColumnDefinition{Type: arg.string})
@@ -77,6 +75,8 @@ func TestGetFivetranDataTypeWithComments(t *testing.T) {
 		{"Nullable(String)", "XML", pb.DataType_XML},
 		{"String", "BINARY", pb.DataType_BINARY},
 		{"Nullable(String)", "BINARY", pb.DataType_BINARY},
+		{"String", "JSON", pb.DataType_JSON},
+		{"Nullable(String)", "JSON", pb.DataType_JSON},
 	}
 	for _, arg := range args {
 		dataType, decimalParams, err := GetFivetranDataType(&ColumnDefinition{Type: arg.Type, Comment: arg.Comment})
@@ -93,7 +93,7 @@ func TestGetFivetranDataTypeWithComments(t *testing.T) {
 }
 
 func TestGetClickHouseDataType(t *testing.T) {
-	// Everything is nullable unless it's a PK, Fivetran metadata field or JSON
+	// Everything is nullable unless it's a PK or Fivetran metadata field
 	args := []struct {
 		pb.DataType
 		ClickHouseType
@@ -109,7 +109,7 @@ func TestGetClickHouseDataType(t *testing.T) {
 		{pb.DataType_NAIVE_DATE, ClickHouseType{Type: "Nullable(Date)"}},
 		{pb.DataType_NAIVE_DATETIME, ClickHouseType{Type: "Nullable(DateTime)"}},
 		{pb.DataType_UTC_DATETIME, ClickHouseType{Type: "Nullable(DateTime64(9, 'UTC'))"}},
-		{pb.DataType_JSON, ClickHouseType{Type: "JSON"}}, // JSON can't be nullable in CH
+		{pb.DataType_JSON, ClickHouseType{Type: "Nullable(String)", Comment: "JSON"}},
 		{pb.DataType_BINARY, ClickHouseType{Type: "Nullable(String)", Comment: "BINARY"}},
 		{pb.DataType_XML, ClickHouseType{Type: "Nullable(String)", Comment: "XML"}},
 	}
@@ -163,7 +163,7 @@ func TestGetClickHouseDataTypePrimaryKeys(t *testing.T) {
 		{pb.DataType_NAIVE_DATE, ClickHouseType{Type: "Date"}},
 		{pb.DataType_NAIVE_DATETIME, ClickHouseType{Type: "DateTime"}},
 		{pb.DataType_UTC_DATETIME, ClickHouseType{Type: "DateTime64(9, 'UTC')"}},
-		{pb.DataType_JSON, ClickHouseType{Type: "JSON"}}, // JSON can't be nullable in CH
+		{pb.DataType_JSON, ClickHouseType{Type: "String", Comment: "JSON"}},
 		{pb.DataType_BINARY, ClickHouseType{Type: "String", Comment: "BINARY"}},
 		{pb.DataType_XML, ClickHouseType{Type: "String", Comment: "XML"}},
 	}

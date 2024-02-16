@@ -33,13 +33,12 @@ the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk).
 | STRING         | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
 | BINARY         | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
 | XML            | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
-| JSON           | [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) &ast;&ast;            |
+| JSON           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast              |
 
 &ast; ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used to represent
-an arbitrary set of bytes. The destination app will add a column comment to `BINARY` and `XML` types to indicate
-the original data type.
-
-&ast;&ast; The destination app automatically uses the required `allow_experimental_object_type = 1` setting.
+an arbitrary set of bytes. The destination app will add a column comment to `JSON`, `BINARY` and `XML` types to indicate
+the original data type. NB: ClickHouse has JSON data type, however, it's marked as experimental and not production
+ready, so we use [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) instead.
 
 NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`. `JSON` type
 columns, being non-nullable by design, will use an empty object `{}` to represent `NULL` values.

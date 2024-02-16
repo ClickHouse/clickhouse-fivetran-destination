@@ -172,9 +172,9 @@ func TestParseSDKConfigErrors(t *testing.T) {
 			expectedError: "port must be in range [1, 65535]",
 		},
 		{
-			name:          "invalid cloud",
-			configuration: map[string]string{"cloud": "not-a-boolean"},
-			expectedError: "cloud must be a boolean",
+			name:          "invalid deployment type",
+			configuration: map[string]string{"deployment_type": "wrong"},
+			expectedError: "deployment_type must be one of On-premise single node, On-premise cluster, ClickHouse Cloud",
 		},
 		{
 			name:          "invalid ssl",

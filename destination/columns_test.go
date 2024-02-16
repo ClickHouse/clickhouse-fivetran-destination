@@ -35,9 +35,10 @@ func TestToFivetranColumns(t *testing.T) {
 		{Name: "d", Type: "Date", IsPrimaryKey: false},
 		{Name: "dt", Type: "DateTime", IsPrimaryKey: false},
 		{Name: "dt_utc", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true},
-		{Name: "json", Type: "JSON", IsPrimaryKey: false},
-		{Name: "json_obj", Type: "Object('json')", IsPrimaryKey: false},
 		{Name: "str", Type: "String", IsPrimaryKey: false},
+		{Name: "j", Type: "String", IsPrimaryKey: false, Comment: "JSON"},
+		{Name: "x", Type: "String", IsPrimaryKey: false, Comment: "XML"},
+		{Name: "bin", Type: "String", IsPrimaryKey: false, Comment: "BINARY"},
 	})
 	columns, err := ToFivetranColumns(description)
 	assert.NoError(t, err)
@@ -52,9 +53,10 @@ func TestToFivetranColumns(t *testing.T) {
 		{Name: "d", Type: pb.DataType_NAIVE_DATE, PrimaryKey: false},
 		{Name: "dt", Type: pb.DataType_NAIVE_DATETIME, PrimaryKey: false},
 		{Name: "dt_utc", Type: pb.DataType_UTC_DATETIME, PrimaryKey: true},
-		{Name: "json", Type: pb.DataType_JSON, PrimaryKey: false},
-		{Name: "json_obj", Type: pb.DataType_JSON, PrimaryKey: false},
 		{Name: "str", Type: pb.DataType_STRING, PrimaryKey: false},
+		{Name: "j", Type: pb.DataType_JSON, PrimaryKey: false},
+		{Name: "x", Type: pb.DataType_XML, PrimaryKey: false},
+		{Name: "bin", Type: pb.DataType_BINARY, PrimaryKey: false},
 	})
 
 	columns, err = ToFivetranColumns(nil)
@@ -82,16 +84,16 @@ func TestToClickHouseColumns(t *testing.T) {
 			{Name: "d", Type: pb.DataType_NAIVE_DATE, PrimaryKey: false},
 			{Name: "dt", Type: pb.DataType_NAIVE_DATETIME, PrimaryKey: false},
 			{Name: "dt_utc", Type: pb.DataType_UTC_DATETIME, PrimaryKey: true},
-			{Name: "json", Type: pb.DataType_JSON, PrimaryKey: false},
 			{Name: "str", Type: pb.DataType_STRING, PrimaryKey: false},
+			{Name: "j", Type: pb.DataType_JSON, PrimaryKey: false},
+			{Name: "x", Type: pb.DataType_XML, PrimaryKey: false},
+			{Name: "bin", Type: pb.DataType_BINARY, PrimaryKey: false},
 		},
 	}
 
 	// PK fields - not nullable
 	boolCol := &ColumnDefinition{Name: "b", Type: "Bool", IsPrimaryKey: true}
 	utcCol := &ColumnDefinition{Name: "dt_utc", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true}
-	// JSON can't be Nullable in CH by design
-	jsonCol := &ColumnDefinition{Name: "json", Type: "JSON", IsPrimaryKey: false}
 	// The rest of the fields are nullable
 	i16Col := &ColumnDefinition{Name: "i16", Type: "Nullable(Int16)", IsPrimaryKey: false}
 	i32Col := &ColumnDefinition{Name: "i32", Type: "Nullable(Int32)", IsPrimaryKey: false}
@@ -102,6 +104,9 @@ func TestToClickHouseColumns(t *testing.T) {
 	dateCol := &ColumnDefinition{Name: "d", Type: "Nullable(Date)", IsPrimaryKey: false}
 	datetimeCol := &ColumnDefinition{Name: "dt", Type: "Nullable(DateTime)", IsPrimaryKey: false}
 	strCol := &ColumnDefinition{Name: "str", Type: "Nullable(String)", IsPrimaryKey: false}
+	jsonCol := &ColumnDefinition{Name: "j", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "JSON"}
+	xmlCol := &ColumnDefinition{Name: "x", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "XML"}
+	binaryCol := &ColumnDefinition{Name: "bin", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "BINARY"}
 
 	description, err := ToClickHouseColumns(table)
 	assert.NoError(t, err)
@@ -117,11 +122,16 @@ func TestToClickHouseColumns(t *testing.T) {
 			"d":      dateCol,
 			"dt":     datetimeCol,
 			"dt_utc": utcCol,
-			"json":   jsonCol,
 			"str":    strCol,
+			"j":      jsonCol,
+			"x":      xmlCol,
+			"bin":    binaryCol,
 		},
 		Columns: []*ColumnDefinition{
-			boolCol, i16Col, i32Col, i64Col, f32Col, f64Col, decimalCol, dateCol, datetimeCol, utcCol, jsonCol, strCol,
+			boolCol, i16Col, i32Col, i64Col,
+			f32Col, f64Col, decimalCol,
+			dateCol, datetimeCol, utcCol,
+			strCol, jsonCol, xmlCol, binaryCol,
 		},
 		PrimaryKeys: []string{"b", "dt_utc"},
 	})
