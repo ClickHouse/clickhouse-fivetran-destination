@@ -64,19 +64,36 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	return &ClickHouseConnection{ctx, conn}, nil
 }
 
-func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
-	query, err := GetDescribeTableQuery(schemaName, tableName)
+func (conn *ClickHouseConnection) ExecDDL(statement string, op connectionOpType) error {
+	err := RetryNetError(func() error {
+		return conn.Exec(conn.ctx, statement)
+	}, conn.ctx, string(op), false)
 	if err != nil {
-		return nil, err
+		err = fmt.Errorf("error while executing %s: %w", statement, err)
+		LogError(err)
+		return err
 	}
+	return nil
+}
+
+func (conn *ClickHouseConnection) ExecQuery(query string, op connectionOpType, benchmark bool) (driver.Rows, error) {
 	rows, err := RetryNetErrorWithData(func() (driver.Rows, error) {
 		return conn.Query(conn.ctx, query)
-	}, conn.ctx, string(describeTable), false)
+	}, conn.ctx, string(op), benchmark)
 	if err != nil {
 		err = fmt.Errorf("error while executing %s: %w", query, err)
 		LogError(err)
 		return nil, err
 	}
+	return rows, nil
+}
+
+func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*TableDescription, error) {
+	query, err := GetDescribeTableQuery(schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.ExecQuery(query, describeTable, false)
 	defer rows.Close()
 	var (
 		colName      string
@@ -106,20 +123,22 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 	return MakeTableDescription(columns), nil
 }
 
+func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
+	query, err := GetColumnTypesQuery(schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.ExecQuery(query, getColumnTypes, false)
+	defer rows.Close()
+	return rows.ColumnTypes(), nil
+}
+
 func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *TableDescription) error {
 	statement, err := GetCreateTableStatement(schemaName, tableName, tableDescription)
 	if err != nil {
 		return err
 	}
-	err = RetryNetError(func() error {
-		return conn.Exec(conn.ctx, statement)
-	}, conn.ctx, string(createTable), false)
-	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", statement, err)
-		LogError(err)
-		return err
-	}
-	return nil
+	return conn.ExecDDL(statement, createTable)
 }
 
 func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string, ops []*AlterTableOp) error {
@@ -127,15 +146,7 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 	if err != nil {
 		return err
 	}
-	err = RetryNetError(func() error {
-		return conn.Exec(conn.ctx, statement)
-	}, conn.ctx, string(alterTable), false)
-	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", statement, err)
-		LogError(err)
-		return err
-	}
-	return nil
+	return conn.ExecDDL(statement, alterTable)
 }
 
 func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
@@ -143,15 +154,7 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 	if err != nil {
 		return err
 	}
-	err = RetryNetError(func() error {
-		return conn.Exec(conn.ctx, statement)
-	}, conn.ctx, string(truncateTable), false)
-	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", statement, err)
-		LogError(err)
-		return err
-	}
-	return nil
+	return conn.ExecDDL(statement, truncateTable)
 }
 
 func (conn *ClickHouseConnection) InsertBatch(
@@ -192,24 +195,6 @@ func (conn *ClickHouseConnection) InsertBatch(
 	}, conn.ctx, opName, true)
 }
 
-func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
-	query, err := GetColumnTypesQuery(schemaName, tableName)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := RetryNetErrorWithData(func() (driver.Rows, error) {
-		return conn.Query(conn.ctx, query)
-	}, conn.ctx, string(getColumnTypes), false)
-	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", query, err)
-		LogError(err)
-		return nil, err
-	}
-	defer rows.Close()
-	return rows.ColumnTypes(), nil
-
-}
-
 // SelectByPrimaryKeys selects rows from the table by primary keys found in the CSV.
 // The CSV is split into groups, and each group is processed in parallel.
 // The results are merged into a map of primary key values to the rows.
@@ -239,14 +224,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					if err != nil {
 						return err
 					}
-					rows, err := RetryNetErrorWithData(func() (driver.Rows, error) {
-						return conn.Query(conn.ctx, query)
-					}, conn.ctx, string(selectByPrimaryKeys), false)
-					if err != nil {
-						err = fmt.Errorf("error while executing %s: %w", query, err)
-						LogError(err)
-						return err
-					}
+					rows, err := conn.ExecQuery(query, selectByPrimaryKeys, true)
 					defer rows.Close()
 					mutex.Lock()
 					defer mutex.Unlock()
