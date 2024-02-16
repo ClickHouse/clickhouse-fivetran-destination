@@ -7,14 +7,6 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-func GetWithDefault(configuration map[string]string, key string, default_ string) string {
-	value, ok := configuration[key]
-	if !ok || value == "" {
-		return default_
-	}
-	return value
-}
-
 func GetFullTableName(schemaName string, tableName string) (string, error) {
 	if tableName == "" {
 		return "", fmt.Errorf("table name is empty")

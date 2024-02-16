@@ -20,24 +20,27 @@ type ClickHouseConnection struct {
 }
 
 func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
-	hostname := fmt.Sprintf("%s:%s",
-		GetWithDefault(configuration, "hostname", "localhost"),
-		GetWithDefault(configuration, "port", "9000"))
-	username := GetWithDefault(configuration, "username", "default")
-	password := GetWithDefault(configuration, "password", "")
-	database := GetWithDefault(configuration, "database", "default")
+	config, err := ParseSDKConfig(configuration)
+	if err != nil {
+		return nil, fmt.Errorf("error while parsing configuration: %w", err)
+	}
+	hostname := fmt.Sprintf("%s:%d", config.Hostname, config.Port)
+	settings := clickhouse.Settings{
+		"allow_experimental_object_type": 1,
+		"date_time_input_format":         "best_effort",
+	}
+	if config.NodesCount > 1 {
+		settings["insert_quorum"] = config.NodesCount
+	}
 	options := &clickhouse.Options{
 		Addr: []string{hostname},
 		Auth: clickhouse.Auth{
-			Username: username,
-			Password: password,
-			Database: database,
+			Username: config.Username,
+			Password: config.Password,
+			Database: config.Database,
 		},
-		Protocol: clickhouse.Native,
-		Settings: clickhouse.Settings{
-			"allow_experimental_object_type": 1,
-			"date_time_input_format":         "best_effort",
-		},
+		Protocol:     clickhouse.Native,
+		Settings:     settings,
 		MaxOpenConns: int(*maxOpenConnections),
 		MaxIdleConns: int(*maxIdleConnections),
 		ClientInfo: clickhouse.ClientInfo{
@@ -49,16 +52,13 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 			},
 		},
 	}
-	ssl := GetWithDefault(configuration, "ssl", "false")
-	if ssl == "true" {
-		skipVerify := GetWithDefault(configuration, "ssl_skip_verification", "false")
-		options.TLS = &tls.Config{InsecureSkipVerify: skipVerify == "true"}
+	if config.SSL.enabled {
+		options.TLS = &tls.Config{InsecureSkipVerify: config.SSL.skipVerify}
 	}
-	conn, err := RetryNetErrorWithData(func() (driver.Conn, error) {
-		return clickhouse.Open(options)
-	}, ctx, string(getConnection), false)
+	conn, err := clickhouse.Open(options)
 	if err != nil {
-		LogError(fmt.Errorf("error while opening a connection to ClickHouse: %w", err))
+		err = fmt.Errorf("error while opening a connection to ClickHouse: %w", err)
+		LogError(err)
 		return nil, err
 	}
 	return &ClickHouseConnection{ctx, conn}, nil
@@ -73,7 +73,8 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 		return conn.Query(conn.ctx, query)
 	}, conn.ctx, string(describeTable), false)
 	if err != nil {
-		LogError(fmt.Errorf("error while executing %s: %w", query, err))
+		err = fmt.Errorf("error while executing %s: %w", query, err)
+		LogError(err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -114,7 +115,8 @@ func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName strin
 		return conn.Exec(conn.ctx, statement)
 	}, conn.ctx, string(createTable), false)
 	if err != nil {
-		LogError(fmt.Errorf("error while executing %s: %w", statement, err))
+		err = fmt.Errorf("error while executing %s: %w", statement, err)
+		LogError(err)
 		return err
 	}
 	return nil
@@ -129,7 +131,8 @@ func (conn *ClickHouseConnection) AlterTable(schemaName string, tableName string
 		return conn.Exec(conn.ctx, statement)
 	}, conn.ctx, string(alterTable), false)
 	if err != nil {
-		LogError(fmt.Errorf("error while executing %s: %w", statement, err))
+		err = fmt.Errorf("error while executing %s: %w", statement, err)
+		LogError(err)
 		return err
 	}
 	return nil
@@ -144,7 +147,8 @@ func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName str
 		return conn.Exec(conn.ctx, statement)
 	}, conn.ctx, string(truncateTable), false)
 	if err != nil {
-		LogError(fmt.Errorf("error while executing %s: %w", statement, err))
+		err = fmt.Errorf("error while executing %s: %w", statement, err)
+		LogError(err)
 		return err
 	}
 	return nil
@@ -163,7 +167,8 @@ func (conn *ClickHouseConnection) InsertBatch(
 	return RetryNetError(func() error {
 		batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
 		if err != nil {
-			LogError(fmt.Errorf("error while preparing batch for %s: %w", fullTableName, err))
+			err = fmt.Errorf("error while preparing batch for %s: %w", fullTableName, err)
+			LogError(err)
 			return err
 		}
 		for i, row := range rows {
@@ -172,12 +177,15 @@ func (conn *ClickHouseConnection) InsertBatch(
 			}
 			err = batch.Append(row...)
 			if err != nil {
-				return fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
+				err = fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
+				LogError(err)
+				return err
 			}
 		}
 		err = batch.Send()
 		if err != nil {
-			LogError(fmt.Errorf("error while sending batch for %s: %w", fullTableName, err))
+			err = fmt.Errorf("error while sending batch for %s: %w", fullTableName, err)
+			LogError(err)
 			return err
 		}
 		return nil
@@ -193,7 +201,8 @@ func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName st
 		return conn.Query(conn.ctx, query)
 	}, conn.ctx, string(getColumnTypes), false)
 	if err != nil {
-		LogError(fmt.Errorf("error while executing %s: %w", query, err))
+		err = fmt.Errorf("error while executing %s: %w", query, err)
+		LogError(err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -234,7 +243,8 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 						return conn.Query(conn.ctx, query)
 					}, conn.ctx, string(selectByPrimaryKeys), false)
 					if err != nil {
-						LogError(fmt.Errorf("error while executing %s: %w", query, err))
+						err = fmt.Errorf("error while executing %s: %w", query, err)
+						LogError(err)
 						return err
 					}
 					defer rows.Close()
@@ -250,6 +260,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 						}
 						_, ok := rowsByPKValues[mappingKey]
 						if ok {
+							// should never happen in practice
 							LogError(fmt.Errorf("primary key mapping collision: %s", mappingKey))
 						}
 						rowsByPKValues[mappingKey] = scanRows[i]
@@ -426,9 +437,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 }
 
 func (conn *ClickHouseConnection) ConnectionTest() error {
-	describeResult, err := RetryNetErrorWithData(func() (*TableDescription, error) {
-		return conn.DescribeTable("system", "numbers")
-	}, conn.ctx, string(connectionTest), false)
+	describeResult, err := conn.DescribeTable("system", "numbers")
 	if err != nil {
 		return err
 	}
@@ -445,7 +454,6 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 type connectionOpType string
 
 const (
-	getConnection          connectionOpType = "GetClickHouseConnection"
 	describeTable          connectionOpType = "DescribeTable"
 	createTable            connectionOpType = "CreateTable"
 	alterTable             connectionOpType = "AlterTable"
@@ -458,6 +466,4 @@ const (
 	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
 	getColumnTypes         connectionOpType = "GetColumnTypes"
 	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
-	connectionTest         connectionOpType = "ConnectionTest"
-	mutationTest           connectionOpType = "MutationTest"
 )

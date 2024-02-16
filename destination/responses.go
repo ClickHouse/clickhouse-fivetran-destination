@@ -11,7 +11,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 	TableSelectionSupported:  true,
 	Fields: []*pb.FormField{
 		{
-			Name:     "hostname",
+			Name:     SDKConfigHostnameKey,
 			Label:    "Hostname",
 			Required: true,
 			Type: &pb.FormField_TextField{
@@ -19,7 +19,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 			},
 		},
 		{
-			Name:     "port",
+			Name:     SDKConfigPortKey,
 			Label:    "Port",
 			Required: true,
 			Type: &pb.FormField_TextField{
@@ -27,7 +27,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 			},
 		},
 		{
-			Name:     "database",
+			Name:     SDKConfigDatabaseKey,
 			Label:    "Database",
 			Required: true,
 			Type: &pb.FormField_TextField{
@@ -35,7 +35,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 			},
 		},
 		{
-			Name:     "username",
+			Name:     SDKConfigUsernameKey,
 			Label:    "Username",
 			Required: true,
 			Type: &pb.FormField_TextField{
@@ -43,7 +43,7 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 			},
 		},
 		{
-			Name:     "password",
+			Name:     SDKConfigPasswordKey,
 			Label:    "Password",
 			Required: true,
 			Type: &pb.FormField_TextField{
@@ -51,16 +51,24 @@ var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
 			},
 		},
 		{
-			Name:     "ssl",
-			Label:    "Use SSL",
+			Name:     SDKConfigSSLKey,
+			Label:    "Use SSL (default: false)",
 			Required: false,
 			Type: &pb.FormField_ToggleField{
 				ToggleField: &pb.ToggleField{},
 			},
 		},
 		{
-			Name:     "ssl_skip_verification",
-			Label:    "Skip SSL verification",
+			Name:     SDKConfigSSLSkipVerifyKey,
+			Label:    "Skip SSL verification (default: false)",
+			Required: false,
+			Type: &pb.FormField_ToggleField{
+				ToggleField: &pb.ToggleField{},
+			},
+		},
+		{
+			Name:     SDKConfigNodesCountKey,
+			Label:    "Cluster nodes count (default: 1)",
 			Required: false,
 			Type: &pb.FormField_ToggleField{
 				ToggleField: &pb.ToggleField{},

@@ -21,15 +21,6 @@ const maxDialRetries = 300
 
 var sdkConfig atomic.Value
 
-type SDKConfig struct {
-	hostname string
-	port     string
-	database string
-	username string
-	password string
-	ssl      bool
-}
-
 func StartClickHouse(t *testing.T) {
 	if isClickHouseReady(t) {
 		return
@@ -62,9 +53,9 @@ func GetProjectRootDir(t *testing.T) string {
 	return result
 }
 
-func ReadConfiguration(t *testing.T) SDKConfig {
+func ReadConfiguration(t *testing.T) *SDKConfig {
 	if sdkConfig.Load() != nil {
-		return sdkConfig.Load().(SDKConfig)
+		return sdkConfig.Load().(*SDKConfig)
 	}
 	rootDir := GetProjectRootDir(t)
 	configBytes, err := os.ReadFile(fmt.Sprintf("%s/sdk_tests/configuration.json", rootDir))
@@ -73,14 +64,8 @@ func ReadConfiguration(t *testing.T) SDKConfig {
 	configMap := make(map[string]string)
 	err = json.Unmarshal(configBytes, &configMap)
 	assert.NoError(t, err)
-	res := SDKConfig{
-		hostname: configMap["hostname"],
-		port:     configMap["port"],
-		database: configMap["database"],
-		username: configMap["username"],
-		password: configMap["password"],
-		ssl:      configMap["ssl"] == "true",
-	}
+	res, err := ParseSDKConfig(configMap)
+	assert.NoError(t, err)
 	sdkConfig.Store(res)
 	return res
 }
@@ -90,13 +75,13 @@ func RunQuery(t *testing.T, query string) string {
 	cmdArgs := []string{
 		"exec", "fivetran-destination-clickhouse-server",
 		"clickhouse-client", "--query", query,
-		"--host", conf.hostname,
-		"--port", conf.port,
-		"--database", conf.database,
-		"--user", conf.username,
-		"--password", conf.password,
+		"--host", conf.Hostname,
+		"--port", fmt.Sprint(conf.Port),
+		"--database", conf.Database,
+		"--user", conf.Username,
+		"--password", conf.Password,
 	}
-	if conf.ssl {
+	if conf.SSL.enabled {
 		cmdArgs = append(cmdArgs, "--secure")
 	}
 	cmd := exec.Command("docker", cmdArgs...)
