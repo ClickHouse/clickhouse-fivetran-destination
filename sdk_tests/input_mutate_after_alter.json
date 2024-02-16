@@ -1,0 +1,110 @@
+{
+  "create_table": {
+    "mutate_after_alter": {
+      "columns": {
+        "id": "INT",
+        "amount": "DOUBLE",
+        "s1": "XML",
+        "s2": "BINARY",
+        "s3": "STRING",
+        "s4": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "alter_table": {
+    "mutate_after_alter": {
+      "columns": {
+        "id": "INT",
+        "amount": "FLOAT",
+        "s1": "STRING",
+        "s2": "STRING",
+        "s3": "XML",
+        "s4": "BINARY"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "mutate_after_alter"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "mutate_after_alter": [
+          {
+            "id": 1,
+            "amount": 100.45,
+            "s1": "<a>1</b>",
+            "s2": "FF",
+            "s3": null,
+            "s4": null
+          },
+          {
+            "id": 2,
+            "amount": 150.33,
+            "s1": null,
+            "s2": null,
+            "s3": "foo",
+            "s4": "bar"
+          },
+          {
+            "id": 3,
+            "amount": 777.777,
+            "s1": "<b>42</b>",
+            "s2": "AA",
+            "s3": "qaz",
+            "s4": "qux"
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "mutate_after_alter": [
+          {
+            "id": 1,
+            "amount": 200,
+            "s1": "asd",
+            "s2": "zxc"
+          }
+        ]
+      }
+    },
+    {
+      "upsert": {
+        "mutate_after_alter": [
+          {
+            "id": 2,
+            "amount": 50,
+            "s1": null,
+            "s2": null,
+            "s3": "<c>99</c>",
+            "s4": "DD"
+          },
+          {
+            "id": 4,
+            "amount": 20.5,
+            "s1": "x",
+            "s2": null,
+            "s3": "<d>77</d>",
+            "s4": null
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "mutate_after_alter": [
+          {
+            "id": 3
+          }
+        ]
+      }
+    }
+  ]
+}

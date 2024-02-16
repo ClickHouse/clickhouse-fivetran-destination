@@ -236,26 +236,20 @@ func TestCSVRowToInsertValuesNullStr(t *testing.T) {
 	row, err := CSVRowToInsertValues([]string{
 		"my-null-str", "foo", "true", `{"foo": "bar"}`,
 	}, table, "my-null-str")
-	assert.Equal(t, []any{
-		nil, "foo", true, `{"foo": "bar"}`,
-	}, row)
+	assert.Equal(t, []any{nil, "foo", true, `{"foo": "bar"}`}, row)
 	assert.NoError(t, err)
 
 	row, err = CSVRowToInsertValues([]string{
 		"42", "my-null-str", "false", "my-null-str",
 	}, table, "my-null-str")
 	assert.NoError(t, err)
-	assert.Equal(t, []any{
-		int64(42), nil, false, "{}", // <- JSON can't be nullable, so we use an empty object instead
-	}, row)
+	assert.Equal(t, []any{int64(42), nil, false, nil}, row)
 
 	row, err = CSVRowToInsertValues([]string{
 		"43", "bar", "my-null-str", `{"foo": "bar"}`,
 	}, table, "my-null-str")
 	assert.NoError(t, err)
-	assert.Equal(t, []any{
-		int64(43), "bar", nil, `{"foo": "bar"}`,
-	}, row)
+	assert.Equal(t, []any{int64(43), "bar", nil, `{"foo": "bar"}`}, row)
 }
 
 func TestCSVRowsToSelectQueryValidation(t *testing.T) {
@@ -367,11 +361,7 @@ func TestCSVRowToUpdatedDBRow(t *testing.T) {
 
 func TestCSVRowToSoftDeletedRowValidation(t *testing.T) {
 	csvRow := []string{"null", "null", "2022-03-05T04:45:12.123456789Z", "false"}
-	_, err := CSVRowToSoftDeletedRow(nil, nil, -1, -1)
-	assert.ErrorContains(t, err, "can't find column _fivetran_deleted with index -1 in a CSV row")
-	_, err = CSVRowToSoftDeletedRow(nil, nil, -1, 1)
-	assert.ErrorContains(t, err, "can't find column _fivetran_deleted with index 1 in a CSV row")
-	_, err = CSVRowToSoftDeletedRow(csvRow, nil, 1, 4)
+	_, err := CSVRowToSoftDeletedRow(csvRow, nil, 1, 4)
 	assert.ErrorContains(t, err, "can't find column _fivetran_deleted with index 4 in a CSV row")
 	_, err = CSVRowToSoftDeletedRow(csvRow, nil, 5, 3)
 	assert.ErrorContains(t, err, "can't find column _fivetran_synced with index 5 in a CSV row")
@@ -393,4 +383,194 @@ func TestCSVRowToSoftDeletedRow(t *testing.T) {
 		[]string{"null", "null", "2022-03-05T04:45:12.123456789Z", "false"},
 		dbRow, 3, 3)
 	assert.ErrorContains(t, err, "can't parse value false as UTC datetime for column _fivetran_synced")
+}
+
+func TestCalcCSVIndicesForParallel(t *testing.T) {
+	res, err := CalcCSVSlicesGroupsForParallel(0, 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(res))
+
+	res, err = CalcCSVSlicesGroupsForParallel(2, 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 1}, // slice 1 in group 1
+		},
+		{ // parallel group 2
+			{Num: 1, Start: 1, End: 2}, // slice 1 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(1, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 1}, // slice 1 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(2, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 2}, // slice 1 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(3, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 2}, // slice 1 in group 1
+			{Num: 1, Start: 2, End: 3}, // slice 2 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(4, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 2}, // slice 1 in group 1
+			{Num: 1, Start: 2, End: 4}, // slice 2 in group 1
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(5, 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 2}, // slice 1 in group 1
+			{Num: 1, Start: 2, End: 4}, // slice 2 in group 1
+		},
+		{ // parallel group 2
+			{Num: 2, Start: 4, End: 5}, // slice 1 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(500, 100, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 100},   // slice 1 in group 1
+			{Num: 1, Start: 100, End: 200}, // slice 2 in group 1
+		},
+		{ // parallel group 2
+			{Num: 2, Start: 200, End: 300}, // slice 1 in group 2
+			{Num: 3, Start: 300, End: 400}, // slice 2 in group 2
+		},
+		{ // parallel group 3
+			{Num: 4, Start: 400, End: 500}, // slice 1 in group 3
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(10000, 1000, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 1000},    // slice 1 in group 1
+			{Num: 1, Start: 1000, End: 2000}, // slice 2 in group 1
+			{Num: 2, Start: 2000, End: 3000}, // slice 3 in group 1
+			{Num: 3, Start: 3000, End: 4000}, // slice 4 in group 1
+			{Num: 4, Start: 4000, End: 5000}, // slice 5 in group 1
+		},
+		{ // parallel group 2
+			{Num: 5, Start: 5000, End: 6000},  // slice 1 in group 2
+			{Num: 6, Start: 6000, End: 7000},  // slice 2 in group 2
+			{Num: 7, Start: 7000, End: 8000},  // slice 3 in group 2
+			{Num: 8, Start: 8000, End: 9000},  // slice 4 in group 2
+			{Num: 9, Start: 9000, End: 10000}, // slice 5 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(999, 100, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 100},   // slice 1 in group 1
+			{Num: 1, Start: 100, End: 200}, // slice 2 in group 1
+			{Num: 2, Start: 200, End: 300}, // slice 3 in group 1
+			{Num: 3, Start: 300, End: 400}, // slice 4 in group 1
+			{Num: 4, Start: 400, End: 500}, // slice 5 in group 1
+		},
+		{ // parallel group 2
+			{Num: 5, Start: 500, End: 600}, // slice 1 in group 2
+			{Num: 6, Start: 600, End: 700}, // slice 2 in group 2
+			{Num: 7, Start: 700, End: 800}, // slice 3 in group 2
+			{Num: 8, Start: 800, End: 900}, // slice 4 in group 2
+			{Num: 9, Start: 900, End: 999}, // slice 5 in group 2
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(1001, 100, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // parallel group 1
+			{Num: 0, Start: 0, End: 100},   // slice 1 in group 1
+			{Num: 1, Start: 100, End: 200}, // slice 2 in group 1
+			{Num: 2, Start: 200, End: 300}, // slice 3 in group 1
+			{Num: 3, Start: 300, End: 400}, // slice 4 in group 1
+			{Num: 4, Start: 400, End: 500}, // slice 5 in group 1
+		},
+		{ // parallel group 2
+			{Num: 5, Start: 500, End: 600},  // slice 1 in group 2
+			{Num: 6, Start: 600, End: 700},  // slice 2 in group 2
+			{Num: 7, Start: 700, End: 800},  // slice 3 in group 2
+			{Num: 8, Start: 800, End: 900},  // slice 4 in group 2
+			{Num: 9, Start: 900, End: 1000}, // slice 5 in group 2
+		},
+		{ // parallel group 3
+			{Num: 10, Start: 1000, End: 1001}, // slice 1 in group 3
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(300_000, 100_000, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // only one slice in each group
+			{Num: 0, Start: 0, End: 100_000},
+		},
+		{
+			{Num: 1, Start: 100_000, End: 200_000},
+		},
+		{
+			{Num: 2, Start: 200_000, End: 300_000},
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(299_999, 100_000, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // only one slice in each group
+			{Num: 0, Start: 0, End: 100_000},
+		},
+		{
+			{Num: 1, Start: 100_000, End: 200_000},
+		},
+		{
+			{Num: 2, Start: 200_000, End: 299_999},
+		},
+	}, res)
+
+	res, err = CalcCSVSlicesGroupsForParallel(300_001, 100_000, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]CSVSliceIndices{
+		{ // only one slice in each group
+			{Num: 0, Start: 0, End: 100_000},
+		},
+		{
+			{Num: 1, Start: 100_000, End: 200_000},
+		},
+		{
+			{Num: 2, Start: 200_000, End: 300_000},
+		},
+		{
+			{Num: 3, Start: 300_000, End: 300_001},
+		},
+	}, res)
+
+	_, err = CalcCSVSlicesGroupsForParallel(0, 0, 1)
+	assert.ErrorContains(t, err, "batchSize can't be zero")
+
+	_, err = CalcCSVSlicesGroupsForParallel(0, 1, 0)
+	assert.ErrorContains(t, err, "maxParallelOperations can't be zero")
 }

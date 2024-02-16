@@ -13,7 +13,7 @@ import (
 
 type RowsByPrimaryKeyValue map[string][]interface{}
 
-func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint32) [][]interface{} {
+func ColumnTypesToEmptyRows(columnTypes []driver.ColumnType, n uint) [][]interface{} {
 	dbRows := make([][]interface{}, n)
 	for i := range dbRows {
 		dbRow := make([]interface{}, len(columnTypes))
@@ -60,7 +60,7 @@ func GetDatabaseRowMappingKey(row []interface{}, pkCols []*PrimaryKeyColumn) (st
 			}
 		case *decimal.Decimal:
 			key.WriteString(p.String())
-		default: // JSON is not supported as a primary key atm
+		default:
 			return "", fmt.Errorf("can't use type %T as mapping key", p)
 		}
 		if i < len(pkCols)-1 {

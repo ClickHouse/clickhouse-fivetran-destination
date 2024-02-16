@@ -22,37 +22,78 @@ func TestGetFullTableName(t *testing.T) {
 func TestGetAlterTableStatement(t *testing.T) {
 	intType := "Int32"
 	strType := "String"
+	comment := "foobar"
+	emptyComment := ""
 	statement, err := GetAlterTableStatement("foo", "bar", []*AlterTableOp{
-		{Add, "qaz", &intType},
+		{Add, "qaz", &intType, nil},
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN qaz Int32", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
-		{Drop, "qaz", nil},
+		{Add, "qaz", &intType, &emptyComment},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN qaz Int32 COMMENT ''", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Add, "qaz", &intType, &comment},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN qaz Int32 COMMENT 'foobar'", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Drop, "qaz", nil, nil},
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN qaz", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
-		{Modify, "qaz", &strType},
+		{Drop, "qaz", &strType, &comment}, // Type and Comment are ignored with Drop
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN qaz", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Modify, "qaz", &strType, nil},
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN qaz String", statement)
 
-	statement, err = GetAlterTableStatement("", "bar", []*AlterTableOp{
-		{Add, "qaz", &strType},
-		{Drop, "qux", nil},
-		{Modify, "zaq", &intType},
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Modify, "qaz", &strType, &emptyComment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `bar` ADD COLUMN qaz String, DROP COLUMN qux, MODIFY COLUMN zaq Int32", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN qaz String COMMENT ''", statement)
+
+	statement, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{
+		{Modify, "qaz", &strType, &comment},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN qaz String COMMENT 'foobar'", statement)
+
+	statement, err = GetAlterTableStatement("", "bar", []*AlterTableOp{
+		{Add, "qaz", &strType, &comment},
+		{Drop, "qux", nil, nil},
+		{Modify, "zaq", &intType, &emptyComment},
+		{Modify, "qwe", &strType, nil},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"ALTER TABLE `bar` ADD COLUMN qaz String COMMENT 'foobar', DROP COLUMN qux, MODIFY COLUMN zaq Int32 COMMENT '', MODIFY COLUMN qwe String",
+		statement)
 
 	_, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{})
 	assert.ErrorContains(t, err, "no statements to execute for altering table `foo`.`bar`")
 
-	_, err = GetAlterTableStatement("foo", "", []*AlterTableOp{{Modify, "qaz", &strType}})
+	_, err = GetAlterTableStatement("foo", "", []*AlterTableOp{{Modify, "qaz", &strType, &comment}})
 	assert.ErrorContains(t, err, "table name is empty")
+
+	_, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{{Add, "qaz", nil, nil}})
+	assert.ErrorContains(t, err, "type for column qaz is not specified")
+
+	_, err = GetAlterTableStatement("foo", "bar", []*AlterTableOp{{Modify, "qaz", nil, nil}})
+	assert.ErrorContains(t, err, "type for column qaz is not specified")
 }
 
 func TestGetCreateTableStatement(t *testing.T) {
@@ -73,6 +114,16 @@ func TestGetCreateTableStatement(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `bar` (qaz Int32, qux String) ENGINE = ReplacingMergeTree(_fivetran_synced) ORDER BY (qaz, qux)", statement)
+
+	statement, err = GetCreateTableStatement("", "bar", &TableDescription{
+		Columns: []*ColumnDefinition{
+			{Name: "i", Type: "Int32", IsPrimaryKey: true},
+			{Name: "x", Type: "String", IsPrimaryKey: false, Comment: "XML"},
+			{Name: "bin", Type: "String", IsPrimaryKey: false, Comment: "BINARY"},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "CREATE TABLE `bar` (i Int32, x String COMMENT 'XML', bin String COMMENT 'BINARY') ENGINE = ReplacingMergeTree(_fivetran_synced) ORDER BY (i)", statement)
 
 	_, err = GetCreateTableStatement("foo", "", nil)
 	assert.ErrorContains(t, err, "table name is empty")
@@ -109,7 +160,7 @@ func TestGetColumnTypesQuery(t *testing.T) {
 func TestGetDescribeTableQuery(t *testing.T) {
 	query, err := GetDescribeTableQuery("foo", "bar")
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT name, type, is_in_primary_key FROM system.columns WHERE database = 'foo' AND table = 'bar'", query)
+	assert.Equal(t, "SELECT name, type, comment, is_in_primary_key, numeric_precision, numeric_scale FROM system.columns WHERE database = 'foo' AND table = 'bar'", query)
 
 	_, err = GetDescribeTableQuery("", "bar")
 	assert.ErrorContains(t, err, "schema name is empty")

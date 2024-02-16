@@ -1,0 +1,72 @@
+{
+  "create_table": {
+    "all_data_types": {
+      "columns": {
+        "b": "BOOLEAN",
+        "i16": "SHORT",
+        "i32": "INT",
+        "i64": "LONG",
+        "f32": "FLOAT",
+        "f64": "DOUBLE",
+        "dec": {
+          "type": "DECIMAL",
+          "precision": 10,
+          "scale": 4
+        },
+        "d": "NAIVE_DATE",
+        "dt": "NAIVE_DATETIME",
+        "utc": "UTC_DATETIME",
+        "s": "STRING",
+        "j": "JSON",
+        "x": "XML",
+        "bin": "BINARY"
+      },
+      "primary_key": []
+    }
+  },
+  "describe_table": [
+    "all_data_types"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "all_data_types": [
+          {
+            "_fivetran_id": "abc-123-xyz",
+            "b": true,
+            "i16": 42,
+            "i32": 144,
+            "i64": 100500,
+            "f32": 100.5,
+            "f64": 200.5,
+            "dec": "42.42",
+            "d": "2024-05-07",
+            "dt": "2024-04-05T15:33:14",
+            "utc": "2024-02-03T12:44:22.123456789Z",
+            "s": "foo",
+            "j": "{\"a\": 1,\"b\": 2}",
+            "x": "<a>1</a>",
+            "bin": "FFFA"
+          },
+          {
+            "_fivetran_id": "vbn-543-hjk",
+            "b": false,
+            "i16": -42,
+            "i32": -144,
+            "i64": -100500,
+            "f32": -100.5,
+            "f64": -200.5,
+            "dec": "-42.42",
+            "d": "2021-02-03",
+            "dt": "2021-06-15T04:15:16",
+            "utc": "2021-02-03T14:47:45.234567890Z",
+            "s": "bar",
+            "j": "{\"c\": 3,\"d\": 4}",
+            "x": "<b>42</b>",
+            "bin": "FFFE"
+          }
+        ]
+      }
+    }
+  ]
+}

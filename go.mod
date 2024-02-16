@@ -9,6 +9,7 @@ require (
 	github.com/rs/zerolog v1.32.0
 	github.com/shopspring/decimal v1.3.1
 	github.com/stretchr/testify v1.8.4
+	golang.org/x/sync v0.4.0
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.32.0
 )

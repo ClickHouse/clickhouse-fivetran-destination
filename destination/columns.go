@@ -6,15 +6,27 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-type ColumnDefinition struct {
-	Name         string
-	Type         string
-	IsPrimaryKey bool
+type DecimalParams struct {
+	Precision uint64
+	Scale     uint64
 }
 
+// ColumnDefinition as it is defined or should be defined in ClickHouse
+type ColumnDefinition struct {
+	Name          string
+	Type          string
+	Comment       string
+	IsPrimaryKey  bool
+	DecimalParams *DecimalParams // only for Decimal types, nil otherwise
+}
+
+// TableDescription
+// Mapping is ColumnDefinition.Name -> ColumnDefinition (unordered)
+// Columns are the same as in Mapping, but ordered, used to preserve column order for CREATE TABLE statement generation
+// PrimaryKeys is a convenience list of ColumnDefinition.Name that are primary keys
 type TableDescription struct {
-	Mapping     map[string]string   // column name -> db type mapping (unordered)
-	Columns     []*ColumnDefinition // all the information about the columns (ordered)
+	Mapping     map[string]*ColumnDefinition
+	Columns     []*ColumnDefinition
 	PrimaryKeys []string
 }
 
@@ -22,10 +34,10 @@ func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescripti
 	if len(columnDefinitions) == 0 {
 		return &TableDescription{}
 	}
-	mapping := make(map[string]string, len(columnDefinitions))
+	mapping := make(map[string]*ColumnDefinition, len(columnDefinitions))
 	var primaryKeys []string
 	for _, col := range columnDefinitions {
-		mapping[col.Name] = col.Type
+		mapping[col.Name] = col
 		if col.IsPrimaryKey {
 			primaryKeys = append(primaryKeys, col.Name)
 		}
@@ -44,7 +56,7 @@ func ToFivetranColumns(description *TableDescription) ([]*pb.Column, error) {
 	columns := make([]*pb.Column, len(description.Columns))
 	i := 0
 	for _, col := range description.Columns {
-		fivetranType, decimalParams, err := GetFivetranDataType(col.Type)
+		fivetranType, decimalParams, err := GetFivetranDataType(col)
 		if err != nil {
 			return nil, err
 		}
@@ -65,13 +77,14 @@ func ToClickHouseColumns(table *pb.Table) (*TableDescription, error) {
 	}
 	result := make([]*ColumnDefinition, len(table.Columns))
 	for i, column := range table.Columns {
-		colType, err := GetClickHouseDataType(column)
+		chType, err := GetClickHouseDataType(column)
 		if err != nil {
 			return nil, err
 		}
 		result[i] = &ColumnDefinition{
 			Name:         column.Name,
-			Type:         colType,
+			Type:         chType.Type,
+			Comment:      chType.Comment,
 			IsPrimaryKey: column.PrimaryKey,
 		}
 	}
@@ -87,28 +100,31 @@ const (
 )
 
 type AlterTableOp struct {
-	Op     AlterTableOpType
-	Column string
-	Type   *string // not needed for Drop
+	Op      AlterTableOpType
+	Column  string
+	Type    *string // not needed for Drop
+	Comment *string // not needed for Drop
 }
 
 func GetAlterTableOps(current *TableDescription, alter *TableDescription) []*AlterTableOp {
 	var ops = make([]*AlterTableOp, 0)
 
 	// what columns are missing from the "current" or have a different Data type? (add + modify)
-	for _, col := range alter.Columns {
-		curColType, ok := current.Mapping[col.Name]
+	for _, alterCol := range alter.Columns {
+		curCol, ok := current.Mapping[alterCol.Name]
 		if !ok {
 			ops = append(ops, &AlterTableOp{
-				Op:     Add,
-				Column: col.Name,
-				Type:   &col.Type,
+				Op:      Add,
+				Column:  alterCol.Name,
+				Type:    &alterCol.Type,
+				Comment: &alterCol.Comment,
 			})
-		} else if curColType != col.Type {
+		} else if curCol.Type != alterCol.Type || curCol.Comment != alterCol.Comment {
 			ops = append(ops, &AlterTableOp{
-				Op:     Modify,
-				Column: col.Name,
-				Type:   &col.Type,
+				Op:      Modify,
+				Column:  alterCol.Name,
+				Type:    &alterCol.Type,
+				Comment: &alterCol.Comment,
 			})
 		}
 	}

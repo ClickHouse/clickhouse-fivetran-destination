@@ -1,0 +1,54 @@
+{
+  "create_table": {
+    "non_existent_updates": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "non_existent_updates"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "non_existent_updates": [
+          {
+            "id": 1,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "non_existent_updates": [
+          {
+            "id": 2,
+            "name": "four-four"
+          },
+          {
+            "id": 3,
+            "name": "it's 5"
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "non_existent_updates": [
+          {
+            "id": 4
+          },
+          {
+            "id": 5
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"encoding/csv"
+	"fmt"
 	"io"
 	"os"
 
@@ -12,45 +14,37 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-type ReadCSVFileResultType int
-
-const (
-	Success ReadCSVFileResultType = iota
-	KeyNotFound
-	FileNotFound
-	FailedToDecompress
-	FailedToDecrypt
-)
-
-type ReadCSVFileResult struct {
-	Type  ReadCSVFileResultType
-	Data  *[]byte // only set if Type is Success
-	Error *error  // only set if Type is FailedToDecrypt or FailedToDecompress
-}
-
 func ReadCSVFile(
 	fileName string,
 	keys map[string][]byte,
 	compression pb.Compression,
 	encryption pb.Encryption,
-) *ReadCSVFileResult {
+) (CSV, error) {
 	key, ok := keys[fileName]
 	if !ok {
-		return &ReadCSVFileResult{Type: KeyNotFound}
+		return nil, fmt.Errorf("key for file %s not found", fileName)
 	}
 	file, err := os.ReadFile(fileName)
 	if err != nil {
-		return &ReadCSVFileResult{Type: FileNotFound}
+		return nil, fmt.Errorf("file %s does not exist", fileName)
 	}
 	decrypted, err := Decrypt(key, file, encryption)
 	if err != nil {
-		return &ReadCSVFileResult{Type: FailedToDecrypt, Error: &err}
+		return nil, fmt.Errorf("failed to decrypt file %s, cause: %w", fileName, err)
 	}
 	decompressed, err := Decompress(decrypted, compression)
 	if err != nil {
-		return &ReadCSVFileResult{Type: FailedToDecompress, Error: &err}
+		return nil, fmt.Errorf("failed to decompress file %s, cause: %w", fileName, err)
 	}
-	return &ReadCSVFileResult{Type: Success, Data: &decompressed}
+	csvReader := csv.NewReader(bytes.NewReader(decompressed))
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("file %s is not a valid CSV, cause: %w", fileName, err)
+	}
+	if len(records) < 2 {
+		return nil, fmt.Errorf("expected to have more than 1 line in file %s", fileName)
+	}
+	return records[1:], nil // skip the column names
 }
 
 func Decrypt(key []byte, data []byte, encryption pb.Encryption) ([]byte, error) {
@@ -73,9 +67,8 @@ func DecryptAES256(key []byte, data []byte) ([]byte, error) {
 	}
 	iv, data := data[:block.BlockSize()], data[block.BlockSize():]
 	mode := cipher.NewCBCDecrypter(block, iv)
-	decrypted := make([]byte, len(data))
-	mode.CryptBlocks(decrypted, data)
-	return PKCS5Padding(decrypted), nil
+	mode.CryptBlocks(data, data)
+	return PKCS5Padding(data), nil
 }
 
 func PKCS5Padding(data []byte) []byte {
@@ -112,9 +105,6 @@ func DecompressGZIP(data []byte) ([]byte, error) {
 	}
 	defer gzipReader.Close()
 	res, err := io.ReadAll(gzipReader)
-	if err != nil {
-		return nil, err
-	}
 	if err != nil {
 		return nil, err
 	}

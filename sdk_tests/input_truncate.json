@@ -1,0 +1,33 @@
+{
+  "describe_table": [
+    "table_to_truncate"
+  ],
+  "create_table": {
+    "table_to_truncate": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "ops": [
+    {
+      "upsert": {
+        "table_to_truncate": [
+          {
+            "id": 1,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "truncate": [
+        "table_to_truncate"
+      ]
+    }
+  ]
+}

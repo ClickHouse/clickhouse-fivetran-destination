@@ -1,0 +1,77 @@
+{
+  "create_table": {
+    "update_and_delete": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "update_and_delete"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "update_and_delete": [
+          {
+            "id": 1,
+            "name": null
+          },
+          {
+            "id": 2,
+            "name": "two"
+          },
+          {
+            "id": 3,
+            "name": "three"
+          },
+          {
+            "id": 4,
+            "name": "four"
+          },
+          {
+            "id": 5,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "update_and_delete": [
+          {
+            "id": 1,
+            "name": "1111"
+          },
+          {
+            "id": 4,
+            "name": "four-four"
+          },
+          {
+            "id": 5,
+            "name": "it's 5"
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "update_and_delete": [
+          {
+            "id": 3
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 5
+          }
+        ]
+      }
+    }
+  ]
+}

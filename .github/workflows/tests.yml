@@ -7,13 +7,17 @@ on:
       - main
     paths-ignore:
       - '**/*.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
       - 'LICENSE'
-      - 'examples/**'
+      - '.static/**'
   pull_request:
     paths-ignore:
       - '**/*.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
       - 'LICENSE'
-      - 'examples/**'
+      - '.static/**'
 
   schedule:
     - cron: '0 9 * * *'
@@ -65,24 +69,10 @@ jobs:
           down-flags: '--volumes'
           services: 'clickhouse'
 
-      - name: Build app docker images
+      - name: Add ClickHouse to /etc/hosts
         run: |
-          make compile
-          make build-docker
-
-      - name: Start the destination app in Docker
-        uses: isbang/compose-action@v1.5.1
-        env:
-          CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
-        with:
-          compose-file: 'docker-compose.ci.yml'
-          down-flags: '--volumes'
-          services: 'destination'
+          sudo echo "127.0.0.1 clickhouse" | sudo tee -a /etc/hosts
 
       - name: Run Go tests
-        run: |
-          make go-test
-
-      - name: Run SDK tests
         run: |
           make test
