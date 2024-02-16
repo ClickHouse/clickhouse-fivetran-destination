@@ -40,8 +40,7 @@ an arbitrary set of bytes. The destination app will add a column comment to `JSO
 the original data type. NB: ClickHouse has [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type, however, it's marked as experimental and not production
 ready, so we use [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) instead.
 
-NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`. `JSON` type
-columns, being non-nullable by design, will use an empty object `{}` to represent `NULL` values.
+NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`.
 
 ## Destination table
 
