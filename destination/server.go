@@ -14,7 +14,7 @@ type server struct {
 }
 
 func (s *server) ConfigurationForm(_ context.Context, _ *pb.ConfigurationFormRequest) (*pb.ConfigurationFormResponse, error) {
-	return ConfigurationFormResponse, nil
+	return GetConfigurationFormResponse(), nil
 }
 
 func (s *server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse, error) {

@@ -38,8 +38,6 @@ func StartServer(t *testing.T) {
 	}
 	StartClickHouse(t)
 	go main()
-	RunQuery(t, "DROP DATABASE IF EXISTS tester")
-	RunQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
 	waitPortIsReady(t, *port)
 }
 

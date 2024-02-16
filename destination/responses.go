@@ -6,81 +6,89 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-var ConfigurationFormResponse = &pb.ConfigurationFormResponse{
-	SchemaSelectionSupported: true,
-	TableSelectionSupported:  true,
-	Fields: []*pb.FormField{
-		{
-			Name:     SDKConfigHostnameKey,
-			Label:    "Hostname",
-			Required: true,
-			Type: &pb.FormField_TextField{
-				TextField: pb.TextField_PlainText,
+func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
+	return &pb.ConfigurationFormResponse{
+		SchemaSelectionSupported: true,
+		TableSelectionSupported:  true,
+		Fields: []*pb.FormField{
+			{
+				Name:     SDKConfigHostnameKey,
+				Label:    "Hostname",
+				Required: true,
+				Type: &pb.FormField_TextField{
+					TextField: pb.TextField_PlainText,
+				},
+			},
+			{
+				Name:     SDKConfigPortKey,
+				Label:    "Port",
+				Required: true,
+				Type: &pb.FormField_TextField{
+					TextField: pb.TextField_PlainText,
+				},
+			},
+			{
+				Name:     SDKConfigDatabaseKey,
+				Label:    "Database",
+				Required: true,
+				Type: &pb.FormField_TextField{
+					TextField: pb.TextField_PlainText,
+				},
+			},
+			{
+				Name:     SDKConfigUsernameKey,
+				Label:    "Username",
+				Required: true,
+				Type: &pb.FormField_TextField{
+					TextField: pb.TextField_Password,
+				},
+			},
+			{
+				Name:     SDKConfigPasswordKey,
+				Label:    "Password",
+				Required: true,
+				Type: &pb.FormField_TextField{
+					TextField: pb.TextField_Password,
+				},
+			},
+			{
+				Name:     SDKConfigDeploymentType,
+				Label:    "ClickHouse deployment type",
+				Required: true,
+				Type: &pb.FormField_DropdownField{
+					DropdownField: &pb.DropdownField{
+						DropdownField: []string{
+							SDKConfigDeploymentTypeClickHouseCloud,
+							SDKConfigDeploymentTypeCluster,
+							SDKConfigDeploymentTypeSingleNode,
+						},
+					},
+				},
+			},
+			{
+				Name:     SDKConfigSSLKey,
+				Label:    "Use SSL",
+				Required: false,
+				Type: &pb.FormField_ToggleField{
+					ToggleField: &pb.ToggleField{},
+				},
+			},
+			{
+				Name:     SDKConfigSSLSkipVerifyKey,
+				Label:    "Skip SSL verification",
+				Required: false,
+				Type: &pb.FormField_ToggleField{
+					ToggleField: &pb.ToggleField{},
+				},
 			},
 		},
-		{
-			Name:     SDKConfigPortKey,
-			Label:    "Port",
-			Required: true,
-			Type: &pb.FormField_TextField{
-				TextField: pb.TextField_PlainText,
+		Tests: []*pb.ConfigurationTest{
+			{
+				Name:  ConnectionTest,
+				Label: "Test connection and basic operations",
 			},
 		},
-		{
-			Name:     SDKConfigDatabaseKey,
-			Label:    "Database",
-			Required: true,
-			Type: &pb.FormField_TextField{
-				TextField: pb.TextField_PlainText,
-			},
-		},
-		{
-			Name:     SDKConfigUsernameKey,
-			Label:    "Username",
-			Required: true,
-			Type: &pb.FormField_TextField{
-				TextField: pb.TextField_Password,
-			},
-		},
-		{
-			Name:     SDKConfigPasswordKey,
-			Label:    "Password",
-			Required: true,
-			Type: &pb.FormField_TextField{
-				TextField: pb.TextField_Password,
-			},
-		},
-		{
-			Name:     SDKConfigSSLKey,
-			Label:    "Use SSL (default: false)",
-			Required: false,
-			Type: &pb.FormField_ToggleField{
-				ToggleField: &pb.ToggleField{},
-			},
-		},
-		{
-			Name:     SDKConfigSSLSkipVerifyKey,
-			Label:    "Skip SSL verification (default: false)",
-			Required: false,
-			Type: &pb.FormField_ToggleField{
-				ToggleField: &pb.ToggleField{},
-			},
-		},
-		{
-			Name:     SDKConfigNodesCountKey,
-			Label:    "Cluster nodes count (default: 1)",
-			Required: false,
-			Type: &pb.FormField_ToggleField{
-				ToggleField: &pb.ToggleField{},
-			},
-		},
-	},
-	Tests: []*pb.ConfigurationTest{
-		{
-			Name:  ConnectionTest,
-			Label: "Test connection and basic operations",
-		},
-	},
+	}
 }
 
 func FailedWriteBatchResponse(schemaName string, tableName string, err error) *pb.WriteBatchResponse {

@@ -5,6 +5,6 @@
   "port": "9000",
   "ssl": "false",
   "ssl_skip_verification": "false",
-  "nodes_count": "1",
+  "deployment_type": "On-premise single node",
   "username": "default"
 }

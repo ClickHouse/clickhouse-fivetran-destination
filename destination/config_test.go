@@ -8,12 +8,12 @@ import (
 
 func TestParseSDKConfig(t *testing.T) {
 	defaultConfig := SDKConfig{
-		Hostname:   "localhost",
-		Port:       9000,
-		Database:   "default",
-		Username:   "default",
-		Password:   "",
-		NodesCount: 1,
+		Hostname:       "localhost",
+		Port:           9000,
+		Database:       "default",
+		Username:       "default",
+		Password:       "",
+		DeploymentType: SDKConfigDeploymentTypeSingleNode,
 		SSL: SSLConfig{
 			enabled:    false,
 			skipVerify: false,
@@ -29,8 +29,12 @@ func TestParseSDKConfig(t *testing.T) {
 	withUsernameOnly.Username = "5t"
 	withPasswordOnly := defaultConfig
 	withPasswordOnly.Password = "foo_bar"
-	withNodesCountOnly := defaultConfig
-	withNodesCountOnly.NodesCount = 2
+	withCloudDeploymentOnly := defaultConfig
+	withCloudDeploymentOnly.DeploymentType = "ClickHouse Cloud"
+	withSingleNodeDeploymentOnly := defaultConfig
+	withSingleNodeDeploymentOnly.DeploymentType = "On-premise single node"
+	withClusterDeploymentOnly := defaultConfig
+	withClusterDeploymentOnly.DeploymentType = "On-premise cluster"
 	withSSL := defaultConfig
 	withSSL.SSL.enabled = true
 	withSSL.SSL.skipVerify = false
@@ -50,17 +54,17 @@ func TestParseSDKConfig(t *testing.T) {
 				"database":              "my_db",
 				"username":              "5t",
 				"password":              "foo_bar",
-				"nodes_count":           "2",
 				"ssl":                   "true",
 				"ssl_skip_verification": "true",
+				"deployment_type":       "ClickHouse Cloud",
 			},
 			expected: &SDKConfig{
-				Hostname:   "my.host",
-				Port:       9440,
-				Database:   "my_db",
-				Username:   "5t",
-				Password:   "foo_bar",
-				NodesCount: 2,
+				Hostname:       "my.host",
+				Port:           9440,
+				Database:       "my_db",
+				Username:       "5t",
+				Password:       "foo_bar",
+				DeploymentType: "ClickHouse Cloud",
 				SSL: SSLConfig{
 					enabled:    true,
 					skipVerify: true,
@@ -71,12 +75,12 @@ func TestParseSDKConfig(t *testing.T) {
 			name:          "valid config (all defaults)",
 			configuration: map[string]string{},
 			expected: &SDKConfig{
-				Hostname:   "localhost",
-				Port:       9000,
-				Database:   "default",
-				Username:   "default",
-				Password:   "",
-				NodesCount: 1,
+				Hostname:       "localhost",
+				Port:           9000,
+				Database:       "default",
+				Username:       "default",
+				Password:       "",
+				DeploymentType: "On-premise single node",
 				SSL: SSLConfig{
 					enabled:    false,
 					skipVerify: false,
@@ -109,9 +113,19 @@ func TestParseSDKConfig(t *testing.T) {
 			expected:      &withPasswordOnly,
 		},
 		{
-			name:          "valid config (nodes_count only)",
-			configuration: map[string]string{"nodes_count": "2"},
-			expected:      &withNodesCountOnly,
+			name:          "valid config (deployment cloud only)",
+			configuration: map[string]string{"deployment_type": "ClickHouse Cloud"},
+			expected:      &withCloudDeploymentOnly,
+		},
+		{
+			name:          "valid config (deployment on-premise single node only)",
+			configuration: map[string]string{"deployment_type": "On-premise single node"},
+			expected:      &withSingleNodeDeploymentOnly,
+		},
+		{
+			name:          "valid config (deployment on-premise cluster only)",
+			configuration: map[string]string{"deployment_type": "On-premise cluster"},
+			expected:      &withClusterDeploymentOnly,
 		},
 		{
 			name:          "valid config (ssl only)",
@@ -158,14 +172,9 @@ func TestParseSDKConfigErrors(t *testing.T) {
 			expectedError: "port must be in range [1, 65535]",
 		},
 		{
-			name:          "invalid nodes_count 0",
-			configuration: map[string]string{"nodes_count": "0"},
-			expectedError: "nodes_count must be greater than 0",
-		},
-		{
-			name:          "invalid nodes_count < 0",
-			configuration: map[string]string{"nodes_count": "-1"},
-			expectedError: "nodes_count must be greater than 0",
+			name:          "invalid cloud",
+			configuration: map[string]string{"cloud": "not-a-boolean"},
+			expectedError: "cloud must be a boolean",
 		},
 		{
 			name:          "invalid ssl",

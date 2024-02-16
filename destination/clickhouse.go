@@ -25,12 +25,17 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
 	}
 	hostname := fmt.Sprintf("%s:%d", config.Hostname, config.Port)
-	settings := clickhouse.Settings{
-		"allow_experimental_object_type": 1,
-		"date_time_input_format":         "best_effort",
-	}
-	if config.NodesCount > 1 {
-		settings["insert_quorum"] = config.NodesCount
+	settings := clickhouse.Settings{}
+	if config.DeploymentType == SDKConfigDeploymentTypeClickHouseCloud {
+		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
+		settings["alter_sync"] = 2
+		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
+		settings["mutations_sync"] = 2
+		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
+		settings["select_sequential_consistency"] = 1
+	} else {
+		// Required to work with JSON data type, see https://clickhouse.com/docs/en/sql-reference/data-types/json
+		settings["allow_experimental_object_type"] = 1
 	}
 	options := &clickhouse.Options{
 		Addr: []string{hostname},
