@@ -33,7 +33,7 @@ the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk).
 | STRING         | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
 | BINARY         | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
 | XML            | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
-| JSON           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast              |
+| JSON           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
 
 &ast; ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used to represent
 an arbitrary set of bytes. The destination app will add a column comment to `JSON`, `BINARY` and `XML` types to indicate
