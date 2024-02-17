@@ -41,8 +41,8 @@ test:
 	go test fivetran.com/fivetran_sdk/destination/... -count=1 -v -race $$TEST_ARGS
 
 test-with-coverage:
-	TEST_ARGS="-coverprofile cover.out" make test
-	go tool cover -html=cover.out
+	TEST_ARGS="-coverpkg=fivetran.com/fivetran_sdk/destination/... -coverprofile cover.out" make test
+	go tool cover -func=cover.out
 
 build:
 	rm -rf ./out
