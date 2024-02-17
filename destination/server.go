@@ -194,57 +194,64 @@ func (s *server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
+	// Benchmark overall WriteBatchRequest and Replace/Update/Delete operations
 	err = BenchmarkAndNotice(func() error {
-		for _, replaceFile := range in.ReplaceFiles {
-			csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
-			if err != nil {
-				return err
+		err = BenchmarkAndNotice(func() error {
+			for _, replaceFile := range in.ReplaceFiles {
+				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, *writeBatchSize)
+				if err != nil {
+					return err
+				}
 			}
-			err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, *writeBatchSize)
-			if err != nil {
-				return err
-			}
+			return nil
+		}, "WriteBatchRequest(Replace)")
+		if err != nil {
+			return err
 		}
-		return nil
-	}, "WriteBatchRequest(Replace)")
-	if err != nil {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
-	}
 
-	err = BenchmarkAndNotice(func() error {
-		for _, updateFile := range in.UpdateFiles {
-			csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
-			if err != nil {
-				return err
+		err = BenchmarkAndNotice(func() error {
+			for _, updateFile := range in.UpdateFiles {
+				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
+					nullStr, unmodifiedStr,
+					*writeBatchSize, *selectBatchSize, *maxParallelSelects)
+				if err != nil {
+					return err
+				}
 			}
-			err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
-				nullStr, unmodifiedStr,
-				*writeBatchSize, *selectBatchSize, *maxParallelSelects)
-			if err != nil {
-				return err
-			}
+			return nil
+		}, "WriteBatchRequest(Update)")
+		if err != nil {
+			return err
 		}
-		return nil
-	}, "WriteBatchRequest(Update)")
-	if err != nil {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
-	}
 
-	err = BenchmarkAndNotice(func() error {
-		for _, deleteFile := range in.DeleteFiles {
-			csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
-			if err != nil {
-				return err
+		err = BenchmarkAndNotice(func() error {
+			for _, deleteFile := range in.DeleteFiles {
+				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
+					uint(fivetranSyncedIdx), uint(fivetranDeletedIdx),
+					*writeBatchSize, *selectBatchSize, *maxParallelSelects)
+				if err != nil {
+					return err
+				}
 			}
-			err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
-				uint(fivetranSyncedIdx), uint(fivetranDeletedIdx),
-				*writeBatchSize, *selectBatchSize, *maxParallelSelects)
-			if err != nil {
-				return err
-			}
+			return nil
+		}, "WriteBatchRequest(Delete)")
+		if err != nil {
+			return err
 		}
 		return nil
-	}, "WriteBatchRequest(Delete)")
+	}, "WriteBatchRequest(Total)")
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}

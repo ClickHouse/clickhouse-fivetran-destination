@@ -230,7 +230,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					if err != nil {
 						return err
 					}
-					rows, err := conn.ExecQuery(query, selectByPrimaryKeys, true)
+					rows, err := conn.ExecQuery(query, selectByPrimaryKeys, false)
 					if err != nil {
 						return err
 					}
