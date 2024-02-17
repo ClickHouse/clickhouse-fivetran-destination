@@ -38,7 +38,7 @@ lint:
 
 test:
 	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json sdk_tests/configuration.json
-	go test fivetran.com/fivetran_sdk/destination -count=1 -v -race $$TEST_ARGS
+	go test fivetran.com/fivetran_sdk/destination/... -count=1 -v -race $$TEST_ARGS
 
 test-with-coverage:
 	TEST_ARGS="-coverprofile cover.out" make test
@@ -51,6 +51,10 @@ build:
 
 build-docker-ci:
 	docker compose -f docker-compose.ci.yml build destination --no-cache
+
+dependency-graph:
+	godepgraph -p github.com,google,golang -s fivetran.com/fivetran_sdk/destination | dot -Tpng -o godepgraph.png
+	xdg-open godepgraph.png || open godepgraph.png
 
 run:
 	make build
