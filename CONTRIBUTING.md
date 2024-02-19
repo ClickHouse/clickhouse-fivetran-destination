@@ -39,10 +39,16 @@ make generate-proto
 
 ## Running Go tests
 
-Test files marked as `_integration_test` will start ClickHouse server in Docker, if it's not already running.
+Start ClickHouse server in Docker:
 
-Test files marked as `_e2e_test` (like [destination/sdk_e2e_test.go](./destination/sdk_e2e_test.go))
-will also start the destination GRPC server.
+```bash
+docker compose up -d
+```
+
+Test files marked as `_integration_test` require ClickHouse connection.
+
+Test files marked as `_e2e_test` (like [destination/main_e2e_test.go](./destination/main_e2e_test.go))
+require ClickHouse connection, and will also start the destination GRPC server.
 
 Run the tests:
 
@@ -53,11 +59,17 @@ make test
 ## Running tests with Fivetran SDK tester
 
 Fivetran SDK tests are part of the normal Go test run,
-see [destination/sdk_e2e_test.go](./destination/sdk_e2e_test.go);
+see [destination/main_e2e_test.go](./destination/main_e2e_test.go);
 however, it is possible to execute them in a stand-alone mode, which might be useful for debugging purposes,
 if you don't want to modify the test code in Go.
 
-Start the destination app (it will also start ClickHouse if it's not already started):
+Start ClickHouse server in Docker:
+
+```bash
+docker compose up -d
+```
+
+Start the destination app:
 
 ```bash
 make run

@@ -37,8 +37,9 @@ the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk).
 
 &ast; ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used to represent
 an arbitrary set of bytes. The destination app will add a column comment to `JSON`, `BINARY` and `XML` types to indicate
-the original data type. NB: ClickHouse has [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type, however, it's marked as experimental and not production
-ready, so we use [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) instead.
+the original data type. [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type is not used as it
+is still marked as experimental and not production
+ready.
 
 NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`.
 
@@ -111,10 +112,11 @@ SETTINGS index_granularity = 8192
 
 Since `_fivetran_id` is unique and there are no other primary key options, it is used as a table sorting key.
 
-### Selecting the data without duplicates
+### Selecting the latest version of the data without duplicates
 
-ReplacingMergeTree performs background data deduplication only during merges at an unknown time; however, selecting the
-data without duplicates ad-hoc is possible with `FINAL` keyword:
+[ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree) performs
+background data deduplication only during merges at an unknown time; however, selecting the latest version of the data
+without duplicates ad-hoc is possible with `FINAL` keyword:
 
 ```sql
 SELECT *
