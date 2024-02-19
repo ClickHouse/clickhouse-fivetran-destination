@@ -21,23 +21,19 @@ import (
 )
 
 type ClickHouseConnection struct {
-	ctx context.Context
+	deploymentType config.DeploymentType
 	driver.Conn
 }
 
-func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
+func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnection, error) {
 	connConfig, err := config.Parse(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
 	}
 	settings := clickhouse.Settings{}
-	if connConfig.DeploymentType == config.DeploymentTypeClickHouseCloud {
-		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
-		settings["alter_sync"] = 2
-		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
-		settings["mutations_sync"] = 2
-		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
-		settings["select_sequential_consistency"] = 1
+	if connConfig.DeploymentType == config.DeploymentTypeClickHouseCloud ||
+		connConfig.DeploymentType == config.DeploymentTypeCluster {
+		addDefaultClusterSettings(settings)
 	}
 	hostname := fmt.Sprintf("%s:%d", connConfig.Hostname, connConfig.Port)
 	options := &clickhouse.Options{
@@ -69,13 +65,13 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 		log.Error(err)
 		return nil, err
 	}
-	return &ClickHouseConnection{ctx, conn}, nil
+	return &ClickHouseConnection{connConfig.DeploymentType, conn}, nil
 }
 
-func (conn *ClickHouseConnection) ExecDDL(statement string, op connectionOpType) error {
+func (conn *ClickHouseConnection) ExecDDL(ctx context.Context, statement string, op connectionOpType) error {
 	err := retry.OnNetError(func() error {
-		return conn.Exec(conn.ctx, statement)
-	}, conn.ctx, string(op), false)
+		return conn.Exec(ctx, statement)
+	}, ctx, string(op), false)
 	if err != nil {
 		err = fmt.Errorf("error while executing %s: %w", statement, err)
 		log.Error(err)
@@ -84,10 +80,15 @@ func (conn *ClickHouseConnection) ExecDDL(statement string, op connectionOpType)
 	return nil
 }
 
-func (conn *ClickHouseConnection) ExecQuery(query string, op connectionOpType, benchmark bool) (driver.Rows, error) {
+func (conn *ClickHouseConnection) ExecQuery(
+	ctx context.Context,
+	query string,
+	op connectionOpType,
+	benchmark bool,
+) (driver.Rows, error) {
 	rows, err := retry.OnNetErrorWithData(func() (driver.Rows, error) {
-		return conn.Query(conn.ctx, query)
-	}, conn.ctx, string(op), benchmark)
+		return conn.Query(ctx, query)
+	}, ctx, string(op), benchmark)
 	if err != nil {
 		err = fmt.Errorf("error while executing %s: %w", query, err)
 		log.Error(err)
@@ -96,12 +97,16 @@ func (conn *ClickHouseConnection) ExecQuery(query string, op connectionOpType, b
 	return rows, nil
 }
 
-func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName string) (*types.TableDescription, error) {
+func (conn *ClickHouseConnection) DescribeTable(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+) (*types.TableDescription, error) {
 	query, err := sql.GetDescribeTableQuery(schemaName, tableName)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := conn.ExecQuery(query, describeTable, false)
+	rows, err := conn.ExecQuery(ctx, query, describeTable, false)
 	if err != nil {
 		return nil, err
 	}
@@ -131,15 +136,19 @@ func (conn *ClickHouseConnection) DescribeTable(schemaName string, tableName str
 			DecimalParams: decimalParams,
 		})
 	}
-	return MakeTableDescription(columns), nil
+	return types.MakeTableDescription(columns), nil
 }
 
-func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName string) ([]driver.ColumnType, error) {
+func (conn *ClickHouseConnection) GetColumnTypes(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+) ([]driver.ColumnType, error) {
 	query, err := sql.GetColumnTypesQuery(schemaName, tableName)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := conn.ExecQuery(query, getColumnTypes, false)
+	rows, err := conn.ExecQuery(ctx, query, getColumnTypes, false)
 	if err != nil {
 		return nil, err
 	}
@@ -147,48 +156,138 @@ func (conn *ClickHouseConnection) GetColumnTypes(schemaName string, tableName st
 	return rows.ColumnTypes(), nil
 }
 
-func (conn *ClickHouseConnection) CreateTable(schemaName string, tableName string, tableDescription *types.TableDescription) error {
-	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription)
+// GetOnPremiseClusterMacros introspects macros values from system.macros table for on-premise cluster deployments.
+// The server nodes are expected to have the following entries in their configuration:
+//
+//	<macros>
+//	 <cluster>my_cluster</cluster>
+//	 <replica>clickhouse1</replica>
+//	 <shard>1</shard>
+//	</macros>
+func (conn *ClickHouseConnection) GetOnPremiseClusterMacros(ctx context.Context) (*types.ClusterMacros, error) {
+	// instead of running a simple SELECT and getting a result set with multiple rows like this:
+	//
+	// ┌─macro───┬─substitution─┐
+	// │ cluster │ test_cluster │
+	// │ replica │ clickhouse1  │
+	// │ shard   │ 1            │
+	// └─────────┴──────────────┘
+	// we can prepare a convenience map in advance, querying it as a single row:
+	//
+	// {'cluster':'test_cluster','replica':'clickhouse1','shard':'1'}
+	rows, err := conn.ExecQuery(ctx,
+		"SELECT mapFromArrays(flatten(groupArray([macro])), flatten(groupArray([substitution]))) FROM system.macros",
+		getOnPremiseClusterMacros, false)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var macroMap map[string]string
+	var macros *types.ClusterMacros = nil
+	if !rows.Next() {
+		return nil, fmt.Errorf("no rows returned from system.macros")
+	}
+	if err = rows.Scan(&macroMap); err != nil {
+		return nil, err
+	}
+	macros, err = types.ToClusterMacros(macroMap)
+	return macros, nil
+}
+
+// GetInsertQuorumSettings
+// introspects a proper value for insert_quorum ClickHouse setting and indicates if it should be set.
+// Only makes sense for on-premise clusters to ensure that the data is written to all the replicas.
+// It should be ignored otherwise (types.InsertQuorumSettings.Enabled = false).
+// See also: https://clickhouse.com/docs/en/operations/settings/settings#insert_quorum
+func (conn *ClickHouseConnection) GetInsertQuorumSettings(ctx context.Context) (*types.InsertQuorumSettings, error) {
+	if conn.deploymentType != config.DeploymentTypeCluster {
+		return &types.InsertQuorumSettings{Value: 0, Enabled: false}, nil
+	}
+	rows, err := conn.ExecQuery(ctx,
+		"SELECT count(*) FROM system.clusters c JOIN system.macros m ON c.cluster = m.substitution",
+		getInsertQuorumValue, false)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var count uint64
+	if !rows.Next() {
+		return nil, fmt.Errorf("no rows returned from system.macros")
+	}
+	if err = rows.Scan(&count); err != nil {
+		return nil, err
+	}
+	return &types.InsertQuorumSettings{Value: count, Enabled: true}, nil
+}
+
+func (conn *ClickHouseConnection) CreateTable(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	tableDescription *types.TableDescription,
+) (err error) {
+	var macros *types.ClusterMacros = nil
+	if conn.deploymentType == config.DeploymentTypeCluster {
+		macros, err = conn.GetOnPremiseClusterMacros(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription, macros)
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(statement, createTable)
+	return conn.ExecDDL(ctx, statement, createTable)
 }
 
 func (conn *ClickHouseConnection) AlterTable(
+	ctx context.Context,
 	schemaName string,
 	tableName string,
 	from *types.TableDescription,
 	to *types.TableDescription,
-) error {
+) (err error) {
+	var macros *types.ClusterMacros = nil
+	if conn.deploymentType == config.DeploymentTypeCluster {
+		macros, err = conn.GetOnPremiseClusterMacros(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	ops := GetAlterTableOps(from, to)
-	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
+	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops, macros)
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(statement, alterTable)
+	return conn.ExecDDL(ctx, statement, alterTable)
 }
 
-func (conn *ClickHouseConnection) TruncateTable(schemaName string, tableName string) error {
+func (conn *ClickHouseConnection) TruncateTable(ctx context.Context, schemaName string, tableName string) error {
 	statement, err := sql.GetTruncateTableStatement(schemaName, tableName)
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(statement, truncateTable)
+	return conn.ExecDDL(ctx, statement, truncateTable)
 }
 
 func (conn *ClickHouseConnection) InsertBatch(
+	ctx context.Context,
 	fullTableName string,
 	rows [][]interface{},
 	skipIdx map[int]bool,
 	opName string,
+	quorumSettings *types.InsertQuorumSettings,
 ) error {
 	if len(skipIdx) == len(rows) {
 		log.Warn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, fullTableName))
 		return nil
 	}
+	ctx, err := conn.withInsertQuorum(ctx, quorumSettings)
+	if err != nil {
+		return err
+	}
 	return retry.OnNetError(func() error {
-		batch, err := conn.PrepareBatch(conn.ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
+		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
 		if err != nil {
 			err = fmt.Errorf("error while preparing batch for %s: %w", fullTableName, err)
 			log.Error(err)
@@ -212,13 +311,14 @@ func (conn *ClickHouseConnection) InsertBatch(
 			return err
 		}
 		return nil
-	}, conn.ctx, opName, true)
+	}, ctx, opName, true)
 }
 
 // SelectByPrimaryKeys selects rows from the table by primary keys found in the CSV.
 // The CSV is split into groups, and each group is processed in parallel.
 // The results are merged into a map of primary key values to the rows.
 func (conn *ClickHouseConnection) SelectByPrimaryKeys(
+	ctx context.Context,
 	fullTableName string,
 	columnTypes []driver.ColumnType,
 	pkCols []*types.PrimaryKeyColumn,
@@ -244,7 +344,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					if err != nil {
 						return err
 					}
-					rows, err := conn.ExecQuery(query, selectByPrimaryKeys, false)
+					rows, err := conn.ExecQuery(ctx, query, selectByPrimaryKeys, false)
 					if err != nil {
 						return err
 					}
@@ -288,11 +388,13 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 //
 // NB: retries are handled by InsertBatch
 func (conn *ClickHouseConnection) ReplaceBatch(
+	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
 	csv [][]string,
 	nullStr string,
 	batchSize uint,
+	quorumSettings *types.InsertQuorumSettings,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
@@ -314,7 +416,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 					}
 					insertRows[j] = insertRow
 				}
-				err = conn.InsertBatch(fullName, insertRows, nil, string(insertBatchReplaceTask))
+				err = conn.InsertBatch(ctx, fullName, insertRows, nil, string(insertBatchReplaceTask), quorumSettings)
 				if err != nil {
 					return err
 				}
@@ -338,6 +440,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 //
 // NB: retries are handled by SelectByPrimaryKeys and InsertBatch.
 func (conn *ClickHouseConnection) UpdateBatch(
+	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
 	pkCols []*types.PrimaryKeyColumn,
@@ -348,6 +451,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	writeBatchSize uint,
 	selectBatchSize uint,
 	maxParallelSelects uint,
+	quorumSettings *types.InsertQuorumSettings,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
@@ -361,7 +465,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
 				if err != nil {
 					return err
 				}
@@ -369,7 +473,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				if err != nil {
 					return err
 				}
-				err = conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchUpdateTask))
+				err = conn.InsertBatch(ctx, fullName, insertRows, skipIdx, string(insertBatchUpdateTask), quorumSettings)
 				if err != nil {
 					return err
 				}
@@ -396,6 +500,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 //
 // NB: retries are handled by SelectByPrimaryKeys and InsertBatch.
 func (conn *ClickHouseConnection) SoftDeleteBatch(
+	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
 	pkCols []*types.PrimaryKeyColumn,
@@ -406,6 +511,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	writeBatchSize uint,
 	selectBatchSize uint,
 	maxParallelSelects uint,
+	quorumSettings *types.InsertQuorumSettings,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
@@ -419,7 +525,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
 				if err != nil {
 					return err
 				}
@@ -427,7 +533,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 				if err != nil {
 					return err
 				}
-				err = conn.InsertBatch(fullName, insertRows, skipIdx, string(insertBatchDeleteTask))
+				err = conn.InsertBatch(ctx, fullName, insertRows, skipIdx, string(insertBatchDeleteTask), quorumSettings)
 				if err != nil {
 					return err
 				}
@@ -437,8 +543,8 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	}, string(insertBatchDelete))
 }
 
-func (conn *ClickHouseConnection) ConnectionTest() error {
-	describeResult, err := conn.DescribeTable("system", "numbers")
+func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
+	describeResult, err := conn.DescribeTable(ctx, "system", "numbers")
 	if err != nil {
 		return err
 	}
@@ -452,19 +558,60 @@ func (conn *ClickHouseConnection) ConnectionTest() error {
 	return nil
 }
 
+func addDefaultClusterSettings(settings clickhouse.Settings) {
+	// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
+	settings["alter_sync"] = 2
+	// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
+	settings["mutations_sync"] = 2
+}
+
+// ClickHouse Cloud manages quorum settings for inserts automatically.
+// We still need to enable select_sequential_consistency for UpdateBatch or SoftDeleteBatch.
+func (conn *ClickHouseConnection) withSelectConsistencySettings(
+	ctx context.Context,
+) context.Context {
+	if conn.deploymentType == config.DeploymentTypeClickHouseCloud {
+		return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+			// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
+			"select_sequential_consistency": 1,
+		}))
+	}
+	return ctx
+}
+
+// For on-premise clusters, we need to set insert_quorum equal to the number of replicas.
+// The exact value is introspected via GetInsertQuorumSettings before calling UpdateBatch or SoftDeleteBatch.
+func (conn *ClickHouseConnection) withInsertQuorum(
+	ctx context.Context,
+	quorum *types.InsertQuorumSettings,
+) (context.Context, error) {
+	if conn.deploymentType == config.DeploymentTypeCluster && quorum != nil && quorum.Enabled {
+		if quorum.Value < 2 { // if it's a cluster, we expect more than 1 node there
+			return nil, fmt.Errorf("insert_quorum value must be at least 2, got: %d", quorum.Value)
+		}
+		return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+			// https://clickhouse.com/docs/en/operations/settings/settings#insert_quorum
+			"insert_quorum": quorum.Value,
+		})), nil
+	}
+	return ctx, nil
+}
+
 type connectionOpType string
 
 const (
-	describeTable          connectionOpType = "DescribeTable"
-	createTable            connectionOpType = "CreateTable"
-	alterTable             connectionOpType = "AlterTable"
-	truncateTable          connectionOpType = "TruncateTable"
-	insertBatchReplace     connectionOpType = "InsertBatch(Replace)"
-	insertBatchReplaceTask connectionOpType = "InsertBatch(Replace task)"
-	insertBatchUpdate      connectionOpType = "InsertBatch(Update)"
-	insertBatchUpdateTask  connectionOpType = "InsertBatch(Update task)"
-	insertBatchDelete      connectionOpType = "InsertBatch(Delete)"
-	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
-	getColumnTypes         connectionOpType = "GetColumnTypes"
-	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
+	describeTable             connectionOpType = "DescribeTable"
+	createTable               connectionOpType = "CreateTable"
+	alterTable                connectionOpType = "AlterTable"
+	truncateTable             connectionOpType = "TruncateTable"
+	insertBatchReplace        connectionOpType = "InsertBatch(Replace)"
+	insertBatchReplaceTask    connectionOpType = "InsertBatch(Replace task)"
+	insertBatchUpdate         connectionOpType = "InsertBatch(Update)"
+	insertBatchUpdateTask     connectionOpType = "InsertBatch(Update task)"
+	insertBatchDelete         connectionOpType = "InsertBatch(Delete)"
+	insertBatchDeleteTask     connectionOpType = "InsertBatch(Delete task)"
+	getColumnTypes            connectionOpType = "GetColumnTypes"
+	getOnPremiseClusterMacros connectionOpType = "GetOnPremiseClusterMacros"
+	getInsertQuorumValue      connectionOpType = "GetInsertQuorumSettings"
+	selectByPrimaryKeys       connectionOpType = "SelectByPrimaryKeys"
 )

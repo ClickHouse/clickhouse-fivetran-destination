@@ -15,7 +15,7 @@ import (
 )
 
 func TestColumnTypesToEmptyRows(t *testing.T) {
-	conn, err := GetClickHouseConnection(context.Background(), map[string]string{
+	conn, err := GetClickHouseConnection(map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": "default",
@@ -121,7 +121,7 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 }
 
 func TestGetDatabaseRowMappingKey(t *testing.T) {
-	conn, err := GetClickHouseConnection(context.Background(), map[string]string{
+	conn, err := GetClickHouseConnection(map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": "default",

@@ -42,3 +42,16 @@ type AlterTableOp struct {
 	Type    *string // nil for AlterTableDrop
 	Comment *string // nil for AlterTableDrop
 }
+
+// ClusterMacros values are required for on-premise cluster deployments to generate correct CREATE TABLE statements.
+type ClusterMacros struct {
+	Cluster string
+	Replica string
+	Shard   string
+}
+
+// InsertQuorumSettings indicates if insert_quorum ClickHouse setting should be applied to inserts and its value.
+type InsertQuorumSettings struct {
+	Enabled bool
+	Value   uint64
+}

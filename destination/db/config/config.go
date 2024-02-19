@@ -7,6 +7,7 @@ import (
 
 type DeploymentType string
 
+// values are used as labels, so they have to be human-readable (see the definition of fivetran_sdk.DropdownField)
 const (
 	DeploymentTypeSingleNode      = "On-premise single node"
 	DeploymentTypeCluster         = "On-premise cluster"

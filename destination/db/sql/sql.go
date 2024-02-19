@@ -20,15 +20,29 @@ func GetQualifiedTableName(schemaName string, tableName string) (string, error) 
 	}
 }
 
-// GetAlterTableStatement sample generated query:
+// GetAlterTableStatement
+// If clusterMacros values are nil -> On-premise single node or ClickHouse Cloud deployment.
+// Sample generated query:
 //
 //	ALTER TABLE `foo`.`bar`
 //	ADD COLUMN c1 String COMMENT 'foobar',
 //	DROP COLUMN c2,
 //	MODIFY COLUMN c3 Int32 COMMENT ''
 //
+// If clusterMacros values are not nil -> On-premise cluster deployment.
+// Sample generated query, given types.ClusterMacros{Cluster: "my_cluster"}:
+//
+//	ALTER TABLE `foo`.`bar` ON CLUSTER 'my_cluster'
+//	ADD COLUMN c1 Int32
+//
 // Comments are added to distinguish certain Fivetran data types, see data_types.FivetranToClickHouseTypeWithComment.
-func GetAlterTableStatement(schemaName string, tableName string, ops []*types.AlterTableOp) (string, error) {
+// `ON CLUSTER` part is added only if macros values are not nil.
+func GetAlterTableStatement(
+	schemaName string,
+	tableName string,
+	ops []*types.AlterTableOp,
+	clusterMacros *types.ClusterMacros,
+) (string, error) {
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
@@ -67,17 +81,36 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 	}
 
 	statements := statementsBuilder.String()
-	query := fmt.Sprintf("ALTER TABLE %s %s", fullTableName, statements)
+	var query string
+	if clusterMacros != nil {
+		query = fmt.Sprintf("ALTER TABLE %s ON CLUSTER '%s' %s", fullTableName, clusterMacros.Cluster, statements)
+	} else {
+		query = fmt.Sprintf("ALTER TABLE %s %s", fullTableName, statements)
+	}
 	return query, nil
 }
 
-// GetCreateTableStatement sample generated query:
+// GetCreateTableStatement
+// If clusterMacros values are nil -> On-premise single node or ClickHouse Cloud deployment.
+// Sample generated query:
 //
 //	CREATE TABLE `foo`.`bar`
 //	(id Int64, c2 Nullable(String), _fivetran_synced DateTime64(9, 'UTC'), _fivetran_deleted Bool)
 //	ENGINE = ReplacingMergeTree(_fivetran_synced)
 //	ORDER BY (id)
-func GetCreateTableStatement(schemaName string, tableName string, tableDescription *types.TableDescription) (string, error) {
+//
+// If clusterMacros values are not nil -> On-premise cluster deployment.
+// Sample generated query, given types.ClusterMacros{Cluster: "my_cluster", Replica: "clickhouse1", Shard: "1"}:
+//
+//	CREATE TABLE `foo`.`bar` ON CLUSTER 'my_cluster'
+//	(id Int64, c2 Nullable(String), _fivetran_synced DateTime64(9, 'UTC'), _fivetran_deleted Bool)
+//	ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/foo/bar', 'clickhouse1', '1', 'my_cluster', '1', 'UTC')
+func GetCreateTableStatement(
+	schemaName string,
+	tableName string,
+	tableDescription *types.TableDescription,
+	clusterMacros *types.ClusterMacros,
+) (string, error) {
 	fullName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
@@ -103,8 +136,14 @@ func GetCreateTableStatement(schemaName string, tableName string, tableDescripti
 	}
 	columns := columnsBuilder.String()
 
-	query := fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
-		fullName, columns, constants.FivetranSynced, strings.Join(orderByCols, ", "))
+	var query string
+	if clusterMacros != nil {
+		query = fmt.Sprintf("CREATE TABLE %s ON CLUSTER '%s' (%s) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/%s/table_name', '%s', %s) ORDER BY (%s)",
+			fullName, columns, clusterMacros.Cluster, clusterMacros.Shard, clusterMacros.Replica, constants.FivetranSynced, strings.Join(orderByCols, ", "))
+	} else {
+		query = fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
+			fullName, columns, constants.FivetranSynced, strings.Join(orderByCols, ", "))
+	}
 	return query, nil
 }
 

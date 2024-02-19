@@ -4,13 +4,12 @@ import (
 	"testing"
 
 	"fivetran.com/fivetran_sdk/destination/common/types"
-	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestToFivetranColumns(t *testing.T) {
-	description := db.MakeTableDescription([]*types.ColumnDefinition{
+	description := types.MakeTableDescription([]*types.ColumnDefinition{
 		{Name: "b", Type: "Bool", IsPrimaryKey: true},
 		{Name: "i16", Type: "Int16", IsPrimaryKey: false},
 		{Name: "i32", Type: "Int32", IsPrimaryKey: false},

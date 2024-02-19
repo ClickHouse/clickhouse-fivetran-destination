@@ -28,3 +28,9 @@ const (
 )
 
 const MaxDecimalPrecision = 76
+
+const (
+	MacroCluster = "cluster"
+	MacroReplica = "replica"
+	MacroShard   = "shard"
+)
