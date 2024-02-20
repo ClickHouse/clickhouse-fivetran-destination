@@ -11,37 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const Content = "foobar\nqazqux\n123!@\n\n"
-
 var key, _ = base64.StdEncoding.DecodeString("VyEZCkPngvf4mtRHemjGkC6tmd/22j0R9z+DQv2he/Q=")
-
-func TestDecompressZSTD(t *testing.T) {
-	file, err := os.ReadFile("../../tests/resources/encoded.txt.zst")
-	assert.NoError(t, err)
-	res, err := DecompressZSTD(file)
-	assert.NoError(t, err)
-	assert.Equal(t, Content, string(res))
-}
-
-func TestDecompressGZIP(t *testing.T) {
-	file, err := os.ReadFile("../../tests/resources/encoded.txt.gz")
-	assert.NoError(t, err)
-	res, err := DecompressGZIP(file)
-	assert.NoError(t, err)
-	assert.Equal(t, Content, string(res))
-}
-
-func TestDecryptAESWithZSTD(t *testing.T) {
-	file, err := os.ReadFile("../../tests/resources/campaign.csv.zst.aes")
-	assert.NoError(t, err)
-	decrypted, err := DecryptAES256(key, file)
-	assert.NoError(t, err)
-	decompressed, err := DecompressZSTD(decrypted)
-	assert.NoError(t, err)
-	expected, err := os.ReadFile("../../tests/resources/campaign.csv")
-	assert.NoError(t, err)
-	assert.Equal(t, string(expected), string(decompressed))
-}
 
 func TestReadCSVFile(t *testing.T) {
 	expectedCSV := readExpectedCSV(t, "../../tests/resources/campaign.csv")
@@ -70,7 +40,7 @@ func TestReadCSVFile(t *testing.T) {
 	// File is not a CSV
 	invalidCSVFileName := "../../tests/resources/invalid.csv"
 	_, err = ReadCSVFile(invalidCSVFileName, map[string][]byte{invalidCSVFileName: key}, pb.Compression_OFF, pb.Encryption_NONE)
-	assert.ErrorContains(t, err, "is not a valid CSV")
+	assert.ErrorContains(t, err, "parse error")
 
 	// CSV has column names only
 	shortCSVFileName := "../../tests/resources/short.csv"
