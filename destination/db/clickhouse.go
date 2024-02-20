@@ -183,7 +183,6 @@ func (conn *ClickHouseConnection) GetOnPremiseClusterMacros(ctx context.Context)
 		replica string
 		shard   string
 	)
-	var macros *types.ClusterMacros = nil
 	if !rows.Next() {
 		return nil, fmt.Errorf("no rows returned from system.macros")
 	}
@@ -193,12 +192,11 @@ func (conn *ClickHouseConnection) GetOnPremiseClusterMacros(ctx context.Context)
 	if cluster == "" || replica == "" || shard == "" {
 		return nil, fmt.Errorf("expected all macros to be set: cluster=%s, replica=%s, shard=%s", cluster, replica, shard)
 	}
-	macros = &types.ClusterMacros{
+	return &types.ClusterMacros{
 		Cluster: cluster,
 		Replica: replica,
 		Shard:   shard,
-	}
-	return macros, nil
+	}, nil
 }
 
 // GetInsertQuorumSettings
