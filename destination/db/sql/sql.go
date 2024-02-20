@@ -118,6 +118,7 @@ func GetCreateTableStatement(
 	if tableDescription == nil || len(tableDescription.Columns) == 0 {
 		return "", fmt.Errorf("no columns to create table %s", fullName)
 	}
+
 	var orderByCols []string
 	var columnsBuilder strings.Builder
 	count := 0
@@ -135,14 +136,15 @@ func GetCreateTableStatement(
 		count++
 	}
 	columns := columnsBuilder.String()
+	orderBy := strings.Join(orderByCols, ", ")
 
 	var query string
 	if clusterMacros != nil {
 		query = fmt.Sprintf("CREATE TABLE %s ON CLUSTER '%s' (%s) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/%s/table_name', '%s', %s) ORDER BY (%s)",
-			fullName, columns, clusterMacros.Cluster, clusterMacros.Shard, clusterMacros.Replica, constants.FivetranSynced, strings.Join(orderByCols, ", "))
+			fullName, columns, clusterMacros.Cluster, clusterMacros.Shard, clusterMacros.Replica, constants.FivetranSynced, orderBy)
 	} else {
 		query = fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
-			fullName, columns, constants.FivetranSynced, strings.Join(orderByCols, ", "))
+			fullName, columns, constants.FivetranSynced, orderBy)
 	}
 	return query, nil
 }

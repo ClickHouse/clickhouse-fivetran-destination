@@ -43,7 +43,7 @@ type AlterTableOp struct {
 	Comment *string // nil for AlterTableDrop
 }
 
-// ClusterMacros values are required for on-premise cluster deployments to generate correct CREATE TABLE statements.
+// ClusterMacros is required for on-premise cluster deployments to generate correct CREATE/ALTER TABLE statements.
 type ClusterMacros struct {
 	Cluster string
 	Replica string

@@ -157,40 +157,47 @@ func (conn *ClickHouseConnection) GetColumnTypes(
 }
 
 // GetOnPremiseClusterMacros introspects macros values from system.macros table for on-premise cluster deployments.
-// The server nodes are expected to have the following entries in their configuration:
+// Each of the server nodes is expected to have cluster/replica/shard macros in the configuration, for example:
 //
 //	<macros>
 //	 <cluster>my_cluster</cluster>
 //	 <replica>clickhouse1</replica>
 //	 <shard>1</shard>
 //	</macros>
+//
+// These values are used to generate correct CREATE/ALTER TABLE statements with ReplicatedReplacingMergeTree.
+// See also: https://clickhouse.com/docs/en/architecture/horizontal-scaling#macros-configuration.
 func (conn *ClickHouseConnection) GetOnPremiseClusterMacros(ctx context.Context) (*types.ClusterMacros, error) {
-	// instead of running a simple SELECT and getting a result set with multiple rows like this:
-	//
-	// ┌─macro───┬─substitution─┐
-	// │ cluster │ test_cluster │
-	// │ replica │ clickhouse1  │
-	// │ shard   │ 1            │
-	// └─────────┴──────────────┘
-	// we can prepare a convenience map in advance, querying it as a single row:
-	//
-	// {'cluster':'test_cluster','replica':'clickhouse1','shard':'1'}
+	if conn.deploymentType != config.DeploymentTypeCluster {
+		return nil, nil
+	}
 	rows, err := conn.ExecQuery(ctx,
-		"SELECT mapFromArrays(flatten(groupArray([macro])), flatten(groupArray([substitution]))) FROM system.macros",
+		"SELECT getMacro('cluster'), getMacro('replica'), getMacro('shard')",
 		getOnPremiseClusterMacros, false)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var macroMap map[string]string
+	var (
+		cluster string
+		replica string
+		shard   string
+	)
 	var macros *types.ClusterMacros = nil
 	if !rows.Next() {
 		return nil, fmt.Errorf("no rows returned from system.macros")
 	}
-	if err = rows.Scan(&macroMap); err != nil {
+	if err = rows.Scan(&cluster, &replica, &shard); err != nil {
 		return nil, err
 	}
-	macros, err = types.ToClusterMacros(macroMap)
+	if cluster == "" || replica == "" || shard == "" {
+		return nil, fmt.Errorf("expected all macros to be set: cluster=%s, replica=%s, shard=%s", cluster, replica, shard)
+	}
+	macros = &types.ClusterMacros{
+		Cluster: cluster,
+		Replica: replica,
+		Shard:   shard,
+	}
 	return macros, nil
 }
 
@@ -198,7 +205,7 @@ func (conn *ClickHouseConnection) GetOnPremiseClusterMacros(ctx context.Context)
 // introspects a proper value for insert_quorum ClickHouse setting and indicates if it should be set.
 // Only makes sense for on-premise clusters to ensure that the data is written to all the replicas.
 // It should be ignored otherwise (types.InsertQuorumSettings.Enabled = false).
-// See also: https://clickhouse.com/docs/en/operations/settings/settings#insert_quorum
+// See also: https://clickhouse.com/docs/en/operations/settings/settings#insert_quorum.
 func (conn *ClickHouseConnection) GetInsertQuorumSettings(ctx context.Context) (*types.InsertQuorumSettings, error) {
 	if conn.deploymentType != config.DeploymentTypeCluster {
 		return &types.InsertQuorumSettings{Value: 0, Enabled: false}, nil
@@ -210,14 +217,14 @@ func (conn *ClickHouseConnection) GetInsertQuorumSettings(ctx context.Context) (
 		return nil, err
 	}
 	defer rows.Close()
-	var count uint64
+	var nodesCount uint64
 	if !rows.Next() {
-		return nil, fmt.Errorf("no rows returned from system.macros")
+		return nil, fmt.Errorf("no rows returned for insert quorum introspection query")
 	}
-	if err = rows.Scan(&count); err != nil {
+	if err = rows.Scan(&nodesCount); err != nil {
 		return nil, err
 	}
-	return &types.InsertQuorumSettings{Value: count, Enabled: true}, nil
+	return &types.InsertQuorumSettings{Value: nodesCount, Enabled: true}, nil
 }
 
 func (conn *ClickHouseConnection) CreateTable(
@@ -226,12 +233,9 @@ func (conn *ClickHouseConnection) CreateTable(
 	tableName string,
 	tableDescription *types.TableDescription,
 ) (err error) {
-	var macros *types.ClusterMacros = nil
-	if conn.deploymentType == config.DeploymentTypeCluster {
-		macros, err = conn.GetOnPremiseClusterMacros(ctx)
-		if err != nil {
-			return err
-		}
+	macros, err := conn.GetOnPremiseClusterMacros(ctx)
+	if err != nil {
+		return err
 	}
 	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription, macros)
 	if err != nil {
@@ -247,12 +251,9 @@ func (conn *ClickHouseConnection) AlterTable(
 	from *types.TableDescription,
 	to *types.TableDescription,
 ) (err error) {
-	var macros *types.ClusterMacros = nil
-	if conn.deploymentType == config.DeploymentTypeCluster {
-		macros, err = conn.GetOnPremiseClusterMacros(ctx)
-		if err != nil {
-			return err
-		}
+	macros, err := conn.GetOnPremiseClusterMacros(ctx)
+	if err != nil {
+		return err
 	}
 	ops := GetAlterTableOps(from, to)
 	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops, macros)
@@ -326,6 +327,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	selectBatchSize uint,
 	maxParallelSelects uint,
 ) (RowsByPrimaryKeyValue, error) {
+	ctx = conn.withSelectConsistencySettings(ctx)
 	return benchmark.RunAndNoticeWithData(func() (RowsByPrimaryKeyValue, error) {
 		scanRows := ColumnTypesToEmptyScanRows(columnTypes, uint(len(csv)))
 		groups, err := GroupSlices(uint(len(csv)), selectBatchSize, maxParallelSelects)
