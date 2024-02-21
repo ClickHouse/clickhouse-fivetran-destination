@@ -121,4 +121,4 @@ make build
 ./out/clickhouse_destination -h
 ```
 
-Check the [main.go](./destination/main.go) file for more details.
+Check the [flags.go](./destination/common/flags/flags.go) file for more details.

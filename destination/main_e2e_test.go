@@ -25,6 +25,10 @@ import (
 // - Makefile:test for the SDK tester run command
 // - sdk_tests/*.json for the input files
 
+func init() {
+	*flags.LocalDev = true
+}
+
 func TestAllDataTypes(t *testing.T) {
 	fileName := "input_all_data_types.json"
 	tableName := "all_data_types"
@@ -298,16 +302,18 @@ func readConfig(t *testing.T) *config.Config {
 
 func runQuery(t *testing.T, query string) string {
 	conf := readConfig(t)
+	split := strings.Split(conf.Host, ":")
+	assert.Len(t, split, 2)
 	cmdArgs := []string{
 		"exec", "fivetran-destination-clickhouse-server",
 		"clickhouse-client", "--query", query,
-		"--host", conf.Hostname,
-		"--port", fmt.Sprint(conf.Port),
+		"--host", split[0],
+		"--port", split[1],
 		"--database", conf.Database,
 		"--user", conf.Username,
 		"--password", conf.Password,
 	}
-	if conf.SSL.Enabled {
+	if !*flags.LocalDev {
 		cmdArgs = append(cmdArgs, "--secure")
 	}
 	command := exec.Command("docker", cmdArgs...)

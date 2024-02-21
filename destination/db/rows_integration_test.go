@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/google/uuid"
@@ -14,10 +15,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func init() {
+	*flags.LocalDev = true
+}
+
 func TestColumnTypesToEmptyRows(t *testing.T) {
-	conn, err := GetClickHouseConnection(context.Background(), map[string]string{
-		"host":     "localhost",
-		"port":     "9000",
+	conn, err := GetClickHouseConnection(map[string]string{
+		"host":     "localhost:9000",
 		"username": "default",
 	})
 	assert.NoError(t, err)
@@ -121,9 +125,8 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 }
 
 func TestGetDatabaseRowMappingKey(t *testing.T) {
-	conn, err := GetClickHouseConnection(context.Background(), map[string]string{
-		"host":     "localhost",
-		"port":     "9000",
+	conn, err := GetClickHouseConnection(map[string]string{
+		"host":     "localhost:9000",
 		"username": "default",
 	})
 	assert.NoError(t, err)
