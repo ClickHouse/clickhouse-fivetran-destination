@@ -2,5 +2,6 @@
   "host": "clickhouse:9000",
   "database": "default",
   "password": "",
-  "username": "default"
+  "username": "default",
+  "local": "true"
 }

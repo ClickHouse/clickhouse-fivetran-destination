@@ -31,7 +31,7 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 	}
 	settings := clickhouse.Settings{}
 	var tlsConfig *tls.Config = nil
-	if !*flags.LocalDev {
+	if configuration["local"] != "true" {
 		tlsConfig = &tls.Config{InsecureSkipVerify: false}
 		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
 		settings["alter_sync"] = 2

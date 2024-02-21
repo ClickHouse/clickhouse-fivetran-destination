@@ -5,9 +5,6 @@ import "flag"
 var Port = flag.Uint("port", 50052,
 	"Listen port")
 
-var LocalDev = flag.Bool("local-dev", false,
-	"Allows to use local ClickHouse server for development and test runs.")
-
 var LogLevel = flag.String("log-level", "notice",
 	"Log level: notice, info, warning, severe")
 var LogPretty = flag.Bool("log-pretty", false,

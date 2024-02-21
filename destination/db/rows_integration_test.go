@@ -7,24 +7,21 @@ import (
 	"testing"
 	"time"
 
-	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
-
-func init() {
-	*flags.LocalDev = true
-}
 
 func TestColumnTypesToEmptyRows(t *testing.T) {
 	conn, err := GetClickHouseConnection(map[string]string{
 		"host":     "localhost:9000",
 		"username": "default",
+		"local":    "true",
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer conn.Close()
 
 	tableName := fmt.Sprintf("test_empty_rows_gen_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
@@ -128,8 +125,9 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 	conn, err := GetClickHouseConnection(map[string]string{
 		"host":     "localhost:9000",
 		"username": "default",
+		"local":    "true",
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer conn.Close()
 
 	// Create a table with all possible destination types and a single record

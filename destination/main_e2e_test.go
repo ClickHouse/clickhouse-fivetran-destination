@@ -16,7 +16,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/cmd"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/db/config"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Runs the destination app, invokes SDK tester with a given input file, and verifies the output from ClickHouse.
@@ -24,10 +24,6 @@ import (
 // - https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester for the SDK tester docs
 // - Makefile:test for the SDK tester run command
 // - sdk_tests/*.json for the input files
-
-func init() {
-	*flags.LocalDev = true
-}
 
 func TestAllDataTypes(t *testing.T) {
 	fileName := "input_all_data_types.json"
@@ -148,14 +144,10 @@ func TestLargeInputFile(t *testing.T) {
 }
 
 func assertDatabaseRecords(t *testing.T, expectedRecords [][]string, dbRecordsCSVStr string) {
-	dbRecords, err := csv.NewReader(strings.NewReader(dbRecordsCSVStr)).ReadAll()
-	assert.NoError(t, err)
-	assert.Equal(t, len(expectedRecords), len(dbRecords),
-		"Expected %d, but got %d database records", len(expectedRecords), len(dbRecords))
-	for i, expected := range expectedRecords {
-		if !assert.Equal(t, expected, dbRecords[i]) {
-			t.Fatal("Expected:", expected, "Actual:", dbRecords[i])
-		}
+	csvReader := csv.NewReader(strings.NewReader(dbRecordsCSVStr))
+	for _, expected := range expectedRecords {
+		dbRecord, _ := csvReader.Read()
+		require.Equal(t, expected, dbRecord)
 	}
 }
 
@@ -253,9 +245,9 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 		},
 	}
 	content, err := json.Marshal(inputFile)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = os.WriteFile(fmt.Sprintf("%s/sdk_tests/%s.json", cwd, tableName), content, 0644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	return assertRows
 }
 
@@ -263,6 +255,7 @@ const dialTimeout = 10 * time.Millisecond
 const maxDialRetries = 300
 
 var connConfig atomic.Value
+var secureConnection atomic.Bool
 
 func startServer(t *testing.T) {
 	if isPortReady(t, *flags.Port) {
@@ -274,7 +267,7 @@ func startServer(t *testing.T) {
 
 func getProjectRootDir(t *testing.T) string {
 	cwd, err := os.Getwd()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var result string
 	// CLI vs IDE test run
 	if strings.HasSuffix(cwd, "/destination") {
@@ -289,21 +282,22 @@ func readConfig(t *testing.T) *config.Config {
 	}
 	rootDir := getProjectRootDir(t)
 	configBytes, err := os.ReadFile(fmt.Sprintf("%s/sdk_tests/configuration.json", rootDir))
-	assert.NoError(t, err,
+	require.NoError(t, err,
 		"copy the default configuration first: cp sdk_tests/default_configuration.json sdk_tests/configuration.json")
-	configMap := make(map[string]string)
-	err = json.Unmarshal(configBytes, &configMap)
-	assert.NoError(t, err)
-	res, err := config.Parse(configMap)
-	assert.NoError(t, err)
+	m := make(map[string]string)
+	err = json.Unmarshal(configBytes, &m)
+	require.NoError(t, err)
+	res, err := config.Parse(m)
+	require.NoError(t, err)
 	connConfig.Store(res)
+	secureConnection.Store(m["local"] != "true")
 	return res
 }
 
 func runQuery(t *testing.T, query string) string {
 	conf := readConfig(t)
 	split := strings.Split(conf.Host, ":")
-	assert.Len(t, split, 2)
+	require.Len(t, split, 2)
 	cmdArgs := []string{
 		"exec", "fivetran-destination-clickhouse-server",
 		"clickhouse-client", "--query", query,
@@ -313,16 +307,16 @@ func runQuery(t *testing.T, query string) string {
 		"--user", conf.Username,
 		"--password", conf.Password,
 	}
-	if !*flags.LocalDev {
+	if secureConnection.Load() {
 		cmdArgs = append(cmdArgs, "--secure")
 	}
 	command := exec.Command("docker", cmdArgs...)
 	out, err := command.Output()
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
-		t.Error(string(exitError.Stderr))
+		t.Fatalf(string(exitError.Stderr))
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	return string(out)
 }
 
@@ -331,7 +325,7 @@ func isPortReady(t *testing.T, port uint) (isOpen bool) {
 	conn, _ := net.DialTimeout("tcp", address, dialTimeout)
 	if conn != nil {
 		err := conn.Close()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		return true
 	}
 	return false
@@ -361,7 +355,7 @@ func runSDKTestCommand(t *testing.T, inputFileName string) {
 	if errors.As(err, &exitError) {
 		t.Error(string(exitError.Stderr))
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	out := string(byteOut)
-	assert.Contains(t, out, "[Test connection and basic operations]: PASSED")
+	require.Contains(t, out, "[Test connection and basic operations]: PASSED")
 }
