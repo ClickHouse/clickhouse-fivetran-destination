@@ -14,7 +14,7 @@ func TestGetAlterTableOpsModify(t *testing.T) {
 	curCol2 := &types.ColumnDefinition{Name: "qux", Type: "String", IsPrimaryKey: false}
 	alterCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
 	alterCol2 := &types.ColumnDefinition{Name: "qux", Type: "Int64", IsPrimaryKey: false}
-	ops := GetAlterTableOps(
+	ops, err := GetAlterTableOps(
 		&types.TableDescription{
 			Mapping: map[string]*types.ColumnDefinition{"qaz": curCol1, "qux": curCol2},
 			Columns: []*types.ColumnDefinition{curCol1, curCol2},
@@ -23,6 +23,7 @@ func TestGetAlterTableOpsModify(t *testing.T) {
 			Mapping: map[string]*types.ColumnDefinition{"qaz": alterCol1, "qux": alterCol2},
 			Columns: []*types.ColumnDefinition{alterCol1, alterCol2},
 		})
+	assert.NoError(t, err)
 	assert.Equal(t, ops, []*types.AlterTableOp{{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment}})
 }
 
@@ -34,7 +35,7 @@ func TestGetAlterTableOpsAdd(t *testing.T) {
 	alterCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
 	alterCol2 := &types.ColumnDefinition{Name: "qux", Type: "String", IsPrimaryKey: false}
 	alterCol3 := &types.ColumnDefinition{Name: "zaq", Type: "Int64", IsPrimaryKey: false}
-	ops := GetAlterTableOps(
+	ops, err := GetAlterTableOps(
 		&types.TableDescription{
 			Mapping: map[string]*types.ColumnDefinition{"qaz": curCol1, "qux": curCol2},
 			Columns: []*types.ColumnDefinition{curCol1, curCol2},
@@ -43,6 +44,7 @@ func TestGetAlterTableOpsAdd(t *testing.T) {
 			Mapping: map[string]*types.ColumnDefinition{"qaz": alterCol1, "qux": alterCol2, "zaq": alterCol3},
 			Columns: []*types.ColumnDefinition{alterCol1, alterCol2, alterCol3},
 		})
+	assert.NoError(t, err)
 	assert.Equal(t, ops, []*types.AlterTableOp{{Op: types.AlterTableAdd, Column: "zaq", Type: &int64Type, Comment: &emptyComment}})
 
 }
@@ -51,7 +53,7 @@ func TestGetAlterTableOpsDrop(t *testing.T) {
 	curCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
 	curCol2 := &types.ColumnDefinition{Name: "qux", Type: "String", IsPrimaryKey: false}
 	alterCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
-	ops := GetAlterTableOps(
+	ops, err := GetAlterTableOps(
 		&types.TableDescription{
 			Mapping: map[string]*types.ColumnDefinition{"qaz": curCol1, "qux": curCol2},
 			Columns: []*types.ColumnDefinition{curCol1, curCol2},
@@ -60,6 +62,7 @@ func TestGetAlterTableOpsDrop(t *testing.T) {
 			Mapping: map[string]*types.ColumnDefinition{"qaz": alterCol1},
 			Columns: []*types.ColumnDefinition{alterCol1},
 		})
+	assert.NoError(t, err)
 	assert.Equal(t, ops, []*types.AlterTableOp{{Op: types.AlterTableDrop, Column: "qux", Type: nil, Comment: nil}})
 }
 
@@ -67,11 +70,11 @@ func TestGetAlterTableOpsCombined(t *testing.T) {
 	int64Type := "Int64"
 	int16Type := "Int16"
 	emptyComment := ""
-	curCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
+	curCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: false}
 	curCol2 := &types.ColumnDefinition{Name: "qux", Type: "String", IsPrimaryKey: false}
 	alterCol1 := &types.ColumnDefinition{Name: "qux", Type: "Int64", IsPrimaryKey: false}
 	alterCol2 := &types.ColumnDefinition{Name: "zaq", Type: "Int16", IsPrimaryKey: false}
-	ops := GetAlterTableOps(
+	ops, err := GetAlterTableOps(
 		&types.TableDescription{
 			Mapping: map[string]*types.ColumnDefinition{"qaz": curCol1, "qux": curCol2},
 			Columns: []*types.ColumnDefinition{curCol1, curCol2},
@@ -80,6 +83,7 @@ func TestGetAlterTableOpsCombined(t *testing.T) {
 			Mapping: map[string]*types.ColumnDefinition{"qux": alterCol1, "zaq": alterCol2},
 			Columns: []*types.ColumnDefinition{alterCol1, alterCol2},
 		})
+	assert.NoError(t, err)
 	assert.Equal(t, ops, []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment},
 		{Op: types.AlterTableAdd, Column: "zaq", Type: &int16Type, Comment: &emptyComment},
@@ -101,7 +105,8 @@ func TestGetAlterTableOpsEqualTables(t *testing.T) {
 		Mapping: map[string]*types.ColumnDefinition{"qaz": alterCol1, "qux": alterCol2},
 		Columns: []*types.ColumnDefinition{alterCol1, alterCol2},
 	}
-	ops := GetAlterTableOps(td1, td2)
+	ops, err := GetAlterTableOps(td1, td2)
+	assert.NoError(t, err)
 	assert.Equal(t, ops, []*types.AlterTableOp{})
 }
 
@@ -122,7 +127,7 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 	alterCol5 := &types.ColumnDefinition{Name: "s10", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
 	alterCol6 := &types.ColumnDefinition{Name: "s11", Type: strType, IsPrimaryKey: false, Comment: binaryComment}
 	alterCol7 := &types.ColumnDefinition{Name: "s12", Type: strType, IsPrimaryKey: false, Comment: xmlComment}
-	ops := GetAlterTableOps(
+	ops, err := GetAlterTableOps(
 		&types.TableDescription{
 			Mapping: map[string]*types.ColumnDefinition{
 				"s1": curCol1, "s2": curCol2, "s3": curCol3, "s4": curCol4, "s5": curCol5,
@@ -136,6 +141,7 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 			},
 			Columns: []*types.ColumnDefinition{alterCol1, alterCol2, alterCol3, alterCol4, alterCol5, alterCol6, alterCol7},
 		})
+	assert.NoError(t, err)
 	assert.Equal(t, ops, []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "s1", Type: &strType, Comment: &binaryComment},
 		{Op: types.AlterTableModify, Column: "s2", Type: &strType, Comment: &xmlComment},
@@ -146,4 +152,39 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 		{Op: types.AlterTableAdd, Column: "s12", Type: &strType, Comment: &xmlComment},
 		{Op: types.AlterTableDrop, Column: "s5", Type: nil, Comment: nil},
 	})
+}
+
+func TestGetAlterTableOpsChangePrimaryKey(t *testing.T) {
+	curCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
+	curCol2 := &types.ColumnDefinition{Name: "qux", Type: "String", IsPrimaryKey: false}
+	alterCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int64", IsPrimaryKey: true}
+	alterCol2 := &types.ColumnDefinition{Name: "qux", Type: "Int64", IsPrimaryKey: false}
+	ops, err := GetAlterTableOps(
+		&types.TableDescription{
+			Mapping: map[string]*types.ColumnDefinition{"qaz": curCol1, "qux": curCol2},
+			Columns: []*types.ColumnDefinition{curCol1, curCol2},
+		},
+		&types.TableDescription{
+			Mapping: map[string]*types.ColumnDefinition{"qaz": alterCol1, "qux": alterCol2},
+			Columns: []*types.ColumnDefinition{alterCol1, alterCol2},
+		})
+	assert.ErrorContains(t, err, "primary key columns cannot be changed")
+	assert.Equal(t, ops, []*types.AlterTableOp(nil))
+}
+
+func TestGetAlterTableOpsDropPrimaryKey(t *testing.T) {
+	curCol1 := &types.ColumnDefinition{Name: "qaz", Type: "Int32", IsPrimaryKey: true}
+	curCol2 := &types.ColumnDefinition{Name: "qux", Type: "String", IsPrimaryKey: false}
+	alterCol := &types.ColumnDefinition{Name: "qux", Type: "Int64", IsPrimaryKey: false}
+	ops, err := GetAlterTableOps(
+		&types.TableDescription{
+			Mapping: map[string]*types.ColumnDefinition{"qaz": curCol1, "qux": curCol2},
+			Columns: []*types.ColumnDefinition{curCol1, curCol2},
+		},
+		&types.TableDescription{
+			Mapping: map[string]*types.ColumnDefinition{"qux": alterCol},
+			Columns: []*types.ColumnDefinition{alterCol},
+		})
+	assert.ErrorContains(t, err, "primary key columns cannot be dropped")
+	assert.Equal(t, ops, []*types.AlterTableOp(nil))
 }

@@ -163,7 +163,7 @@ func (conn *ClickHouseConnection) CreateTable(
 	schemaName string,
 	tableName string,
 	tableDescription *types.TableDescription,
-) (err error) {
+) error {
 	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription)
 	if err != nil {
 		return err
@@ -177,8 +177,11 @@ func (conn *ClickHouseConnection) AlterTable(
 	tableName string,
 	from *types.TableDescription,
 	to *types.TableDescription,
-) (err error) {
-	ops := GetAlterTableOps(from, to)
+) error {
+	ops, err := GetAlterTableOps(from, to)
+	if err != nil {
+		return err
+	}
 	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
 	if err != nil {
 		return err
