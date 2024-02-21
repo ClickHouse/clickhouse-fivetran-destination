@@ -51,7 +51,8 @@ The destination app will create a ClickHouse table
 using [ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
 engine versioned by `_fivetran_synced` column.
 
-Every column except primary (ordering) keys and Fivetran metadata columns will be created as `Nullable(T)`, where `T` is a
+Every column except primary (ordering) keys and Fivetran metadata columns will be created
+as [Nullable(T)](https://clickhouse.com/docs/en/sql-reference/data-types/nullable), where `T` is a
 ClickHouse type based on the [data types mapping](#data-types-mapping).
 
 ### Single primary key in the source table
