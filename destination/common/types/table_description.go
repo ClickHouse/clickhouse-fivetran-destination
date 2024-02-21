@@ -1,15 +1,11 @@
-package db
-
-import (
-	"fivetran.com/fivetran_sdk/destination/common/types"
-)
+package types
 
 // MakeTableDescription ensures that a valid types.TableDescription is created from a list of types.ColumnDefinition.
-func MakeTableDescription(columnDefinitions []*types.ColumnDefinition) *types.TableDescription {
+func MakeTableDescription(columnDefinitions []*ColumnDefinition) *TableDescription {
 	if len(columnDefinitions) == 0 {
-		return &types.TableDescription{}
+		return &TableDescription{}
 	}
-	mapping := make(map[string]*types.ColumnDefinition, len(columnDefinitions))
+	mapping := make(map[string]*ColumnDefinition, len(columnDefinitions))
 	var primaryKeys []string
 	for _, col := range columnDefinitions {
 		mapping[col.Name] = col
@@ -17,7 +13,7 @@ func MakeTableDescription(columnDefinitions []*types.ColumnDefinition) *types.Ta
 			primaryKeys = append(primaryKeys, col.Name)
 		}
 	}
-	return &types.TableDescription{
+	return &TableDescription{
 		Mapping:     mapping,
 		Columns:     columnDefinitions,
 		PrimaryKeys: primaryKeys,

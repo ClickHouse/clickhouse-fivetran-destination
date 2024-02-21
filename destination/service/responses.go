@@ -8,23 +8,18 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
+var hostDescription = "ClickHouse Cloud service host. Format: address:port"
+
 func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 	return &pb.ConfigurationFormResponse{
 		SchemaSelectionSupported: true,
 		TableSelectionSupported:  true,
 		Fields: []*pb.FormField{
 			{
-				Name:     config.HostnameKey,
-				Label:    "Hostname",
-				Required: true,
-				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_PlainText,
-				},
-			},
-			{
-				Name:     config.PortKey,
-				Label:    "Port",
-				Required: true,
+				Name:        config.HostKey,
+				Label:       "Host",
+				Description: &hostDescription,
+				Required:    true,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_PlainText,
 				},
@@ -51,36 +46,6 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				Required: true,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_Password,
-				},
-			},
-			{
-				Name:     config.DeploymentTypeKey,
-				Label:    "ClickHouse deployment type",
-				Required: true,
-				Type: &pb.FormField_DropdownField{
-					DropdownField: &pb.DropdownField{
-						DropdownField: []string{
-							config.DeploymentTypeClickHouseCloud,
-							config.DeploymentTypeCluster,
-							config.DeploymentTypeSingleNode,
-						},
-					},
-				},
-			},
-			{
-				Name:     config.SSLKey,
-				Label:    "Use SSL",
-				Required: false,
-				Type: &pb.FormField_ToggleField{
-					ToggleField: &pb.ToggleField{},
-				},
-			},
-			{
-				Name:     config.SSLSkipVerifyKey,
-				Label:    "Skip SSL verification",
-				Required: false,
-				Type: &pb.FormField_ToggleField{
-					ToggleField: &pb.ToggleField{},
 				},
 			},
 		},

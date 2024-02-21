@@ -1,10 +1,7 @@
 {
-  "hostname": "clickhouse",
+  "host": "clickhouse:9000",
   "database": "default",
   "password": "",
-  "port": "9000",
-  "ssl": "false",
-  "ssl_skip_verification": "false",
-  "deployment_type": "On-premise single node",
-  "username": "default"
+  "username": "default",
+  "local": "true"
 }

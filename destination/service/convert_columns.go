@@ -5,7 +5,6 @@ import (
 
 	dt "fivetran.com/fivetran_sdk/destination/common/data_types"
 	"fivetran.com/fivetran_sdk/destination/common/types"
-	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
@@ -48,5 +47,5 @@ func ToClickHouse(table *pb.Table) (*types.TableDescription, error) {
 			IsPrimaryKey: column.PrimaryKey,
 		}
 	}
-	return db.MakeTableDescription(result), nil
+	return types.MakeTableDescription(result), nil
 }

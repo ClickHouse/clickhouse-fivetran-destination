@@ -12,15 +12,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestColumnTypesToEmptyRows(t *testing.T) {
-	conn, err := GetClickHouseConnection(context.Background(), map[string]string{
-		"host":     "localhost",
-		"port":     "9000",
+	conn, err := GetClickHouseConnection(map[string]string{
+		"host":     "localhost:9000",
 		"username": "default",
+		"local":    "true",
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer conn.Close()
 
 	tableName := fmt.Sprintf("test_empty_rows_gen_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
@@ -121,12 +122,12 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 }
 
 func TestGetDatabaseRowMappingKey(t *testing.T) {
-	conn, err := GetClickHouseConnection(context.Background(), map[string]string{
-		"host":     "localhost",
-		"port":     "9000",
+	conn, err := GetClickHouseConnection(map[string]string{
+		"host":     "localhost:9000",
 		"username": "default",
+		"local":    "true",
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer conn.Close()
 
 	// Create a table with all possible destination types and a single record

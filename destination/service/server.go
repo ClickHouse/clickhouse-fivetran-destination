@@ -23,7 +23,7 @@ func (s *Server) ConfigurationForm(_ context.Context, _ *pb.ConfigurationFormReq
 }
 
 func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse, error) {
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedTestResponse(in.Name, err), nil
 	}
@@ -31,7 +31,7 @@ func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 
 	switch in.Name {
 	case ConnectionTest:
-		err = conn.ConnectionTest()
+		err = conn.ConnectionTest(ctx)
 		if err != nil {
 			return FailedTestResponse(in.Name, err), nil
 		}
@@ -47,13 +47,13 @@ func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 }
 
 func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest) (*pb.DescribeTableResponse, error) {
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
 	defer conn.Close()
 
-	tableDescription, err := conn.DescribeTable(in.SchemaName, in.TableName)
+	tableDescription, err := conn.DescribeTable(ctx, in.SchemaName, in.TableName)
 	if err != nil {
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
@@ -74,7 +74,7 @@ func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 }
 
 func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*pb.CreateTableResponse, error) {
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -85,7 +85,7 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	err = conn.CreateTable(in.SchemaName, in.Table.Name, cols)
+	err = conn.CreateTable(ctx, in.SchemaName, in.Table.Name, cols)
 	if err != nil {
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -98,13 +98,13 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 }
 
 func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.AlterTableResponse, error) {
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 	defer conn.Close()
 
-	currentTableDescription, err := conn.DescribeTable(in.SchemaName, in.Table.Name)
+	currentTableDescription, err := conn.DescribeTable(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -113,7 +113,7 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	err = conn.AlterTable(in.SchemaName, in.Table.Name, currentTableDescription, alterTableDescription)
+	err = conn.AlterTable(ctx, in.SchemaName, in.Table.Name, currentTableDescription, alterTableDescription)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -126,13 +126,13 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 }
 
 func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.TruncateResponse, error) {
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
 	defer conn.Close()
 
-	err = conn.TruncateTable(in.SchemaName, in.TableName)
+	err = conn.TruncateTable(ctx, in.SchemaName, in.TableName)
 	if err != nil {
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
@@ -187,13 +187,13 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no %s column found", constants.FivetranDeleted)), nil
 	}
 
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 	defer conn.Close()
 
-	columnTypes, err := conn.GetColumnTypes(in.SchemaName, in.Table.Name)
+	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -207,7 +207,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.ReplaceBatch(in.SchemaName, in.Table, csvData, nullStr, *flags.WriteBatchSize)
+					err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData, nullStr, *flags.WriteBatchSize)
 					if err != nil {
 						return err
 					}
@@ -226,7 +226,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.UpdateBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
+					err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, pkCols, columnTypes, csvData,
 						nullStr, unmodifiedStr,
 						*flags.WriteBatchSize, *flags.SelectBatchSize, *flags.MaxParallelSelects)
 					if err != nil {
@@ -247,7 +247,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.SoftDeleteBatch(in.SchemaName, in.Table, pkCols, columnTypes, csvData,
+					err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, pkCols, columnTypes, csvData,
 						uint(fivetranSyncedIdx), uint(fivetranDeletedIdx),
 						*flags.WriteBatchSize, *flags.SelectBatchSize, *flags.MaxParallelSelects)
 					if err != nil {
