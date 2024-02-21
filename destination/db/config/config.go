@@ -18,6 +18,7 @@ type Config struct {
 	Database string
 	Username string
 	Password string
+	Local    bool
 }
 
 // Parse ClickHouse connection config from a Fivetran config map that we receive on every GRPC call.
@@ -39,6 +40,7 @@ func Parse(configuration map[string]string) (*Config, error) {
 		Database: GetWithDefault(configuration, DatabaseKey, "default", true),
 		Username: GetWithDefault(configuration, UsernameKey, "default", true),
 		Password: GetWithDefault(configuration, PasswordKey, "", false),
+		Local:    GetWithDefault(configuration, "local", "false", true) == "true",
 	}, nil
 }
 

@@ -31,12 +31,14 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 	}
 	settings := clickhouse.Settings{}
 	var tlsConfig *tls.Config = nil
-	if configuration["local"] != "true" {
+	if !connConfig.Local {
 		tlsConfig = &tls.Config{InsecureSkipVerify: false}
 		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
 		settings["alter_sync"] = 2
 		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
 		settings["mutations_sync"] = 2
+		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
+		settings["select_sequential_consistency"] = 1
 	}
 	options := &clickhouse.Options{
 		Addr: []string{connConfig.Host},
@@ -254,7 +256,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 		for _, group := range groups {
 			eg := errgroup.Group{}
 			for _, slice := range group {
-				ctx := conn.withSelectConsistencySettings(ctx)
+				ctx := ctx
 				s := slice
 				eg.Go(func() error {
 					batch := csv[s.Start:s.End]
@@ -471,17 +473,6 @@ func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
 	}
 	log.Info("Connection check passed")
 	return nil
-}
-
-// ClickHouse Cloud manages quorum settings for inserts automatically.
-// We still need to enable select_sequential_consistency for UpdateBatch or SoftDeleteBatch.
-func (conn *ClickHouseConnection) withSelectConsistencySettings(
-	ctx context.Context,
-) context.Context {
-	return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
-		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
-		"select_sequential_consistency": 1,
-	}))
 }
 
 type connectionOpType string

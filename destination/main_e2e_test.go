@@ -255,7 +255,6 @@ const dialTimeout = 10 * time.Millisecond
 const maxDialRetries = 300
 
 var connConfig atomic.Value
-var secureConnection atomic.Bool
 
 func startServer(t *testing.T) {
 	if isPortReady(t, *flags.Port) {
@@ -290,7 +289,6 @@ func readConfig(t *testing.T) *config.Config {
 	res, err := config.Parse(m)
 	require.NoError(t, err)
 	connConfig.Store(res)
-	secureConnection.Store(m["local"] != "true")
 	return res
 }
 
@@ -307,7 +305,7 @@ func runQuery(t *testing.T, query string) string {
 		"--user", conf.Username,
 		"--password", conf.Password,
 	}
-	if secureConnection.Load() {
+	if !conf.Local {
 		cmdArgs = append(cmdArgs, "--secure")
 	}
 	command := exec.Command("docker", cmdArgs...)

@@ -26,6 +26,7 @@ func TestParseConfig(t *testing.T) {
 		Database: "default",
 		Username: "default",
 		Password: "",
+		Local:    false,
 	}
 	withHostOnly := defaultConfig
 	withHostOnly.Host = "my.host:9440"
@@ -53,6 +54,7 @@ func TestParseConfig(t *testing.T) {
 				Database: "my_db",
 				Username: "5t",
 				Password: "foo_bar",
+				Local:    false,
 			},
 		},
 		{
@@ -63,6 +65,7 @@ func TestParseConfig(t *testing.T) {
 				Database: "default",
 				Username: "default",
 				Password: "",
+				Local:    false,
 			},
 		},
 		{
