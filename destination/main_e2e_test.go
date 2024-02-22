@@ -240,9 +240,7 @@ func TestTruncateExistingRecordsThenSync(t *testing.T) {
 	err = conn.SoftDeleteBatch(ctx, schemaName, table, metadata.PrimaryKeys, colTypes, deleteCSV, metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx, 100, 100, 5)
 	require.NoError(t, err)
 
-	// FIXME: this is actually wrong.
-	//  While the final values are correct, we are missing previous "soft truncated" records.
-	//  Those were replaced with their newer versions via ReplacingMergeTree.
+	// Soft truncated rows are merged out, we have only the newest versions via ReplacingMergeTree.
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "name-replaced-1", "desc-updated-1", "false"},
 		{"2", "name-replaced-2", "desc-replaced-2", "true"}})
