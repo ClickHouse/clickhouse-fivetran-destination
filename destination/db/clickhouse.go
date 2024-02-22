@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"sync"
+	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
@@ -189,8 +190,15 @@ func (conn *ClickHouseConnection) AlterTable(
 	return conn.ExecDDL(ctx, statement, alterTable)
 }
 
-func (conn *ClickHouseConnection) TruncateTable(ctx context.Context, schemaName string, tableName string) error {
-	statement, err := sql.GetTruncateTableStatement(schemaName, tableName)
+func (conn *ClickHouseConnection) TruncateTable(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	syncedColumn string,
+	truncateBefore time.Time,
+	softDeletedColumn *string,
+) error {
+	statement, err := sql.GetTruncateTableStatement(schemaName, tableName, syncedColumn, truncateBefore, softDeletedColumn)
 	if err != nil {
 		return err
 	}

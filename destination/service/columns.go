@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	dt "fivetran.com/fivetran_sdk/destination/common/data_types"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -48,4 +49,42 @@ func ToClickHouse(table *pb.Table) (*types.TableDescription, error) {
 		}
 	}
 	return types.MakeTableDescription(result), nil
+}
+
+func GetPrimaryKeysAndMetadataColumns(table *pb.Table) (*types.PrimaryKeysAndMetadataColumns, error) {
+	if table == nil || len(table.Columns) == 0 {
+		return nil, fmt.Errorf("no columns in Fivetran table definition")
+	}
+	var pkCols []*types.PrimaryKeyColumn
+	fivetranSyncedIdx := -1
+	fivetranDeletedIdx := -1
+	for i, col := range table.Columns {
+		if col.PrimaryKey {
+			pkCols = append(pkCols, &types.PrimaryKeyColumn{
+				Name:  col.Name,
+				Type:  col.Type,
+				Index: uint(i),
+			})
+		}
+		if col.Name == constants.FivetranSynced {
+			fivetranSyncedIdx = i
+		}
+		if col.Name == constants.FivetranDeleted {
+			fivetranDeletedIdx = i
+		}
+	}
+	if len(pkCols) == 0 {
+		return nil, fmt.Errorf("no primary keys found")
+	}
+	if fivetranSyncedIdx < 0 {
+		return nil, fmt.Errorf("no %s column found", constants.FivetranSynced)
+	}
+	if fivetranDeletedIdx < 0 {
+		return nil, fmt.Errorf("no %s column found", constants.FivetranDeleted)
+	}
+	return &types.PrimaryKeysAndMetadataColumns{
+		PrimaryKeys:        pkCols,
+		FivetranSyncedIdx:  uint(fivetranSyncedIdx),
+		FivetranDeletedIdx: uint(fivetranDeletedIdx),
+	}, nil
 }

@@ -1,0 +1,40 @@
+{
+  "create_table": {
+    "truncate_then_sync": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING",
+        "desc": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "truncate_then_sync"
+  ],
+  "ops": [
+    {
+      "truncate": [
+        "truncate_then_sync"
+      ]
+    },
+    {
+      "upsert": {
+        "truncate_then_sync": [
+          {
+            "id": 1,
+            "name": "name-truncated-1",
+            "desc": "desc-truncated-1"
+          },
+          {
+            "id": 2,
+            "name": "name-truncated-2",
+            "desc": "desc-truncated-2"
+          }
+        ]
+      }
+    }
+  ]
+}

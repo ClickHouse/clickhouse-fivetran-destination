@@ -18,21 +18,6 @@
       "upsert": {
         "table_to_truncate": [
           {
-            "id": 1,
-            "name": "foo"
-          }
-        ]
-      }
-    },
-    {
-      "truncate": [
-        "table_to_truncate"
-      ]
-    },
-    {
-      "upsert": {
-        "table_to_truncate": [
-          {
             "id": 2,
             "name": "bar"
           },

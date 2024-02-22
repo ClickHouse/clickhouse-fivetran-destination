@@ -130,3 +130,47 @@ func TestToClickHouseColumns(t *testing.T) {
 	_, err = ToClickHouse(&pb.Table{Columns: []*pb.Column{{Name: "a", Type: pb.DataType_UNSPECIFIED}}})
 	assert.ErrorContains(t, err, "unknown datatype UNSPECIFIED")
 }
+
+func TestGetPrimaryKeysAndMetadataColumns(t *testing.T) {
+	pkCols, err := GetPrimaryKeysAndMetadataColumns(&pb.Table{Columns: []*pb.Column{
+		{Name: "i16", Type: pb.DataType_SHORT, PrimaryKey: false},
+		{Name: "i32", Type: pb.DataType_INT, PrimaryKey: false},
+		{Name: "str", Type: pb.DataType_STRING, PrimaryKey: true},
+		{Name: "_fivetran_synced", Type: pb.DataType_UTC_DATETIME, PrimaryKey: false},
+		{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, PrimaryKey: false},
+	}})
+	assert.NoError(t, err)
+	assert.Equal(t, pkCols, &types.PrimaryKeysAndMetadataColumns{
+		PrimaryKeys: []*types.PrimaryKeyColumn{
+			{Index: 2, Name: "str", Type: pb.DataType_STRING},
+		},
+		FivetranSyncedIdx:  3,
+		FivetranDeletedIdx: 4,
+	})
+
+	pkCols, err = GetPrimaryKeysAndMetadataColumns(nil)
+	assert.ErrorContains(t, err, "no columns in Fivetran table definition")
+
+	pkCols, err = GetPrimaryKeysAndMetadataColumns(&pb.Table{})
+	assert.ErrorContains(t, err, "no columns in Fivetran table definition")
+
+	pkCols, err = GetPrimaryKeysAndMetadataColumns(&pb.Table{Columns: []*pb.Column{}})
+	assert.ErrorContains(t, err, "no columns in Fivetran table definition")
+
+	pkCols, err = GetPrimaryKeysAndMetadataColumns(&pb.Table{Columns: []*pb.Column{
+		{Name: "a", Type: pb.DataType_STRING},
+	}})
+	assert.ErrorContains(t, err, "no primary keys found")
+
+	pkCols, err = GetPrimaryKeysAndMetadataColumns(&pb.Table{Columns: []*pb.Column{
+		{Name: "a", Type: pb.DataType_STRING, PrimaryKey: true},
+		{Name: "_fivetran_synced", Type: pb.DataType_UTC_DATETIME, PrimaryKey: false},
+	}})
+	assert.ErrorContains(t, err, "no _fivetran_deleted column found")
+
+	pkCols, err = GetPrimaryKeysAndMetadataColumns(&pb.Table{Columns: []*pb.Column{
+		{Name: "a", Type: pb.DataType_STRING, PrimaryKey: true},
+		{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, PrimaryKey: false},
+	}})
+	assert.ErrorContains(t, err, "no _fivetran_synced column found")
+}

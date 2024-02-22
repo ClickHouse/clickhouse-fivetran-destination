@@ -85,7 +85,7 @@ TEST_ARGS=--input-file=input_all_data_types.json make sdk-test
 Run the SDK tester with all input JSON files (see [sdk_tests](./sdk_tests) directory):
 
 ```bash
-make sdk-test
+make recreate-test-db && make sdk-test
 ```
 
 See also: Fivetran SDK
