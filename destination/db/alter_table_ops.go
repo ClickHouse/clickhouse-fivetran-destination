@@ -16,15 +16,20 @@ func GetAlterTableOps(from *types.TableDescription, to *types.TableDescription) 
 	for _, toCol := range to.Columns {
 		fromCol, ok := from.Mapping[toCol.Name]
 		if !ok {
+			if toCol.IsPrimaryKey {
+				return nil, fmt.Errorf("primary key columns cannot be added")
+			}
 			ops = append(ops, &types.AlterTableOp{
 				Op:      types.AlterTableAdd,
 				Column:  toCol.Name,
 				Type:    &toCol.Type,
 				Comment: &toCol.Comment,
 			})
+		} else if fromCol.IsPrimaryKey != toCol.IsPrimaryKey {
+			return nil, fmt.Errorf("primary key columns cannot be modified")
 		} else if fromCol.Type != toCol.Type || fromCol.Comment != toCol.Comment {
 			if fromCol.IsPrimaryKey {
-				return nil, fmt.Errorf("primary key columns cannot be changed")
+				return nil, fmt.Errorf("primary key columns types cannot be changed")
 			}
 			ops = append(ops, &types.AlterTableOp{
 				Op:      types.AlterTableModify,
