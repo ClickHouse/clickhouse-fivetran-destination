@@ -115,13 +115,13 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 	emptyComment := ""
 	xmlComment := "XML"
 	binaryComment := "BINARY"
-	curCol1 := &types.ColumnDefinition{Name: "s1", Type: strType, IsPrimaryKey: true, Comment: emptyComment}
-	curCol2 := &types.ColumnDefinition{Name: "s2", Type: strType, IsPrimaryKey: true, Comment: emptyComment}
+	curCol1 := &types.ColumnDefinition{Name: "s1", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
+	curCol2 := &types.ColumnDefinition{Name: "s2", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
 	curCol3 := &types.ColumnDefinition{Name: "s3", Type: strType, IsPrimaryKey: false, Comment: xmlComment}
 	curCol4 := &types.ColumnDefinition{Name: "s4", Type: strType, IsPrimaryKey: false, Comment: binaryComment}
 	curCol5 := &types.ColumnDefinition{Name: "s5", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
-	alterCol1 := &types.ColumnDefinition{Name: "s1", Type: strType, IsPrimaryKey: true, Comment: binaryComment}
-	alterCol2 := &types.ColumnDefinition{Name: "s2", Type: strType, IsPrimaryKey: true, Comment: xmlComment}
+	alterCol1 := &types.ColumnDefinition{Name: "s1", Type: strType, IsPrimaryKey: false, Comment: binaryComment}
+	alterCol2 := &types.ColumnDefinition{Name: "s2", Type: strType, IsPrimaryKey: false, Comment: xmlComment}
 	alterCol3 := &types.ColumnDefinition{Name: "s3", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
 	alterCol4 := &types.ColumnDefinition{Name: "s4", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
 	alterCol5 := &types.ColumnDefinition{Name: "s10", Type: strType, IsPrimaryKey: false, Comment: emptyComment}
