@@ -233,11 +233,11 @@ func TestTruncateExistingRecordsThenSync(t *testing.T) {
 		{"2", nullStr, nullStr, syncTime, "true"},
 	}
 
-	err = conn.ReplaceBatch(ctx, schemaName, table, replaceCSV, nullStr, 100)
+	err = conn.ReplaceBatch(ctx, schemaName, table, replaceCSV, nullStr)
 	require.NoError(t, err)
-	err = conn.UpdateBatch(ctx, schemaName, table, metadata.PrimaryKeys, colTypes, updateCSV, nullStr, unmodifiedStr, 100, 100, 5)
+	err = conn.UpdateBatch(ctx, schemaName, table, metadata.PrimaryKeys, colTypes, updateCSV, nullStr, unmodifiedStr)
 	require.NoError(t, err)
-	err = conn.SoftDeleteBatch(ctx, schemaName, table, metadata.PrimaryKeys, colTypes, deleteCSV, metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx, 100, 100, 5)
+	err = conn.SoftDeleteBatch(ctx, schemaName, table, metadata.PrimaryKeys, colTypes, deleteCSV, metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx)
 	require.NoError(t, err)
 
 	// Soft truncated rows are merged out, we have only the newest versions via ReplacingMergeTree.

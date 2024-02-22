@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
-	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
@@ -194,7 +193,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData, nullStr, *flags.WriteBatchSize)
+					err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData, nullStr)
 					if err != nil {
 						return err
 					}
@@ -214,8 +213,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 						return err
 					}
 					err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
-						nullStr, unmodifiedStr,
-						*flags.WriteBatchSize, *flags.SelectBatchSize, *flags.MaxParallelSelects)
+						nullStr, unmodifiedStr)
 					if err != nil {
 						return err
 					}
@@ -235,8 +233,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 						return err
 					}
 					err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
-						metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx,
-						*flags.WriteBatchSize, *flags.SelectBatchSize, *flags.MaxParallelSelects)
+						metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx)
 					if err != nil {
 						return err
 					}

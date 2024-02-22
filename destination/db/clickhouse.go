@@ -253,12 +253,10 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	columnTypes []driver.ColumnType,
 	pkCols []*types.PrimaryKeyColumn,
 	csv [][]string,
-	selectBatchSize uint,
-	maxParallelSelects uint,
 ) (RowsByPrimaryKeyValue, error) {
 	return benchmark.RunAndNoticeWithData(func() (RowsByPrimaryKeyValue, error) {
 		scanRows := ColumnTypesToEmptyScanRows(columnTypes, uint(len(csv)))
-		groups, err := GroupSlices(uint(len(csv)), selectBatchSize, maxParallelSelects)
+		groups, err := GroupSlices(uint(len(csv)), *flags.SelectBatchSize, *flags.MaxParallelSelects)
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +280,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					defer rows.Close()
 					mutex.Lock()
 					defer mutex.Unlock()
-					for i := s.Num * selectBatchSize; rows.Next(); i++ {
+					for i := s.Num * (*flags.SelectBatchSize); rows.Next(); i++ {
 						if err = rows.Scan(scanRows[i]...); err != nil {
 							return err
 						}
@@ -324,14 +322,13 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	table *pb.Table,
 	csv [][]string,
 	nullStr string,
-	batchSize uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), batchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
 		if err != nil {
 			return err
 		}
@@ -378,23 +375,20 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	csv [][]string,
 	nullStr string,
 	unmodifiedStr string,
-	writeBatchSize uint,
-	selectBatchSize uint,
-	maxParallelSelects uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), writeBatchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
 				}
@@ -437,23 +431,20 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	csv [][]string,
 	fivetranSyncedIdx uint,
 	fivetranDeletedIdx uint,
-	writeBatchSize uint,
-	selectBatchSize uint,
-	maxParallelSelects uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), writeBatchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
 				}
