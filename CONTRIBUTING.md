@@ -79,7 +79,7 @@ Run the SDK tester with a particular input file from [sdk_tests](./sdk_tests) di
 for example, `input_all_data_types.json`:
 
 ```bash
-TEST_ARGS=--input-file=input_all_data_types.json make sdk-test
+make recreate-test-db && TEST_ARGS=--input-file=input_all_data_types.json make sdk-test
 ```
 
 Run the SDK tester with all input JSON files (see [sdk_tests](./sdk_tests) directory):

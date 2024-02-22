@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "table_to_truncate": {
+    "truncate_before": {
       "columns": {
         "id": "INT",
         "name": "STRING"
@@ -11,12 +11,12 @@
     }
   },
   "describe_table": [
-    "table_to_truncate"
+    "truncate_before"
   ],
   "ops": [
     {
       "upsert": {
-        "table_to_truncate": [
+        "truncate_before": [
           {
             "id": 2,
             "name": "bar"

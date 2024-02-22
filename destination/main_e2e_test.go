@@ -138,8 +138,8 @@ func TestTruncateBefore(t *testing.T) {
 	//  should be possible to test it "properly" with future SDK releases, currently it's a workaround,
 	//  as truncate operation is always last and all the input.json rows are merged into one "replace" CSV file.
 	//  With a fixed version, direct conn calls should be replaced with SDK tester calls instead.
-	fileName := "input_truncate_create_table.json"
-	tableName := "table_to_truncate"
+	fileName := "input_truncate_before.json"
+	tableName := "truncate_before"
 
 	startServer(t)
 	conf := readConfigMap(t)
