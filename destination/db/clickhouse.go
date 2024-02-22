@@ -52,6 +52,7 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 		Settings:     settings,
 		MaxOpenConns: int(*flags.MaxOpenConnections),
 		MaxIdleConns: int(*flags.MaxIdleConnections),
+		ReadTimeout:  *flags.RequestTimeoutDuration,
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
 				Name    string

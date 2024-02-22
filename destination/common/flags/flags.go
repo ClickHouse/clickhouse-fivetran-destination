@@ -1,6 +1,9 @@
 package flags
 
-import "flag"
+import (
+	"flag"
+	"time"
+)
 
 var Port = flag.Uint("port", 50052,
 	"Listen port")
@@ -21,6 +24,8 @@ var MaxIdleConnections = flag.Uint("max-idle-connections", 5,
 	"Max number of idle connections for ClickHouse client")
 var MaxOpenConnections = flag.Uint("max-open-connections", 10,
 	"Max number of open connections for ClickHouse client (recommended: max-idle-connections + 5)")
+var RequestTimeoutDuration = flag.Duration("request-timeout-duration", 300*time.Second,
+	"Timeout for ClickHouse client requests")
 
 var MaxRetries = flag.Uint("max-retries", 10,
 	"Max number of retries for ClickHouse client in case of network errors")
