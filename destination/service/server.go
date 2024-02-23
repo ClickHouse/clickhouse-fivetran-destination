@@ -3,11 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
-	"fivetran.com/fivetran_sdk/destination/common/constants"
-	"fivetran.com/fivetran_sdk/destination/common/flags"
-	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
@@ -132,16 +130,27 @@ func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 	}
 	defer conn.Close()
 
-	err = conn.TruncateTable(ctx, in.SchemaName, in.TableName)
+	// should not be failed if the table does not exist, as per SDK documentation
+	tableDescription, err := conn.DescribeTable(ctx, in.SchemaName, in.TableName)
+	if err != nil {
+		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
+	}
+	if tableDescription == nil || len(tableDescription.Columns) == 0 {
+		return SuccessfulTruncateTableResponse(), nil
+	}
+
+	var softDeleteColumn *string = nil
+	if in.Soft != nil && in.Soft.DeletedColumn != "" {
+		softDeleteColumn = &in.Soft.DeletedColumn
+	}
+
+	truncateBefore := time.Unix(in.UtcDeleteBefore.Seconds, int64(in.UtcDeleteBefore.Nanos)).UTC()
+	err = conn.TruncateTable(ctx, in.SchemaName, in.TableName, in.SyncedColumn, truncateBefore, softDeleteColumn)
 	if err != nil {
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
 
-	return &pb.TruncateResponse{
-		Response: &pb.TruncateResponse_Success{
-			Success: true,
-		},
-	}, nil
+	return SuccessfulTruncateTableResponse(), nil
 }
 
 func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
@@ -159,32 +168,9 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("write batch request without CSV params")), nil
 	}
 
-	var pkCols []*types.PrimaryKeyColumn
-	fivetranSyncedIdx := -1
-	fivetranDeletedIdx := -1
-	for i, col := range in.Table.Columns {
-		if col.PrimaryKey {
-			pkCols = append(pkCols, &types.PrimaryKeyColumn{
-				Name:  col.Name,
-				Type:  col.Type,
-				Index: uint(i),
-			})
-		}
-		if col.Name == constants.FivetranSynced {
-			fivetranSyncedIdx = i
-		}
-		if col.Name == constants.FivetranDeleted {
-			fivetranDeletedIdx = i
-		}
-	}
-	if len(pkCols) == 0 {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no primary keys found")), nil
-	}
-	if fivetranSyncedIdx < 0 {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no %s column found", constants.FivetranSynced)), nil
-	}
-	if fivetranDeletedIdx < 0 {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("no %s column found", constants.FivetranDeleted)), nil
+	metadata, err := GetPrimaryKeysAndMetadataColumns(in.Table)
+	if err != nil {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
 	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
@@ -207,7 +193,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData, nullStr, *flags.WriteBatchSize)
+					err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData, nullStr)
 					if err != nil {
 						return err
 					}
@@ -226,9 +212,8 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, pkCols, columnTypes, csvData,
-						nullStr, unmodifiedStr,
-						*flags.WriteBatchSize, *flags.SelectBatchSize, *flags.MaxParallelSelects)
+					err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
+						nullStr, unmodifiedStr)
 					if err != nil {
 						return err
 					}
@@ -247,9 +232,8 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 					if err != nil {
 						return err
 					}
-					err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, pkCols, columnTypes, csvData,
-						uint(fivetranSyncedIdx), uint(fivetranDeletedIdx),
-						*flags.WriteBatchSize, *flags.SelectBatchSize, *flags.MaxParallelSelects)
+					err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
+						metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx)
 					if err != nil {
 						return err
 					}

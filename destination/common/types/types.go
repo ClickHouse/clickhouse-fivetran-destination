@@ -28,6 +28,18 @@ type PrimaryKeyColumn struct {
 	Type  pb.DataType
 }
 
+// PrimaryKeysAndMetadataColumns
+// In all CSV files, fivetran_sdk.Table column index = CSV column index.
+// PrimaryKeys are used when generating select queries, see sql.GetSelectByPrimaryKeysQuery.
+// also used for generating mapping keys, see db.GetCSVRowMappingKey and db.GetDatabaseRowMappingKey.
+// FivetranSyncedIdx index of the _fivetran_synced column in fivetran_sdk.Table (see db.ToSoftDeletedRow)
+// FivetranDeletedIdx index of the _fivetran_deleted column in fivetran_sdk.Table (see db.ToSoftDeletedRow)
+type PrimaryKeysAndMetadataColumns struct {
+	PrimaryKeys        []*PrimaryKeyColumn
+	FivetranSyncedIdx  uint
+	FivetranDeletedIdx uint
+}
+
 type AlterTableOpType int
 
 const (

@@ -109,6 +109,14 @@ func FailedAlterTableResponse(schemaName string, tableName string, err error) *p
 	}
 }
 
+func SuccessfulTruncateTableResponse() *pb.TruncateResponse {
+	return &pb.TruncateResponse{
+		Response: &pb.TruncateResponse_Success{
+			Success: true,
+		},
+	}
+}
+
 func FailedTruncateTableResponse(schemaName string, tableName string, err error) *pb.TruncateResponse {
 	logError("TruncateTable", err)
 	return &pb.TruncateResponse{

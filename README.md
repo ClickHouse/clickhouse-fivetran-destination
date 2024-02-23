@@ -16,6 +16,10 @@
 for [Fivetran](https://fivetran.com) automated data movement platform, based on
 the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk).
 
+## Supported platforms
+
+Currently, supports [ClickHouse Cloud](https://clickhouse.cloud) only.
+
 ## Data types mapping
 
 | Fivetran type  | ClickHouse type                                                                            |
@@ -41,13 +45,15 @@ the original data type. [JSON](https://clickhouse.com/docs/en/sql-reference/data
 is still marked as experimental and not production
 ready.
 
-NB: every column except primary keys and Fivetran metadata columns will be created as `Nullable(T)`.
-
 ## Destination table
 
 The destination app will create a ClickHouse table
 using [ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
 engine versioned by `_fivetran_synced` column.
+
+Every column except primary (ordering) keys and Fivetran metadata columns will be created
+as [Nullable(T)](https://clickhouse.com/docs/en/sql-reference/data-types/nullable), where `T` is a
+ClickHouse type based on the [data types mapping](#data-types-mapping).
 
 ### Single primary key in the source table
 

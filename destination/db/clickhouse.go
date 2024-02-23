@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"sync"
+	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
@@ -51,6 +52,7 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 		Settings:     settings,
 		MaxOpenConns: int(*flags.MaxOpenConnections),
 		MaxIdleConns: int(*flags.MaxIdleConnections),
+		ReadTimeout:  *flags.RequestTimeoutDuration,
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
 				Name    string
@@ -163,7 +165,7 @@ func (conn *ClickHouseConnection) CreateTable(
 	schemaName string,
 	tableName string,
 	tableDescription *types.TableDescription,
-) (err error) {
+) error {
 	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription)
 	if err != nil {
 		return err
@@ -177,8 +179,11 @@ func (conn *ClickHouseConnection) AlterTable(
 	tableName string,
 	from *types.TableDescription,
 	to *types.TableDescription,
-) (err error) {
-	ops := GetAlterTableOps(from, to)
+) error {
+	ops, err := GetAlterTableOps(from, to)
+	if err != nil {
+		return err
+	}
 	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
 	if err != nil {
 		return err
@@ -186,8 +191,15 @@ func (conn *ClickHouseConnection) AlterTable(
 	return conn.ExecDDL(ctx, statement, alterTable)
 }
 
-func (conn *ClickHouseConnection) TruncateTable(ctx context.Context, schemaName string, tableName string) error {
-	statement, err := sql.GetTruncateTableStatement(schemaName, tableName)
+func (conn *ClickHouseConnection) TruncateTable(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	syncedColumn string,
+	truncateBefore time.Time,
+	softDeletedColumn *string,
+) error {
+	statement, err := sql.GetTruncateTableStatement(schemaName, tableName, syncedColumn, truncateBefore, softDeletedColumn)
 	if err != nil {
 		return err
 	}
@@ -242,12 +254,10 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	columnTypes []driver.ColumnType,
 	pkCols []*types.PrimaryKeyColumn,
 	csv [][]string,
-	selectBatchSize uint,
-	maxParallelSelects uint,
 ) (RowsByPrimaryKeyValue, error) {
 	return benchmark.RunAndNoticeWithData(func() (RowsByPrimaryKeyValue, error) {
 		scanRows := ColumnTypesToEmptyScanRows(columnTypes, uint(len(csv)))
-		groups, err := GroupSlices(uint(len(csv)), selectBatchSize, maxParallelSelects)
+		groups, err := GroupSlices(uint(len(csv)), *flags.SelectBatchSize, *flags.MaxParallelSelects)
 		if err != nil {
 			return nil, err
 		}
@@ -271,7 +281,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					defer rows.Close()
 					mutex.Lock()
 					defer mutex.Unlock()
-					for i := s.Num * selectBatchSize; rows.Next(); i++ {
+					for i := s.Num * (*flags.SelectBatchSize); rows.Next(); i++ {
 						if err = rows.Scan(scanRows[i]...); err != nil {
 							return err
 						}
@@ -313,14 +323,13 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	table *pb.Table,
 	csv [][]string,
 	nullStr string,
-	batchSize uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), batchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
 		if err != nil {
 			return err
 		}
@@ -367,23 +376,20 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	csv [][]string,
 	nullStr string,
 	unmodifiedStr string,
-	writeBatchSize uint,
-	selectBatchSize uint,
-	maxParallelSelects uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), writeBatchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
 				}
@@ -426,23 +432,20 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	csv [][]string,
 	fivetranSyncedIdx uint,
 	fivetranDeletedIdx uint,
-	writeBatchSize uint,
-	selectBatchSize uint,
-	maxParallelSelects uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), writeBatchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch, selectBatchSize, maxParallelSelects)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
 				}

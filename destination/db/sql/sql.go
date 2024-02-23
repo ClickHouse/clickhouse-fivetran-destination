@@ -3,6 +3,7 @@ package sql
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
@@ -14,18 +15,18 @@ func GetQualifiedTableName(schemaName string, tableName string) (string, error) 
 		return "", fmt.Errorf("table name is empty")
 	}
 	if schemaName == "" {
-		return fmt.Sprintf("`%s`", tableName), nil
+		return identifier(tableName), nil
 	} else {
-		return fmt.Sprintf("`%s`.`%s`", schemaName, tableName), nil
+		return fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName)), nil
 	}
 }
 
 // GetAlterTableStatement sample generated query:
 //
 //	ALTER TABLE `foo`.`bar`
-//	ADD COLUMN c1 String COMMENT 'foobar',
-//	DROP COLUMN c2,
-//	MODIFY COLUMN c3 Int32 COMMENT ''
+//	ADD COLUMN `c1` String COMMENT 'foobar',
+//	DROP COLUMN `c2`,
+//	MODIFY COLUMN `c3` Int32 COMMENT ''
 //
 // Comments are added to distinguish certain Fivetran data types, see data_types.FivetranToClickHouseTypeWithComment.
 func GetAlterTableStatement(schemaName string, tableName string, ops []*types.AlterTableOp) (string, error) {
@@ -45,7 +46,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			if op.Type == nil {
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
-			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", op.Column, *op.Type))
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", identifier(op.Column), *op.Type))
 			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
@@ -53,12 +54,12 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			if op.Type == nil {
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
-			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", op.Column, *op.Type))
+			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", identifier(op.Column), *op.Type))
 			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
 		case types.AlterTableDrop:
-			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", op.Column))
+			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", identifier(op.Column)))
 		}
 		if count < len(ops)-1 {
 			statementsBuilder.WriteString(", ")
@@ -74,10 +75,14 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 // GetCreateTableStatement sample generated query:
 //
 //	CREATE TABLE `foo`.`bar`
-//	(id Int64, c2 Nullable(String), _fivetran_synced DateTime64(9, 'UTC'), _fivetran_deleted Bool)
-//	ENGINE = ReplacingMergeTree(_fivetran_synced)
-//	ORDER BY (id)
-func GetCreateTableStatement(schemaName string, tableName string, tableDescription *types.TableDescription) (string, error) {
+//	(`id` Int64, `c2` Nullable(String), `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Bool)
+//	ENGINE = ReplacingMergeTree(`_fivetran_synced`)
+//	ORDER BY (`id`)
+func GetCreateTableStatement(
+	schemaName string,
+	tableName string,
+	tableDescription *types.TableDescription,
+) (string, error) {
 	fullName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
@@ -85,16 +90,25 @@ func GetCreateTableStatement(schemaName string, tableName string, tableDescripti
 	if tableDescription == nil || len(tableDescription.Columns) == 0 {
 		return "", fmt.Errorf("no columns to create table %s", fullName)
 	}
+	if len(tableDescription.PrimaryKeys) == 0 {
+		return "", fmt.Errorf("no primary keys for table %s", fullName)
+	}
+	if tableDescription.Mapping[constants.FivetranSynced] == nil {
+		return "", fmt.Errorf("no %s column for table %s", constants.FivetranSynced, fullName)
+	}
+	if tableDescription.Mapping[constants.FivetranDeleted] == nil {
+		return "", fmt.Errorf("no %s column for table %s", constants.FivetranDeleted, fullName)
+	}
 	var orderByCols []string
 	var columnsBuilder strings.Builder
 	count := 0
 	for _, col := range tableDescription.Columns {
-		columnsBuilder.WriteString(fmt.Sprintf("%s %s", col.Name, col.Type))
+		columnsBuilder.WriteString(fmt.Sprintf("%s %s", identifier(col.Name), col.Type))
 		if col.Comment != "" {
 			columnsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", col.Comment))
 		}
 		if col.IsPrimaryKey {
-			orderByCols = append(orderByCols, col.Name)
+			orderByCols = append(orderByCols, identifier(col.Name))
 		}
 		if count < len(tableDescription.Columns)-1 {
 			columnsBuilder.WriteString(", ")
@@ -104,16 +118,54 @@ func GetCreateTableStatement(schemaName string, tableName string, tableDescripti
 	columns := columnsBuilder.String()
 
 	query := fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
-		fullName, columns, constants.FivetranSynced, strings.Join(orderByCols, ", "))
+		fullName, columns, identifier(constants.FivetranSynced), strings.Join(orderByCols, ", "))
 	return query, nil
 }
 
-func GetTruncateTableStatement(schemaName string, tableName string) (string, error) {
+// GetTruncateTableStatement
+// generates a query for either "soft" (ALTER TABLE UPDATE) or "hard" (ALTER TABLE DELETE) table truncation.
+//
+// Even though syncedColumn and softDeletedColumn are known constants (_fivetran_synced, _fivetran_deleted)
+// and it is guaranteed that they were present in CreateTableRequest (and, consequently, GetCreateTableStatement),
+// TruncateTableRequest also defines their names.
+//
+// Additionally, softDeletedColumn is used to switch between "hard" (nil) and "soft" (not nil) truncation.
+//
+// Sample generated query (soft truncate):
+//
+//	ALTER TABLE `foo`.`bar` UPDATE `_fivetran_deleted` = 1
+//	WHERE `_fivetran_synced` < toDateTime64('2021-01-01 00:00:00.000000000', 9, 'UTC')
+//
+// Sample generated query (hard truncate):
+//
+//	ALTER TABLE `foo`.`bar` DELETE
+//	WHERE `_fivetran_synced` < toDateTime64('2021-01-01 00:00:00.000000000', 9, 'UTC')
+func GetTruncateTableStatement(
+	schemaName string,
+	tableName string,
+	syncedColumn string,
+	truncateBefore time.Time,
+	softDeletedColumn *string,
+) (string, error) {
 	fullName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("TRUNCATE TABLE %s", fullName), nil
+	if syncedColumn == "" {
+		return "", fmt.Errorf("synced column name is empty")
+	}
+	if truncateBefore.Second() == 0 && truncateBefore.Nanosecond() == 0 {
+		return "", fmt.Errorf("truncate before time is zero")
+	}
+	var query string
+	if softDeletedColumn != nil && *softDeletedColumn != "" {
+		query = fmt.Sprintf("ALTER TABLE %s UPDATE %s = 1 WHERE %s < '%d'",
+			fullName, identifier(*softDeletedColumn), identifier(syncedColumn), truncateBefore.UnixNano())
+	} else {
+		query = fmt.Sprintf("ALTER TABLE %s DELETE WHERE %s < '%d'",
+			fullName, identifier(syncedColumn), truncateBefore.UnixNano())
+	}
+	return query, nil
 }
 
 // GetColumnTypesQuery generates a query that will always return zero records.
@@ -141,7 +193,7 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 // CSV slice + known primary key columns and their CSV cell indices -> SELECT FINAL query using values from CSV rows.
 // Sample generated query:
 //
-//	SELECT * FROM `foo`.`bar` FINAL WHERE (id, name) IN ((42, 'foo'), (144, 'bar')) ORDER BY (id, name) LIMIT N
+//	SELECT * FROM `foo`.`bar` FINAL WHERE (`id`, `name`) IN ((42, 'foo'), (144, 'bar')) ORDER BY (`id`, `name`) LIMIT N
 //
 // Where N is the number of rows in the CSV slice.
 func GetSelectByPrimaryKeysQuery(
@@ -163,8 +215,8 @@ func GetSelectByPrimaryKeysQuery(
 	var clauseBuilder strings.Builder
 	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", fullTableName))
 	for i, col := range pkCols {
-		clauseBuilder.WriteString(col.Name)
-		orderByBuilder.WriteString(col.Name)
+		clauseBuilder.WriteString(identifier(col.Name))
+		orderByBuilder.WriteString(identifier(col.Name))
 		if i < len(pkCols)-1 {
 			clauseBuilder.WriteString(", ")
 			orderByBuilder.WriteString(", ")
@@ -192,4 +244,8 @@ func GetSelectByPrimaryKeysQuery(
 	clauseBuilder.WriteString(orderByBuilder.String())
 	clauseBuilder.WriteString(fmt.Sprintf(" LIMIT %d", len(csv)))
 	return clauseBuilder.String(), nil
+}
+
+func identifier(s string) string {
+	return fmt.Sprintf("`%s`", s)
 }
