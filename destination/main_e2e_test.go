@@ -62,6 +62,12 @@ func TestAllDataTypes(t *testing.T) {
 }
 
 func TestMutateAfterAlter(t *testing.T) {
+	// AlterTable request is disabled by default
+	*flags.AllowAlterTable = true
+	defer func() {
+		*flags.AllowAlterTable = false
+	}()
+
 	fileName := "input_mutate_after_alter.json"
 	tableName := "mutate_after_alter"
 	startServer(t)

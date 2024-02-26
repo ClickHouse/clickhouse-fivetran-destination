@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
+	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
@@ -96,6 +97,10 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 }
 
 func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.AlterTableResponse, error) {
+	if !*flags.AllowAlterTable {
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, fmt.Errorf("AlterTable is not allowed")), nil
+	}
+
 	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
@@ -246,7 +251,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		}
 
 		return nil
-	}, "WriteBatchRequest(Total)")
+	}, fmt.Sprintf("WriteBatchRequest(Total, compression: %s, encryption: %s)", compression, encryption))
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}

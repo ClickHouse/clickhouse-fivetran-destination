@@ -13,6 +13,8 @@ var LogLevel = flag.String("log-level", "notice",
 var LogPretty = flag.Bool("log-pretty", false,
 	"Pretty logging instead of JSON")
 
+var AllowAlterTable = flag.Bool("allow-alter-table", false, "Allow to execute AlterTable requests")
+
 var WriteBatchSize = flag.Uint("write-batch-size", 100_000,
 	"Batch size for all write operations")
 var SelectBatchSize = flag.Uint("select-batch-size", 5_000,
