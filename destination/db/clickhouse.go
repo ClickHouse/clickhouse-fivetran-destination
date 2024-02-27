@@ -464,15 +464,19 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 }
 
 func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
-	describeResult, err := conn.DescribeTable(ctx, "system", "numbers")
+	rows, err := conn.ExecQuery(ctx, "SELECT toInt8(42) AS fivetran_connection_check", connectionTest, false)
 	if err != nil {
 		return err
 	}
-	col, exists := describeResult.Mapping["number"]
-	if !exists || col.Type != "UInt64" {
-		return fmt.Errorf(
-			"unexpected describe system.numbers output, expected result map to contain number:UInt64, got: %v",
-			describeResult)
+	var result int8
+	if !rows.Next() {
+		return fmt.Errorf("unexpected empty result from the connection check query")
+	}
+	if err = rows.Scan(&result); err != nil {
+		return err
+	}
+	if result != 42 {
+		return fmt.Errorf("unexpected result from the connection check query: %d", result)
 	}
 	log.Info("Connection check passed")
 	return nil
@@ -493,4 +497,5 @@ const (
 	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
 	getColumnTypes         connectionOpType = "GetColumnTypes"
 	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
+	connectionTest         connectionOpType = "connectionTest"
 )
