@@ -14,6 +14,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/service"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"google.golang.org/grpc"
+	_ "google.golang.org/grpc/encoding/gzip"
 )
 
 var ExitChan = make(chan os.Signal, 1)
