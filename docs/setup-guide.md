@@ -2,6 +2,7 @@
 name: Setup Guide
 title: Fivetran destination for ClickHouse Cloud Setup Guide
 description: Follow the guide to set up ClickHouse Cloud as a destination.
+hidden: true
 ---
 
 # ClickHouse Cloud Setup Guide {% badge text="Partner-Built" /%} {% badge text="Private Preview" /%}
@@ -31,14 +32,14 @@ To connect Fivetran to ClickHouse Cloud, you will need the following:
    ON fivetran.* TO fivetran_user;
    ```
 
-   More about user privileges:
-      - [SHOW TABLES, SHOW COLUMNS](https://clickhouse.com/docs/en/sql-reference/statements/grant#show)
-      - [CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/grant#create)
-      - [SELECT](https://clickhouse.com/docs/en/sql-reference/statements/grant#select)
-      - [INSERT](https://clickhouse.com/docs/en/sql-reference/statements/grant#insert) 
-      - [DROP TABLE](https://clickhouse.com/docs/en/sql-reference/statements/grant#drop)
-      - [TRUNCATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/grant#truncate) 
-      - [ALTER](https://clickhouse.com/docs/en/sql-reference/statements/grant#alter)
+  See the following resources to learn more about user privileges:
+  - [SHOW TABLES, SHOW COLUMNS](https://clickhouse.com/docs/en/sql-reference/statements/grant#show)
+  - [CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/grant#create)
+  - [SELECT](https://clickhouse.com/docs/en/sql-reference/statements/grant#select)
+  - [INSERT](https://clickhouse.com/docs/en/sql-reference/statements/grant#insert)
+  - [DROP TABLE](https://clickhouse.com/docs/en/sql-reference/statements/grant#drop)
+  - [TRUNCATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/grant#truncate)
+  - [ALTER](https://clickhouse.com/docs/en/sql-reference/statements/grant#alter)
 
 ---
 
@@ -49,7 +50,7 @@ To connect Fivetran to ClickHouse Cloud, you will need the following:
 3. Choose a **Destination name** of your choice.
 4. Click **Add**.
 5. Select **ClickHouse** as the destination type.
-6. Enter your ClickHouse Cloud service hostname. It should be in a format like `service.clickhouse.cloud:9440`. Please note that it uses the Native protocol secure port (9440).
+6. Enter your ClickHouse Cloud service hostname. It should be in the following format:  `service.clickhouse.cloud:9440`. Note that it uses the Native protocol secure port (9440).
 7. Enter the credentials of the user and the destination database.
 8. Click **Save & Test**.
 

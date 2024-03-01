@@ -2,6 +2,7 @@
 name: ClickHouse Cloud
 title: Fivetran destination for ClickHouse Cloud | Configuration and documentation
 description: Move your data to ClickHouse Cloud using Fivetran.
+hidden: true
 ---
 
 # ClickHouse Cloud {% badge text="Partner-Built" /%} {% badge text="Private Preview" /%}
@@ -39,25 +40,25 @@ Follow our [setup guide](/docs/destinations/clickhouse-cloud/setup-guide) to con
 | XML            | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
 | JSON           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
 
-&ast; ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used to represent
-an arbitrary set of bytes. The destination app will add a column comment to `JSON`, `BINARY` and `XML` types to indicate
+> &ast; NOTE: The ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used to represent
+an arbitrary set of bytes. The ClickHouse destination adds a column comment to the `JSON`, `BINARY`, and `XML` types to indicate
 the original data type. [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type is not used as it
 is still marked as experimental and not recommended for usage in production.
 
 ## Destination table
 
-The destination app will create a ClickHouse table
+The ClickHouse destination creates a ClickHouse table
 using [Replacing](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
 engine type of [SharedMergeTree](https://clickhouse.com/docs/en/cloud/reference/shared-merge-tree) family (SharedReplacingMergeTree), versioned by `_fivetran_synced` column.
 
-Every column except primary (ordering) keys and Fivetran metadata columns will be created
+Every column except primary (ordering) keys and Fivetran metadata columns is created
 as [Nullable(T)](https://clickhouse.com/docs/en/sql-reference/data-types/nullable), where `T` is a
 ClickHouse type based on the [data types mapping](#data-types-mapping).
 
 ### Single primary key in the source table
 
-For example, source table `users` has primary key column `id` (INT) and a regular column `name` (STRING). The
-destination table will be defined like this:
+For example, source table `users` has a primary key column `id` (INT) and a regular column `name` (STRING). The
+destination table will be defined as follows:
 
 ```sql
 CREATE TABLE `users`
@@ -75,7 +76,7 @@ In this case, the `id` column is chosen as a table sorting key.
 
 ### Multiple primary keys in the source table
 
-If the source table has multiple primary keys, they will be used in order of their appearance in the Fivetran table
+If the source table has multiple primary keys, they are used in order of their appearance in the Fivetran table
 definition.
 
 For example, there is a source table `items` with primary key columns `id` (INT) and `name` (STRING), plus an
@@ -99,8 +100,8 @@ In this case, `id` + `name` columns were chosen as table sorting keys.
 ### No primary keys in the source table
 
 If the source table has no primary keys, a unique identifier will be added by Fivetran as a `_fivetran_id` column.
-Consider `events` table that only has `event` (STRING) and `timestamp` (LOCALDATETIME) columns in the source. The destination
-table will look like this:
+Consider an `events` table that only has the `event` (STRING) and `timestamp` (LOCALDATETIME) columns in the source. The destination
+table in that case is as follows:
 
 ```sql
 CREATE TABLE events
@@ -119,9 +120,9 @@ Since `_fivetran_id` is unique and there are no other primary key options, it is
 
 ### Selecting the latest version of the data without duplicates
 
-SharedReplacingMergeTree performs background data deduplication only during merges at an unknown time; 
-however, selecting the latest version of the data without duplicates ad-hoc is possible with `FINAL` keyword 
-and [select_sequential_consistency](https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency) 
+SharedReplacingMergeTree performs background data deduplication only during merges at an unknown time.
+However, selecting the latest version of the data without duplicates ad-hoc is possible with the `FINAL` keyword
+and [select_sequential_consistency](https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency)
 setting:
 
 ```sql
@@ -132,11 +133,11 @@ SETTINGS select_sequential_consistency = 1;
 
 ### Retries on network failures
 
-The destination app will retry transient network errors using the exponential backoff algorithm. 
+The ClickHouse destination retries transient network errors using the exponential backoff algorithm.
 This is safe even when the destination inserts the data, as any potential duplicates are handled by SharedReplacingMergeTree,
 either during background merges or with `SELECT FINAL`.
 
 ## Preview limitations
 
 - Adding, removing or modifying primary key columns is not supported yet.
-- Custom ClickHouse settings configuration (for example, for `CREATE TABLE` statements) are not supported yet.
+- The custom ClickHouse settings configuration (for example, for the `CREATE TABLE` statements) is not supported yet.
