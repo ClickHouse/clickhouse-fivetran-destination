@@ -132,6 +132,16 @@ func TestGetCreateTableStatement(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `bar` (`i` Int32, `x` String COMMENT 'XML', `bin` String COMMENT 'BINARY', `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
+	// works without _fivetran_deleted column
+	statement, err = GetCreateTableStatement("", "bar",
+		types.MakeTableDescription([]*types.ColumnDefinition{
+			{Name: "i", Type: "Int32", IsPrimaryKey: true},
+			{Name: "x", Type: "String", IsPrimaryKey: false},
+			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
+		}))
+	assert.NoError(t, err)
+	assert.Equal(t, "CREATE TABLE `bar` (`i` Int32, `x` String, `_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
+
 	_, err = GetCreateTableStatement("foo", "", nil)
 	assert.ErrorContains(t, err, "table name is empty")
 
@@ -148,12 +158,6 @@ func TestGetCreateTableStatement(t *testing.T) {
 	_, err = GetCreateTableStatement("foo", "bar",
 		types.MakeTableDescription([]*types.ColumnDefinition{{Name: "qaz", Type: "Int32", IsPrimaryKey: true}}))
 	assert.ErrorContains(t, err, "no _fivetran_synced column")
-
-	_, err = GetCreateTableStatement("foo", "bar",
-		types.MakeTableDescription([]*types.ColumnDefinition{
-			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
-			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"}}))
-	assert.ErrorContains(t, err, "no _fivetran_deleted column")
 }
 
 func TestGetTruncateTableStatement(t *testing.T) {

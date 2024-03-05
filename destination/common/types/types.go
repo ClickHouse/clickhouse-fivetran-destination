@@ -34,10 +34,11 @@ type PrimaryKeyColumn struct {
 // also used for generating mapping keys, see db.GetCSVRowMappingKey and db.GetDatabaseRowMappingKey.
 // FivetranSyncedIdx index of the _fivetran_synced column in fivetran_sdk.Table (see db.ToSoftDeletedRow)
 // FivetranDeletedIdx index of the _fivetran_deleted column in fivetran_sdk.Table (see db.ToSoftDeletedRow)
+// NB: allowed to be -1, e.g. when _fivetran_deleted column is not present in the table definition immediately.
 type PrimaryKeysAndMetadataColumns struct {
 	PrimaryKeys        []*PrimaryKeyColumn
 	FivetranSyncedIdx  uint
-	FivetranDeletedIdx uint
+	FivetranDeletedIdx int
 }
 
 type AlterTableOpType int

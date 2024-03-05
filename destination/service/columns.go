@@ -79,12 +79,9 @@ func GetPrimaryKeysAndMetadataColumns(table *pb.Table) (*types.PrimaryKeysAndMet
 	if fivetranSyncedIdx < 0 {
 		return nil, fmt.Errorf("no %s column found", constants.FivetranSynced)
 	}
-	if fivetranDeletedIdx < 0 {
-		return nil, fmt.Errorf("no %s column found", constants.FivetranDeleted)
-	}
 	return &types.PrimaryKeysAndMetadataColumns{
 		PrimaryKeys:        pkCols,
 		FivetranSyncedIdx:  uint(fivetranSyncedIdx),
-		FivetranDeletedIdx: uint(fivetranDeletedIdx),
+		FivetranDeletedIdx: fivetranDeletedIdx,
 	}, nil
 }

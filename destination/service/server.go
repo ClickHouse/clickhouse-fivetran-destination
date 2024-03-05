@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
@@ -173,6 +174,11 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
+	if len(in.DeleteFiles) > 0 && metadata.FivetranDeletedIdx < 0 {
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name,
+			fmt.Errorf("missing required column %s for delete operations", constants.FivetranDeleted)), nil
+	}
+
 	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
@@ -233,7 +239,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 						return err
 					}
 					err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
-						metadata.FivetranSyncedIdx, metadata.FivetranDeletedIdx)
+						metadata.FivetranSyncedIdx, uint(metadata.FivetranDeletedIdx))
 					if err != nil {
 						return err
 					}

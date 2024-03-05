@@ -96,9 +96,6 @@ func GetCreateTableStatement(
 	if tableDescription.Mapping[constants.FivetranSynced] == nil {
 		return "", fmt.Errorf("no %s column for table %s", constants.FivetranSynced, fullName)
 	}
-	if tableDescription.Mapping[constants.FivetranDeleted] == nil {
-		return "", fmt.Errorf("no %s column for table %s", constants.FivetranDeleted, fullName)
-	}
 	var orderByCols []string
 	var columnsBuilder strings.Builder
 	count := 0
@@ -134,12 +131,12 @@ func GetCreateTableStatement(
 // Sample generated query (soft truncate):
 //
 //	ALTER TABLE `foo`.`bar` UPDATE `_fivetran_deleted` = 1
-//	WHERE `_fivetran_synced` < toDateTime64('2021-01-01 00:00:00.000000000', 9, 'UTC')
+//	WHERE `_fivetran_synced` < '<nanoseconds>'
 //
 // Sample generated query (hard truncate):
 //
 //	ALTER TABLE `foo`.`bar` DELETE
-//	WHERE `_fivetran_synced` < toDateTime64('2021-01-01 00:00:00.000000000', 9, 'UTC')
+//	WHERE `_fivetran_synced` < '<nanoseconds>'
 func GetTruncateTableStatement(
 	schemaName string,
 	tableName string,
