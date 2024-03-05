@@ -1,0 +1,62 @@
+{
+  "create_table": {
+    "string_pk": {
+      "columns": {
+        "i": "INT",
+        "s": "STRING"
+      },
+      "primary_key": [
+        "s"
+      ]
+    }
+  },
+  "describe_table": [
+    "string_pk"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "string_pk": [
+          {
+            "s": "foo",
+            "i": 1
+          },
+          {
+            "s": "bar",
+            "i": 2
+          },
+          {
+            "s": "qaz",
+            "i": 3
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "string_pk": [
+          {
+            "s": "bar",
+            "i": 42
+          },
+          {
+            "s": "qaz",
+            "i": 144
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "string_pk": [
+          {
+            "s": "foo"
+          },
+          {
+            "s": "bar"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -10,20 +10,52 @@ import (
 )
 
 func TestQuoteValue(t *testing.T) {
-	assert.Equal(t, Quote(pb.DataType_STRING, "foobar"), "'foobar'")
-	assert.Equal(t, Quote(pb.DataType_XML, "<foo>bar</foo>"), "'<foo>bar</foo>'")
-	assert.Equal(t, Quote(pb.DataType_BINARY, "0x42"), "'0x42'")
-	assert.Equal(t, Quote(pb.DataType_JSON, "{\"foo\": \"bar\"}"), "'{\"foo\": \"bar\"}'")
-	assert.Equal(t, Quote(pb.DataType_SHORT, "42"), "42")
-	assert.Equal(t, Quote(pb.DataType_INT, "42"), "42")
-	assert.Equal(t, Quote(pb.DataType_LONG, "42"), "42")
-	assert.Equal(t, Quote(pb.DataType_FLOAT, "42.42"), "42.42")
-	assert.Equal(t, Quote(pb.DataType_DOUBLE, "42.4242"), "42.4242")
-	assert.Equal(t, Quote(pb.DataType_DECIMAL, "42.424242"), "42.424242")
-	assert.Equal(t, Quote(pb.DataType_BOOLEAN, "true"), "true")
-	assert.Equal(t, Quote(pb.DataType_NAIVE_DATE, "2022-03-05"), "'2022-03-05'")
-	assert.Equal(t, Quote(pb.DataType_NAIVE_DATETIME, "2022-03-05T04:45:12"), "'2022-03-05T04:45:12'")
-	assert.Equal(t, Quote(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456789Z"), "'2022-03-05T04:45:12.123456789Z'")
+	args := []struct {
+		colType pb.DataType
+		value   string
+		result  string
+	}{
+		{pb.DataType_BOOLEAN, "true", "true"},
+		{pb.DataType_SHORT, "42", "42"},
+		{pb.DataType_INT, "42", "42"},
+		{pb.DataType_LONG, "42", "42"},
+		{pb.DataType_DECIMAL, "42.424242", "'42.424242'"},
+		{pb.DataType_FLOAT, "42.42", "'42.42'"},
+		{pb.DataType_DOUBLE, "42.4242", "'42.4242'"},
+		{pb.DataType_STRING, "foobar", "'foobar'"},
+		{pb.DataType_BINARY, "0x42", "'0x42'"},
+		{pb.DataType_XML, "<foo>bar</foo>", "'<foo>bar</foo>'"},
+		{pb.DataType_JSON, "{\"foo\": \"bar\"}", "'{\"foo\": \"bar\"}'"},
+		{pb.DataType_NAIVE_DATE, "2022-03-05", "'2022-03-05'"},
+		{pb.DataType_NAIVE_DATETIME, "2022-03-05T04:45:12", "'2022-03-05T04:45:12'"},
+	}
+	for _, arg := range args {
+		result, err := Value(arg.colType, arg.value)
+		assert.NoError(t, err, "expected no error for value %s with type %s", arg.value, arg.colType.String())
+		assert.Equal(t, arg.result, result, "values mismatch for type %s", arg.colType.String())
+	}
+}
+
+func TestQuoteUTCDateTime(t *testing.T) {
+	result, err := Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456789Z")
+	assert.NoError(t, err)
+	assert.Equal(t, "'1646455512123456789'", result)
+
+	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456Z")
+	assert.NoError(t, err)
+	assert.Equal(t, "'1646455512123456000'", result)
+
+	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123Z")
+	assert.NoError(t, err)
+	assert.Equal(t, "'1646455512123000000'", result)
+
+	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12Z")
+	assert.NoError(t, err)
+	assert.Equal(t, "'1646455512000000000'", result)
+
+	result, err = Value(pb.DataType_UTC_DATETIME, "foobar")
+	assert.ErrorContains(t, err, "can't parse value foobar as UTC datetime")
+	assert.Equal(t, "", result)
 }
 
 func TestParseValue(t *testing.T) {
@@ -103,14 +135,27 @@ func TestParseValue(t *testing.T) {
 	_, err = Parse("test", pb.DataType_DECIMAL, "x")
 	assert.ErrorContains(t, err, "can't parse value x as decimal for column test")
 
-	// Date types
+	// UTC DateTime - variable precision
 	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456789Z")
 	assert.NoError(t, err)
 	assert.Equal(t, time.Date(2022, 3, 5, 4, 45, 12, 123456789, time.UTC), val)
 
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2022, 3, 5, 4, 45, 12, 123456000, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2022, 3, 5, 4, 45, 12, 123000000, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2022, 3, 5, 4, 45, 12, 0, time.UTC), val)
+
 	_, err = Parse("test", pb.DataType_UTC_DATETIME, "x")
 	assert.ErrorContains(t, err, "can't parse value x as UTC datetime for column test")
 
+	// Naive DateTime
 	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2022-03-05T04:45:12")
 	assert.NoError(t, err)
 	assert.Equal(t, time.Date(2022, 3, 5, 4, 45, 12, 0, time.UTC), val)
@@ -118,6 +163,7 @@ func TestParseValue(t *testing.T) {
 	_, err = Parse("test", pb.DataType_NAIVE_DATETIME, "x")
 	assert.ErrorContains(t, err, "can't parse value x as naive datetime for column test")
 
+	// Naive Date
 	val, err = Parse("test", pb.DataType_NAIVE_DATE, "2022-03-05")
 	assert.NoError(t, err)
 	assert.Equal(t, time.Date(2022, 3, 5, 0, 0, 0, 0, time.UTC), val)

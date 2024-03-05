@@ -28,3 +28,9 @@ const (
 )
 
 const MaxDecimalPrecision = 76
+
+const (
+	UTCDateTimeFormat   = "2006-01-02T15:04:05.9Z" // allows arbitrary timestamp precision from 0 to 9
+	NaiveDateTimeFormat = "2006-01-02T15:04:05"
+	NaiveDateFormat     = "2006-01-02"
+)

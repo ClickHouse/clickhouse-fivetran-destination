@@ -1,0 +1,84 @@
+{
+  "create_table": {
+    "composite_floats_pk": {
+      "columns": {
+        "i": "INT",
+        "dec": {
+          "type": "DECIMAL",
+          "precision": 10,
+          "scale": 4
+        },
+        "f32": "FLOAT",
+        "f64": "DOUBLE"
+      },
+      "primary_key": [
+        "dec",
+        "f32",
+        "f64"
+      ]
+    }
+  },
+  "describe_table": [
+    "composite_floats_pk"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "composite_floats_pk": [
+          {
+            "dec": 100.5552,
+            "f32": 1.2,
+            "f64": 2.4,
+            "i": 1
+          },
+          {
+            "dec": 200.2,
+            "f32": 2.2,
+            "f64": 3.3,
+            "i": 2
+          },
+          {
+            "dec": 300.3,
+            "f32": 3.3,
+            "f64": 4.4,
+            "i": 3
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "composite_floats_pk": [
+          {
+            "dec": 200.2,
+            "f32": 2.2,
+            "f64": 3.3,
+            "i": 42
+          },
+          {
+            "dec": 300.3,
+            "f32": 3.3,
+            "f64": 4.4,
+            "i": 144
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "composite_floats_pk": [
+          {
+            "dec": 100.5552,
+            "f32": 1.2,
+            "f64": 2.4
+          },
+          {
+            "dec": 200.2,
+            "f32": 2.2,
+            "f64": 3.3
+          }
+        ]
+      }
+    }
+  ]
+}

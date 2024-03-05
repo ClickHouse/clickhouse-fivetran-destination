@@ -227,7 +227,11 @@ func GetSelectByPrimaryKeysQuery(
 			if col.Index > uint(len(row)) {
 				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
 			}
-			clauseBuilder.WriteString(values.Quote(col.Type, row[col.Index]))
+			value, err := values.Value(col.Type, row[col.Index])
+			if err != nil {
+				return "", err
+			}
+			clauseBuilder.WriteString(value)
 			if j < len(pkCols)-1 {
 				clauseBuilder.WriteString(", ")
 			}

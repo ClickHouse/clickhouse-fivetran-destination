@@ -5,23 +5,33 @@ import (
 	"strconv"
 	"time"
 
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/shopspring/decimal"
 )
 
-func Quote(colType pb.DataType, value string) string {
+func Value(colType pb.DataType, value string) (string, error) {
 	switch colType {
 	case // quote types that we can pass as a string
 		pb.DataType_NAIVE_DATE,
 		pb.DataType_NAIVE_DATETIME,
-		pb.DataType_UTC_DATETIME,
 		pb.DataType_STRING,
+		pb.DataType_DECIMAL,
+		pb.DataType_FLOAT,
+		pb.DataType_DOUBLE,
 		pb.DataType_BINARY,
 		pb.DataType_XML,
 		pb.DataType_JSON:
-		return fmt.Sprintf("'%s'", value)
+		return fmt.Sprintf("'%s'", value), nil
+	// specify DateTime64(9) as nanos instead
+	case pb.DataType_UTC_DATETIME:
+		utcDateTime, err := time.Parse(constants.UTCDateTimeFormat, value)
+		if err != nil {
+			return "", fmt.Errorf("can't parse value %s as UTC datetime: %w", value, err)
+		}
+		return fmt.Sprintf("'%d'", utcDateTime.UnixNano()), nil
 	default:
-		return value
+		return value, nil
 	}
 }
 
@@ -70,19 +80,19 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		}
 		return result, nil
 	case pb.DataType_NAIVE_DATE:
-		result, err := time.Parse("2006-01-02", val)
+		result, err := time.Parse(constants.NaiveDateFormat, val)
 		if err != nil {
 			return nil, fmt.Errorf("can't parse value %s as naive date for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_NAIVE_DATETIME:
-		result, err := time.Parse("2006-01-02T15:04:05", val)
+		result, err := time.Parse(constants.NaiveDateTimeFormat, val)
 		if err != nil {
 			return nil, fmt.Errorf("can't parse value %s as naive datetime for column %s: %w", val, colName, err)
 		}
 		return result, nil
 	case pb.DataType_UTC_DATETIME:
-		result, err := time.Parse("2006-01-02T15:04:05.000000000Z", val)
+		result, err := time.Parse(constants.UTCDateTimeFormat, val)
 		if err != nil {
 			return nil, fmt.Errorf("can't parse value %s as UTC datetime for column %s: %w", val, colName, err)
 		}

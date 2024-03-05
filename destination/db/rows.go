@@ -65,13 +65,14 @@ func GetDatabaseRowMappingKey(row []interface{}, pkCols []*types.PrimaryKeyColum
 		case *bool:
 			key.WriteString(fmt.Sprint(*p))
 		case *time.Time:
-			// should exactly match CSV datetime format
+			// format UTC datetime as nanos (due to possibly variable precision),
+			// the rest should actually match CSV datetime format
 			if col.Type == pb.DataType_UTC_DATETIME {
-				key.WriteString(p.Format("2006-01-02T15:04:05.000000000Z"))
+				key.WriteString(fmt.Sprint(p.UnixNano()))
 			} else if col.Type == pb.DataType_NAIVE_DATETIME {
-				key.WriteString(p.Format("2006-01-02T15:04:05"))
+				key.WriteString(p.Format(constants.NaiveDateTimeFormat))
 			} else {
-				key.WriteString(p.Format("2006-01-02"))
+				key.WriteString(p.Format(constants.NaiveDateFormat))
 			}
 		case *decimal.Decimal:
 			key.WriteString(p.String())
@@ -94,7 +95,17 @@ func GetCSVRowMappingKey(row []string, pkCols []*types.PrimaryKeyColumn) (string
 	for i, col := range pkCols {
 		key.WriteString(col.Name)
 		key.WriteRune(':')
-		key.WriteString(row[col.Index])
+		// reformat UTC datetime as nanos (due to possibly variable precision)
+		if col.Type == pb.DataType_UTC_DATETIME {
+			t, err := time.Parse(constants.UTCDateTimeFormat, row[col.Index])
+			if err != nil {
+				return "", fmt.Errorf("can't parse value %s as UTC datetime for column %s: %w",
+					row[col.Index], col.Name, err)
+			}
+			key.WriteString(fmt.Sprint(t.UnixNano()))
+		} else {
+			key.WriteString(row[col.Index])
+		}
 		if i < len(pkCols)-1 {
 			key.WriteRune(',')
 		}
@@ -250,7 +261,7 @@ func ToSoftDeletedRow(csvRow []string, dbRow []any, fivetranSyncedIdx uint, five
 	updatedRow := make([]any, len(dbRow))
 	copy(updatedRow, dbRow)
 	updatedRow[fivetranDeletedIdx] = true
-	fivetranSynced, err := time.Parse("2006-01-02T15:04:05.000000000Z", csvRow[fivetranSyncedIdx])
+	fivetranSynced, err := time.Parse(constants.UTCDateTimeFormat, csvRow[fivetranSyncedIdx])
 	if err != nil {
 		return nil, fmt.Errorf("can't parse value %s as UTC datetime for column %s: %w",
 			csvRow[fivetranSyncedIdx], constants.FivetranSynced, err)

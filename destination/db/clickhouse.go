@@ -30,7 +30,11 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
 	}
-	settings := clickhouse.Settings{}
+	settings := clickhouse.Settings{
+		// support ISO DateTime formats from CSV
+		// https://clickhouse.com/docs/en/operations/settings/formats#date_time_input_format
+		"date_time_input_format": "best_effort",
+	}
 	var tlsConfig *tls.Config = nil
 	if !connConfig.Local {
 		tlsConfig = &tls.Config{InsecureSkipVerify: false}

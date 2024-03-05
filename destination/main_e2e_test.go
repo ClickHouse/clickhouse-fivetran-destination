@@ -100,6 +100,106 @@ func TestUpdateAndDelete(t *testing.T) {
 		{"_fivetran_deleted", "Bool", ""}})
 }
 
+func TestUTCDateTimePrimaryKey(t *testing.T) {
+	fileName := "input_utc_datetime_pk.json"
+	tableName := "utc_datetime_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"144", "2024-01-14 15:13:12.000000000", "false"},
+		{"2", "2024-01-14 15:13:12.123000000", "false"},
+		{"42", "2024-01-14 15:13:12.123456000", "true"},
+		{"4", "2024-01-14 15:13:12.123456789", "true"}}, "ts")
+	assertTableColumns(t, tableName, [][]string{
+		{"i", "Nullable(Int32)", ""},
+		{"ts", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
+func TestNaiveDateTimePK(t *testing.T) {
+	fileName := "input_naive_datetime_pk.json"
+	tableName := "naive_datetime_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"42", "2021-01-14 15:13:12", "true"},
+		{"144", "2022-06-01 18:44:13", "false"},
+		{"2", "2023-03-15 08:47:00", "true"}}, "dt")
+	assertTableColumns(t, tableName, [][]string{
+		{"i", "Nullable(Int32)", ""},
+		{"dt", "DateTime", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
+func TestNaiveDatePK(t *testing.T) {
+	fileName := "input_naive_date_pk.json"
+	tableName := "naive_date_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"42", "2021-01-14", "true"},
+		{"144", "2022-06-01", "false"},
+		{"2", "2023-03-15", "true"}}, "d")
+	assertTableColumns(t, tableName, [][]string{
+		{"i", "Nullable(Int32)", ""},
+		{"d", "Date", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
+func TestCompositeFloatPK(t *testing.T) {
+	fileName := "input_composite_floats_pk.json"
+	tableName := "composite_floats_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"1", "100.5552", "1.2", "2.4", "true"},
+		{"42", "200.2", "2.2", "3.3", "true"},
+		{"144", "300.3", "3.3", "4.4", "false"}}, "dec, f32, f64")
+	assertTableColumns(t, tableName, [][]string{
+		{"i", "Nullable(Int32)", ""},
+		{"dec", "Decimal(10, 4)", ""},
+		{"f32", "Float32", ""},
+		{"f64", "Float64", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
+func TestStringPK(t *testing.T) {
+	fileName := "input_string_pk.json"
+	tableName := "string_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"42", "bar", "true"},
+		{"1", "foo", "true"},
+		{"144", "qaz", "false"}}, "s")
+	assertTableColumns(t, tableName, [][]string{
+		{"i", "Nullable(Int32)", ""},
+		{"s", "String", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
+func TestCompositePKWithBoolean(t *testing.T) {
+	fileName := "input_composite_pk_with_boolean.json"
+	tableName := "composite_pk_with_boolean"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"1", "1", "true", "true"},
+		{"42", "2", "false", "true"},
+		{"144", "3", "true", "false"}}, "l, b")
+	assertTableColumns(t, tableName, [][]string{
+		{"i", "Nullable(Int32)", ""},
+		{"l", "Int64", ""},
+		{"b", "Bool", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+}
+
 func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
 	fileName := "input_non_existent_updates.json"
 	tableName := "non_existent_updates"
@@ -286,6 +386,12 @@ func assertDatabaseRecords(t *testing.T, expectedRecords [][]string, dbRecordsCS
 
 func assertTableRowsWithPK(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1", tableName)
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, expectedOutput, dbRecordsCSVStr)
+}
+
+func assertTableRowsWithPKColumns(t *testing.T, tableName string, expectedOutput [][]string, pkCol string) {
+	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY %s FORMAT CSV SETTINGS select_sequential_consistency=1", tableName, pkCol)
 	dbRecordsCSVStr := runQuery(t, query)
 	assertDatabaseRecords(t, expectedOutput, dbRecordsCSVStr)
 }

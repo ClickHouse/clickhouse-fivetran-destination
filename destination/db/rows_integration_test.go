@@ -132,19 +132,23 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 
 	// Create a table with all possible destination types and a single record
 	tableName := fmt.Sprintf("test_get_db_row_key_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+	// dt64_nanos/micros/millis does not refer to the precision of the type itself, but to the contents
 	err = conn.Exec(context.Background(), fmt.Sprintf(`
 		CREATE OR REPLACE TABLE %s (
-			b    Bool,
-			i16  Int16,
-			i32  Int32,
-			i64  Int64,
-			f32  Float32,
-			f64  Float64,
-			dd   Decimal(4, 2),
-			dt64 DateTime64(9, 'UTC'),
-			dt   DateTime,
-			d    Date,
-			s    String
+			b           Bool,
+			i16         Int16,
+			i32         Int32,
+			i64         Int64,
+			f32         Float32,
+			f64         Float64,
+			dd          Decimal(4, 2),
+			dt64_nanos  DateTime64(9, 'UTC'),
+			dt64_micros DateTime64(9, 'UTC'),
+			dt64_millis DateTime64(9, 'UTC'),
+			dt64        DateTime64(9, 'UTC'),
+			dt          DateTime,
+			d           Date,
+			s           String
 		) ENGINE Memory`, tableName))
 	assert.NoError(t, err)
 
@@ -159,6 +163,9 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		float64(200.5),
 		decimal.NewFromFloat(47.47),
 		time.Date(2021, 3, 4, 22, 44, 22, 123456789, time.UTC),
+		time.Date(2021, 3, 4, 22, 44, 22, 123456000, time.UTC),
+		time.Date(2021, 3, 4, 22, 44, 22, 123000000, time.UTC),
+		time.Date(2021, 3, 4, 22, 44, 22, 0, time.UTC),
 		time.Date(2023, 5, 7, 18, 22, 44, 0, time.UTC),
 		time.Date(2019, 12, 15, 0, 0, 0, 0, time.UTC),
 		"test",
@@ -194,10 +201,13 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		{&types.PrimaryKeyColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4}, "f32:100.5"},
 		{&types.PrimaryKeyColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5}, "f64:200.5"},
 		{&types.PrimaryKeyColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6}, "dec:47.47"},
-		{&types.PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7}, "utc_datetime:2021-03-04T22:44:22.123456789Z"},
-		{&types.PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8}, "naive_datetime:2023-05-07T18:22:44"},
-		{&types.PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9}, "naive_date:2019-12-15"},
-		{&types.PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 10}, "str:test"},
+		{&types.PrimaryKeyColumn{Name: "utc_datetime_nanos", Type: pb.DataType_UTC_DATETIME, Index: 7}, "utc_datetime_nanos:1614897862123456789"},
+		{&types.PrimaryKeyColumn{Name: "utc_datetime_micros", Type: pb.DataType_UTC_DATETIME, Index: 8}, "utc_datetime_micros:1614897862123456000"},
+		{&types.PrimaryKeyColumn{Name: "utc_datetime_millis", Type: pb.DataType_UTC_DATETIME, Index: 9}, "utc_datetime_millis:1614897862123000000"},
+		{&types.PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 10}, "utc_datetime:1614897862000000000"},
+		{&types.PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 11}, "naive_datetime:2023-05-07T18:22:44"},
+		{&types.PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 12}, "naive_date:2019-12-15"},
+		{&types.PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 13}, "str:test"},
 	}
 	for _, arg := range singlePrimaryKeyArgs {
 		key, err := GetDatabaseRowMappingKey(dbRow, []*types.PrimaryKeyColumn{arg.PrimaryKeyColumn})
@@ -225,11 +235,16 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 		{pkCols: []*types.PrimaryKeyColumn{
 			{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6},
 			{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7},
-		}, key: "dec:47.47,utc_datetime:2021-03-04T22:44:22.123456789Z"},
+		}, key: "dec:47.47,utc_datetime:1614897862123456789"},
 		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 8},
-			{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 9},
-			{Name: "str", Type: pb.DataType_STRING, Index: 10},
+			{Name: "utc_datetime_nanos", Type: pb.DataType_UTC_DATETIME, Index: 7},
+			{Name: "utc_datetime_micros", Type: pb.DataType_UTC_DATETIME, Index: 8},
+			{Name: "utc_datetime_millis", Type: pb.DataType_UTC_DATETIME, Index: 9},
+		}, key: "utc_datetime_nanos:1614897862123456789,utc_datetime_micros:1614897862123456000,utc_datetime_millis:1614897862123000000"},
+		{pkCols: []*types.PrimaryKeyColumn{
+			{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 11},
+			{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 12},
+			{Name: "str", Type: pb.DataType_STRING, Index: 13},
 		}, key: "naive_datetime:2023-05-07T18:22:44,naive_date:2019-12-15,str:test"},
 	}
 	for i, arg := range multiplePrimaryKeyArgs {

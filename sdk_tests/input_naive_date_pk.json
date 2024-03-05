@@ -1,0 +1,62 @@
+{
+  "create_table": {
+    "naive_date_pk": {
+      "columns": {
+        "i": "INT",
+        "d": "NAIVE_DATE"
+      },
+      "primary_key": [
+        "d"
+      ]
+    }
+  },
+  "describe_table": [
+    "naive_date_pk"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "naive_date_pk": [
+          {
+            "d": "2021-01-14",
+            "i": 1
+          },
+          {
+            "d": "2023-03-15",
+            "i": 2
+          },
+          {
+            "d": "2022-06-01",
+            "i": 3
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "naive_date_pk": [
+          {
+            "d": "2022-06-01",
+            "i": 144
+          },
+          {
+            "d": "2021-01-14",
+            "i": 42
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "naive_date_pk": [
+          {
+            "d": "2021-01-14"
+          },
+          {
+            "d": "2023-03-15"
+          }
+        ]
+      }
+    }
+  ]
+}

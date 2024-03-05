@@ -1,0 +1,71 @@
+{
+  "create_table": {
+    "composite_pk_with_boolean": {
+      "columns": {
+        "i": "INT",
+        "l": "LONG",
+        "b": "BOOLEAN"
+      },
+      "primary_key": [
+        "l",
+        "b"
+      ]
+    }
+  },
+  "describe_table": [
+    "composite_pk_with_boolean"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "composite_pk_with_boolean": [
+          {
+            "i": 1,
+            "l": 1,
+            "b": true
+          },
+          {
+            "i": 2,
+            "l": 2,
+            "b": false
+          },
+          {
+            "i": 3,
+            "l": 3,
+            "b": true
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "composite_pk_with_boolean": [
+          {
+            "l": 2,
+            "b": false,
+            "i": 42
+          },
+          {
+            "l": 3,
+            "b": true,
+            "i": 144
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "composite_pk_with_boolean": [
+          {
+            "l": 1,
+            "b": true
+          },
+          {
+            "l": 2,
+            "b": false
+          }
+        ]
+      }
+    }
+  ]
+}
