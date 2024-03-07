@@ -25,8 +25,8 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				},
 			},
 			{
-				Name:     config.DatabaseKey,
-				Label:    "Database",
+				Name:     config.PortKey,
+				Label:    "Port",
 				Required: true,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_PlainText,
@@ -37,7 +37,7 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				Label:    "Username",
 				Required: true,
 				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_Password,
+					TextField: pb.TextField_PlainText,
 				},
 			},
 			{
@@ -52,7 +52,11 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 		Tests: []*pb.ConfigurationTest{
 			{
 				Name:  ConnectionTest,
-				Label: "Test connection and basic operations",
+				Label: "Connection test",
+			},
+			{
+				Name:  GrantsTest,
+				Label: "User grants test",
 			},
 		},
 	}

@@ -10,14 +10,16 @@ import (
 	"fivetran.com/fivetran_sdk/destination/db/values"
 )
 
-func GetQualifiedTableName(schemaName string, tableName string) (string, error) {
+type QualifiedTableName string
+
+func GetQualifiedTableName(schemaName string, tableName string) (QualifiedTableName, error) {
 	if tableName == "" {
 		return "", fmt.Errorf("table name is empty")
 	}
 	if schemaName == "" {
-		return identifier(tableName), nil
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
 	} else {
-		return fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName)), nil
+		return QualifiedTableName(fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName))), nil
 	}
 }
 
@@ -72,6 +74,31 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 	return query, nil
 }
 
+func GetCheckDatabaseExistsStatement(schemaName string) (string, error) {
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name is empty")
+	}
+	return fmt.Sprintf("SELECT COUNT(*) FROM system.databases WHERE `name` = '%s'", schemaName), nil
+}
+
+func GetCreateDatabaseStatement(schemaName string) (string, error) {
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name is empty")
+	}
+	return fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", identifier(schemaName)), nil
+}
+
+func GetDropTableStatement(tableName QualifiedTableName) (string, error) {
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName), nil
+}
+
+func GetSelectFromSystemGrantsQuery(username string) (string, error) {
+	if username == "" {
+		return "", fmt.Errorf("username is empty")
+	}
+	return fmt.Sprintf("SELECT `access_type`, `database`, `table`, `column` FROM system.grants WHERE `user_name` = '%s'", username), nil
+}
+
 // GetCreateTableStatement sample generated query:
 //
 //	CREATE TABLE `foo`.`bar`
@@ -122,6 +149,8 @@ func GetCreateTableStatement(
 // GetTruncateTableStatement
 // generates a query for either "soft" (ALTER TABLE UPDATE) or "hard" (ALTER TABLE DELETE) table truncation.
 //
+// Important: Fivetran uses milliseconds (not nanos) precision for the _fivetran_synced column.
+//
 // Even though syncedColumn and softDeletedColumn are known constants (_fivetran_synced, _fivetran_deleted)
 // and it is guaranteed that they were present in CreateTableRequest (and, consequently, GetCreateTableStatement),
 // TruncateTableRequest also defines their names.
@@ -131,12 +160,12 @@ func GetCreateTableStatement(
 // Sample generated query (soft truncate):
 //
 //	ALTER TABLE `foo`.`bar` UPDATE `_fivetran_deleted` = 1
-//	WHERE `_fivetran_synced` < '<nanoseconds>'
+//	WHERE toUnixTimestamp64Milli(`_fivetran_synced`) <= '<truncateBeforeMilli>'
 //
 // Sample generated query (hard truncate):
 //
 //	ALTER TABLE `foo`.`bar` DELETE
-//	WHERE `_fivetran_synced` < '<nanoseconds>'
+//	WHERE toUnixTimestamp64Milli(`_fivetran_synced`) <= '<truncateBeforeMilli>'
 func GetTruncateTableStatement(
 	schemaName string,
 	tableName string,
@@ -155,12 +184,14 @@ func GetTruncateTableStatement(
 		return "", fmt.Errorf("truncate before time is zero")
 	}
 	var query string
+	truncateBeforeMilli := truncateBefore.UnixMilli()
+	syncedColumnMilli := toUnixTimestamp64Milli(identifier(syncedColumn))
 	if softDeletedColumn != nil && *softDeletedColumn != "" {
-		query = fmt.Sprintf("ALTER TABLE %s UPDATE %s = 1 WHERE %s < '%d'",
-			fullName, identifier(*softDeletedColumn), identifier(syncedColumn), truncateBefore.UnixNano())
+		query = fmt.Sprintf("ALTER TABLE %s UPDATE %s = 1 WHERE %s <= '%d'",
+			fullName, identifier(*softDeletedColumn), syncedColumnMilli, truncateBeforeMilli)
 	} else {
-		query = fmt.Sprintf("ALTER TABLE %s DELETE WHERE %s < '%d'",
-			fullName, identifier(syncedColumn), truncateBefore.UnixNano())
+		query = fmt.Sprintf("ALTER TABLE %s DELETE WHERE %s <= '%d'",
+			fullName, syncedColumnMilli, truncateBeforeMilli)
 	}
 	return query, nil
 }
@@ -177,7 +208,7 @@ func GetColumnTypesQuery(schemaName string, tableName string) (string, error) {
 
 func GetDescribeTableQuery(schemaName string, tableName string) (string, error) {
 	if schemaName == "" {
-		return "", fmt.Errorf("schema name is empty")
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
 	}
 	if tableName == "" {
 		return "", fmt.Errorf("table name is empty")
@@ -195,13 +226,13 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 // Where N is the number of rows in the CSV slice.
 func GetSelectByPrimaryKeysQuery(
 	csv [][]string,
-	fullTableName string,
+	qualifiedTableName QualifiedTableName,
 	pkCols []*types.PrimaryKeyColumn,
 ) (string, error) {
 	if len(pkCols) == 0 {
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
 	}
-	if fullTableName == "" {
+	if qualifiedTableName == "" {
 		return "", fmt.Errorf("table name is empty")
 	}
 	if len(csv) == 0 {
@@ -210,7 +241,7 @@ func GetSelectByPrimaryKeysQuery(
 	var orderByBuilder strings.Builder
 	orderByBuilder.WriteRune('(')
 	var clauseBuilder strings.Builder
-	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", fullTableName))
+	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", qualifiedTableName))
 	for i, col := range pkCols {
 		clauseBuilder.WriteString(identifier(col.Name))
 		orderByBuilder.WriteString(identifier(col.Name))
@@ -249,4 +280,8 @@ func GetSelectByPrimaryKeysQuery(
 
 func identifier(s string) string {
 	return fmt.Sprintf("`%s`", s)
+}
+
+func toUnixTimestamp64Milli(arg string) string {
+	return fmt.Sprintf("toUnixTimestamp64Milli(%s)", arg)
 }

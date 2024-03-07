@@ -16,11 +16,13 @@ import (
 )
 
 func TestColumnTypesToEmptyRows(t *testing.T) {
-	conn, err := GetClickHouseConnection(map[string]string{
-		"host":     "localhost:9000",
-		"username": "default",
-		"local":    "true",
-	})
+	conn, err := GetClickHouseConnection(
+		context.Background(),
+		map[string]string{
+			"host":     "localhost:9000",
+			"username": "default",
+			"local":    "true",
+		})
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -122,11 +124,13 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 }
 
 func TestGetDatabaseRowMappingKey(t *testing.T) {
-	conn, err := GetClickHouseConnection(map[string]string{
-		"host":     "localhost:9000",
-		"username": "default",
-		"local":    "true",
-	})
+	conn, err := GetClickHouseConnection(
+		context.Background(),
+		map[string]string{
+			"host":     "localhost:9000",
+			"username": "default",
+			"local":    "true",
+		})
 	require.NoError(t, err)
 	defer conn.Close()
 

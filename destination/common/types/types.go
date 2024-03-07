@@ -55,3 +55,11 @@ type AlterTableOp struct {
 	Type    *string // nil for AlterTableDrop
 	Comment *string // nil for AlterTableDrop
 }
+
+// UserGrant represents a row from system.grants table.
+type UserGrant struct {
+	AccessType string
+	Database   *string
+	Table      *string
+	Column     *string
+}

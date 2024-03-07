@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,9 +25,10 @@ import (
 
 type ClickHouseConnection struct {
 	driver.Conn
+	username string
 }
 
-func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnection, error) {
+func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
 	connConfig, err := config.Parse(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
@@ -45,12 +48,13 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
 		settings["select_sequential_consistency"] = 1
 	}
+	addr := fmt.Sprintf("%s:%d", connConfig.Host, connConfig.Port)
 	options := &clickhouse.Options{
-		Addr: []string{connConfig.Host},
+		Addr: []string{addr},
 		Auth: clickhouse.Auth{
 			Username: connConfig.Username,
 			Password: connConfig.Password,
-			Database: connConfig.Database,
+			Database: "system",
 		},
 		Protocol:     clickhouse.Native,
 		Settings:     settings,
@@ -73,7 +77,20 @@ func GetClickHouseConnection(configuration map[string]string) (*ClickHouseConnec
 		log.Error(err)
 		return nil, err
 	}
-	return &ClickHouseConnection{conn}, nil
+	err = retry.OnNetError(func() error {
+		return conn.Ping(ctx)
+	}, ctx, "Ping", false)
+	if err != nil {
+		if err.Error() == "EOF" {
+			err = fmt.Errorf("ping ClickHouse service error: unexpected EOF; " +
+				"this may indicate that incoming traffic is not allowed in the service networking settings")
+		} else {
+			err = fmt.Errorf("ping ClickHouse service error: %w", err)
+		}
+		log.Error(err)
+		return nil, err
+	}
+	return &ClickHouseConnection{Conn: conn, username: connConfig.Username}, nil
 }
 
 func (conn *ClickHouseConnection) ExecDDL(ctx context.Context, statement string, op connectionOpType) error {
@@ -164,12 +181,89 @@ func (conn *ClickHouseConnection) GetColumnTypes(
 	return rows.ColumnTypes(), nil
 }
 
+func (conn *ClickHouseConnection) GetUserGrants(ctx context.Context) ([]*types.UserGrant, error) {
+	query, err := sql.GetSelectFromSystemGrantsQuery(conn.username)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.ExecQuery(ctx, query, getUserGrants, false)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var (
+		accessType string
+		database   *string
+		table      *string
+		column     *string
+	)
+	grants := make([]*types.UserGrant, 0)
+	for rows.Next() {
+		if err = rows.Scan(&accessType, &database, &table, &column); err != nil {
+			return nil, err
+		}
+		grants = append(grants, &types.UserGrant{
+			AccessType: accessType,
+			Database:   database,
+			Table:      table,
+			Column:     column,
+		})
+	}
+	return grants, nil
+}
+
+func (conn *ClickHouseConnection) CheckDatabaseExists(
+	ctx context.Context,
+	schemaName string,
+) (bool, error) {
+	statement, err := sql.GetCheckDatabaseExistsStatement(schemaName)
+	if err != nil {
+		return false, err
+	}
+	rows, err := conn.ExecQuery(ctx, statement, checkDatabaseExists, false)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	var count uint64
+	if !rows.Next() {
+		return false, fmt.Errorf("unexpected empty result from %s", statement)
+	}
+	if err = rows.Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (conn *ClickHouseConnection) CreateDatabase(
+	ctx context.Context,
+	schemaName string,
+) error {
+	statement, err := sql.GetCreateDatabaseStatement(schemaName)
+	if err != nil {
+		return err
+	}
+	return conn.ExecDDL(ctx, statement, createDatabase)
+}
+
+// CreateTable will additionally create a database if it does not exist yet.
+// It is done since we don't always know the name of the "schema" that a particular connector might use.
 func (conn *ClickHouseConnection) CreateTable(
 	ctx context.Context,
 	schemaName string,
 	tableName string,
 	tableDescription *types.TableDescription,
 ) error {
+	databaseExists, err := conn.CheckDatabaseExists(ctx, schemaName)
+	if err != nil {
+		return err
+	}
+	if !databaseExists {
+		err = conn.CreateDatabase(ctx, schemaName)
+		if err != nil {
+			return err
+		}
+	}
 	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription)
 	if err != nil {
 		return err
@@ -177,24 +271,34 @@ func (conn *ClickHouseConnection) CreateTable(
 	return conn.ExecDDL(ctx, statement, createTable)
 }
 
+// AlterTable will not execute any statements if both table definitions are identical.
 func (conn *ClickHouseConnection) AlterTable(
 	ctx context.Context,
 	schemaName string,
 	tableName string,
 	from *types.TableDescription,
 	to *types.TableDescription,
-) error {
+) (wasExecuted bool, err error) {
 	ops, err := GetAlterTableOps(from, to)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if len(ops) == 0 {
+		return false, nil
 	}
 	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return conn.ExecDDL(ctx, statement, alterTable)
+	err = conn.ExecDDL(ctx, statement, alterTable)
+	if err == nil {
+		return true, nil
+	}
+	return false, err
 }
 
+// TruncateTable
+// softDeletedColumn switches between "hard" (nil) and "soft" (not nil) truncation (see sql.GetTruncateTableStatement)
 func (conn *ClickHouseConnection) TruncateTable(
 	ctx context.Context,
 	schemaName string,
@@ -207,24 +311,41 @@ func (conn *ClickHouseConnection) TruncateTable(
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(ctx, statement, truncateTable)
+	var op connectionOpType
+	if softDeletedColumn == nil {
+		op = hardTruncateTable
+	} else {
+		op = softTruncateTable
+	}
+	return conn.ExecDDL(ctx, statement, op)
+}
+
+func (conn *ClickHouseConnection) DropTable(
+	ctx context.Context,
+	qualifiedTableName sql.QualifiedTableName,
+) error {
+	statement, err := sql.GetDropTableStatement(qualifiedTableName)
+	if err != nil {
+		return err
+	}
+	return conn.ExecDDL(ctx, statement, dropTable)
 }
 
 func (conn *ClickHouseConnection) InsertBatch(
 	ctx context.Context,
-	fullTableName string,
+	qualifiedTableName sql.QualifiedTableName,
 	rows [][]interface{},
 	skipIdx map[int]bool,
 	opName string,
 ) error {
 	if len(skipIdx) == len(rows) {
-		log.Warn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, fullTableName))
+		log.Warn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, qualifiedTableName))
 		return nil
 	}
 	return retry.OnNetError(func() error {
-		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", fullTableName))
+		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
-			err = fmt.Errorf("error while preparing batch for %s: %w", fullTableName, err)
+			err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
 			log.Error(err)
 			return err
 		}
@@ -234,14 +355,14 @@ func (conn *ClickHouseConnection) InsertBatch(
 			}
 			err = batch.Append(row...)
 			if err != nil {
-				err = fmt.Errorf("error appending row to a batch for %s: %w", fullTableName, err)
+				err = fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
 				log.Error(err)
 				return err
 			}
 		}
 		err = batch.Send()
 		if err != nil {
-			err = fmt.Errorf("error while sending batch for %s: %w", fullTableName, err)
+			err = fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
 			log.Error(err)
 			return err
 		}
@@ -254,7 +375,7 @@ func (conn *ClickHouseConnection) InsertBatch(
 // The results are merged into a map of primary key values to the rows.
 func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	ctx context.Context,
-	fullTableName string,
+	qualifiedTableName sql.QualifiedTableName,
 	columnTypes []driver.ColumnType,
 	pkCols []*types.PrimaryKeyColumn,
 	csv [][]string,
@@ -274,7 +395,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 				s := slice
 				eg.Go(func() error {
 					batch := csv[s.Start:s.End]
-					query, err := sql.GetSelectByPrimaryKeysQuery(batch, fullTableName, pkCols)
+					query, err := sql.GetSelectByPrimaryKeysQuery(batch, qualifiedTableName, pkCols)
 					if err != nil {
 						return err
 					}
@@ -329,7 +450,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	nullStr string,
 ) error {
 	return benchmark.RunAndNotice(func() error {
-		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
@@ -348,7 +469,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 					}
 					insertRows[j] = insertRow
 				}
-				err = conn.InsertBatch(ctx, fullName, insertRows, nil, string(insertBatchReplaceTask))
+				err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, nil, string(insertBatchReplaceTask))
 				if err != nil {
 					return err
 				}
@@ -382,7 +503,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	unmodifiedStr string,
 ) error {
 	return benchmark.RunAndNotice(func() error {
-		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
@@ -393,7 +514,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
 				}
@@ -401,7 +522,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				if err != nil {
 					return err
 				}
-				err = conn.InsertBatch(ctx, fullName, insertRows, skipIdx, string(insertBatchUpdateTask))
+				err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, skipIdx, string(insertBatchUpdateTask))
 				if err != nil {
 					return err
 				}
@@ -438,7 +559,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	fivetranDeletedIdx uint,
 ) error {
 	return benchmark.RunAndNotice(func() error {
-		fullName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
@@ -449,7 +570,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, fullName, columnTypes, pkCols, batch)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, columnTypes, pkCols, batch)
 				if err != nil {
 					return err
 				}
@@ -457,7 +578,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 				if err != nil {
 					return err
 				}
-				err = conn.InsertBatch(ctx, fullName, insertRows, skipIdx, string(insertBatchDeleteTask))
+				err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, skipIdx, string(insertBatchDeleteTask))
 				if err != nil {
 					return err
 				}
@@ -482,17 +603,72 @@ func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
 	if result != 42 {
 		return fmt.Errorf("unexpected result from the connection check query: %d", result)
 	}
-	log.Info("Connection check passed")
 	return nil
+}
+
+func (conn *ClickHouseConnection) GrantsTest(ctx context.Context) error {
+	// assuming that the default user should always have all grants
+	if conn.username == "default" {
+		return nil
+	}
+	grants, err := conn.GetUserGrants(ctx)
+	if err != nil {
+		return err
+	}
+	verifiedGrants := map[grantType]bool{
+		createDatabaseGrant:    false,
+		createTableGrant:       false,
+		showColumnsGrant:       false,
+		showTablesGrant:        false,
+		alterAddColumnGrant:    false,
+		alterDropColumnGrant:   false,
+		alterModifyColumnGrant: false,
+		insertGrant:            false,
+		selectGrant:            false,
+		alterUpdateGrant:       false,
+		alterDeleteGrant:       false,
+	}
+	if len(grants) == 0 {
+		return fmt.Errorf("user is missing the required grants: %s", joinMissingGrants(verifiedGrants))
+	}
+	for _, grant := range grants {
+		_, ok := verifiedGrants[grant.AccessType]
+		if ok && grant.Database == nil && grant.Table == nil && grant.Column == nil {
+			verifiedGrants[grant.AccessType] = true
+		}
+	}
+	joinedMissingGrants := joinMissingGrants(verifiedGrants)
+	if joinedMissingGrants != "" {
+		return fmt.Errorf("user is missing the required grants: %s", joinedMissingGrants)
+	}
+	return nil
+}
+
+func joinMissingGrants(userGrants map[grantType]bool) string {
+	var missingGrants []grantType
+	for grant, verified := range userGrants {
+		if !verified {
+			missingGrants = append(missingGrants, grant)
+		}
+	}
+	if len(missingGrants) > 0 {
+		sort.Strings(missingGrants)
+		return strings.Join(missingGrants, ", ")
+	}
+	return ""
 }
 
 type connectionOpType string
 
 const (
-	describeTable          connectionOpType = "DescribeTable"
+	createDatabase         connectionOpType = "CreateDatabase"
+	checkDatabaseExists    connectionOpType = "CheckDatabaseExists"
 	createTable            connectionOpType = "CreateTable"
+	describeTable          connectionOpType = "DescribeTable"
 	alterTable             connectionOpType = "AlterTable"
-	truncateTable          connectionOpType = "TruncateTable"
+	softTruncateTable      connectionOpType = "SoftTruncateTable"
+	hardTruncateTable      connectionOpType = "HardTruncateTable"
+	dropTable              connectionOpType = "DropTable"
 	insertBatchReplace     connectionOpType = "InsertBatch(Replace)"
 	insertBatchReplaceTask connectionOpType = "InsertBatch(Replace task)"
 	insertBatchUpdate      connectionOpType = "InsertBatch(Update)"
@@ -501,5 +677,22 @@ const (
 	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
 	getColumnTypes         connectionOpType = "GetColumnTypes"
 	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
-	connectionTest         connectionOpType = "connectionTest"
+	getUserGrants          connectionOpType = "GetUserGrants"
+	connectionTest         connectionOpType = "ConnectionTest"
+)
+
+type grantType = string
+
+const (
+	createDatabaseGrant    grantType = "CREATE DATABASE"
+	createTableGrant       grantType = "CREATE TABLE"
+	showColumnsGrant       grantType = "SHOW COLUMNS"
+	showTablesGrant        grantType = "SHOW TABLES"
+	alterAddColumnGrant    grantType = "ALTER ADD COLUMN"
+	alterDropColumnGrant   grantType = "ALTER DROP COLUMN"
+	alterModifyColumnGrant grantType = "ALTER MODIFY COLUMN"
+	insertGrant            grantType = "INSERT"
+	selectGrant            grantType = "SELECT"
+	alterUpdateGrant       grantType = "ALTER UPDATE"
+	alterDeleteGrant       grantType = "ALTER DELETE"
 )

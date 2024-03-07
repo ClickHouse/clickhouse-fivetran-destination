@@ -7,11 +7,13 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
 	"fivetran.com/fivetran_sdk/destination/common/constants"
+	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
 const ConnectionTest = "connection"
+const GrantsTest = "grants"
 
 type Server struct {
 	pb.UnimplementedDestinationServer
@@ -22,7 +24,7 @@ func (s *Server) ConfigurationForm(_ context.Context, _ *pb.ConfigurationFormReq
 }
 
 func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse, error) {
-	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedTestResponse(in.Name, err), nil
 	}
@@ -34,6 +36,13 @@ func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 		if err != nil {
 			return FailedTestResponse(in.Name, err), nil
 		}
+		log.Info("Connection test passed")
+	case GrantsTest:
+		err = conn.GrantsTest(ctx)
+		if err != nil {
+			return FailedTestResponse(in.Name, err), nil
+		}
+		log.Info("User grants test passed")
 	default:
 		return FailedTestResponse(in.Name, fmt.Errorf("unexpected test name: %s", in.Name)), nil
 	}
@@ -46,7 +55,7 @@ func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 }
 
 func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest) (*pb.DescribeTableResponse, error) {
-	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
@@ -73,7 +82,7 @@ func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 }
 
 func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*pb.CreateTableResponse, error) {
-	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -97,7 +106,7 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 }
 
 func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.AlterTableResponse, error) {
-	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -112,7 +121,7 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	err = conn.AlterTable(ctx, in.SchemaName, in.Table.Name, currentTableDescription, alterTableDescription)
+	_, err = conn.AlterTable(ctx, in.SchemaName, in.Table.Name, currentTableDescription, alterTableDescription)
 	if err != nil {
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -125,7 +134,7 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 }
 
 func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.TruncateResponse, error) {
-	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
@@ -179,7 +188,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 			fmt.Errorf("missing required column %s for delete operations", constants.FivetranDeleted)), nil
 	}
 
-	conn, err := db.GetClickHouseConnection(in.GetConfiguration())
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
