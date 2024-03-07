@@ -21,29 +21,26 @@ type Config struct {
 	Local    bool
 }
 
-// TODO: validate host
-
 // Parse ClickHouse connection config from a Fivetran config map that we receive on every GRPC call.
 func Parse(configuration map[string]string) (*Config, error) {
-	host := GetWithDefault(configuration, HostKey, "localhost", true)
-	portStr := GetWithDefault(configuration, PortKey, "9000", true)
-	port, err := strconv.Atoi(portStr)
+	host, err := validateHost(getWithDefault(configuration, HostKey, "localhost", true))
 	if err != nil {
-		return nil, fmt.Errorf("port %s must be a number in range [1, 65535]", portStr)
+		return nil, err
 	}
-	if port < 1 || port > 65535 {
-		return nil, fmt.Errorf("port %s must be in range [1, 65535]", portStr)
+	port, err := validatePort(getWithDefault(configuration, PortKey, "9000", true))
+	if err != nil {
+		return nil, err
 	}
 	return &Config{
 		Host:     host,
-		Port:     uint(port),
-		Username: GetWithDefault(configuration, UsernameKey, "default", true),
-		Password: GetWithDefault(configuration, PasswordKey, "", false),
-		Local:    GetWithDefault(configuration, "local", "false", true) == "true",
+		Port:     port,
+		Username: getWithDefault(configuration, UsernameKey, "default", true),
+		Password: getWithDefault(configuration, PasswordKey, "", false),
+		Local:    getWithDefault(configuration, "local", "false", true) == "true",
 	}, nil
 }
 
-func GetWithDefault(configuration map[string]string, key string, defaultValue string, trim bool) string {
+func getWithDefault(configuration map[string]string, key string, defaultValue string, trim bool) string {
 	value, ok := configuration[key]
 	if !ok || value == "" {
 		return defaultValue
@@ -52,4 +49,25 @@ func GetWithDefault(configuration map[string]string, key string, defaultValue st
 		return strings.Trim(value, " ")
 	}
 	return value
+}
+
+func validateHost(host string) (string, error) {
+	if strings.Index(host, ":") != -1 {
+		return "", fmt.Errorf("host %s should not contain protocol or port", host)
+	}
+	if strings.Index(host, "/") != -1 {
+		return "", fmt.Errorf("host %s should not contain path", host)
+	}
+	return host, nil
+}
+
+func validatePort(port string) (uint, error) {
+	portInt, err := strconv.Atoi(port)
+	if err != nil {
+		return 0, fmt.Errorf("port %s must be a number in range [1, 65535]", port)
+	}
+	if portInt < 1 || portInt > 65535 {
+		return 0, fmt.Errorf("port %s must be in range [1, 65535]", port)
+	}
+	return uint(portInt), nil
 }

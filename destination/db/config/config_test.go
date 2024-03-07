@@ -8,16 +8,16 @@ import (
 
 func TestGetWithDefault(t *testing.T) {
 	configuration := map[string]string{"key": "value"}
-	assert.Equal(t, "value", GetWithDefault(configuration, "key", "default", false))
-	assert.Equal(t, "default", GetWithDefault(configuration, "missing", "default", false))
-	assert.Equal(t, "", GetWithDefault(configuration, "missing", "", false))
+	assert.Equal(t, "value", getWithDefault(configuration, "key", "default", false))
+	assert.Equal(t, "default", getWithDefault(configuration, "missing", "default", false))
+	assert.Equal(t, "", getWithDefault(configuration, "missing", "", false))
 }
 
 func TestGetWithDefaultTrim(t *testing.T) {
 	configuration := map[string]string{"key": " value "}
-	assert.Equal(t, "value", GetWithDefault(configuration, "key", "default", true))
-	assert.Equal(t, " value ", GetWithDefault(configuration, "key", "default", false))
-	assert.Equal(t, "default", GetWithDefault(configuration, "missing", "default", true))
+	assert.Equal(t, "value", getWithDefault(configuration, "key", "default", true))
+	assert.Equal(t, " value ", getWithDefault(configuration, "key", "default", false))
+	assert.Equal(t, "default", getWithDefault(configuration, "missing", "default", true))
 }
 
 func TestParseConfig(t *testing.T) {
@@ -129,4 +129,19 @@ func TestParseConfigErrors(t *testing.T) {
 		assert.ErrorContains(t, err, test.expectedError, "Test %s", test.name)
 		assert.Equal(t, (*Config)(nil), actual, "Test %s", test.name)
 	}
+}
+
+func TestConfigHostValidation(t *testing.T) {
+	parsed, err := Parse(map[string]string{"host": "my.host"})
+	assert.NoError(t, err)
+	assert.Equal(t, "my.host", parsed.Host)
+
+	_, err = Parse(map[string]string{"host": "my.host:9000"})
+	assert.ErrorContains(t, err, "host my.host:9000 should not contain protocol or port")
+
+	_, err = Parse(map[string]string{"host": "my.host/path"})
+	assert.ErrorContains(t, err, "host my.host/path should not contain path")
+
+	_, err = Parse(map[string]string{"host": "tcp://my.host"})
+	assert.ErrorContains(t, err, "host tcp://my.host should not contain protocol or port")
 }
