@@ -6,10 +6,54 @@ import (
 	"strings"
 	"testing"
 
+	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGetConnectionFailureAfterMaxRetries(t *testing.T) {
+	currentMaxRetries := *flags.MaxRetries
+	currentMaxDelayMs := *flags.InitialRetryDelayMilliseconds
+	*flags.MaxRetries = 3
+	*flags.InitialRetryDelayMilliseconds = 10
+	defer func() {
+		*flags.MaxRetries = currentMaxRetries
+		*flags.InitialRetryDelayMilliseconds = currentMaxDelayMs
+	}()
+
+	ctx := context.Background()
+	conn, err := GetClickHouseConnection(ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9999",
+		"username": "default",
+		"local":    "true",
+	})
+	assert.ErrorContains(t, err, "ClickHouse connection error: ping failed after 3 attempts: dial tcp [::1]:9999: connect: connection refused")
+	assert.Nil(t, conn)
+}
+
+func TestGetConnectionInvalidUsername(t *testing.T) {
+	ctx := context.Background()
+	conn, err := GetClickHouseConnection(ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "invalid-user",
+		"local":    "true",
+	})
+	assert.ErrorContains(t, err, "ClickHouse connection error: code: 516, message: invalid-user: Authentication failed")
+	assert.Nil(t, conn)
+
+	conn, err = GetClickHouseConnection(ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"password": "invalid-password",
+		"local":    "true",
+	})
+	assert.ErrorContains(t, err, "ClickHouse connection error: code: 516, message: default: Authentication failed")
+	assert.Nil(t, conn)
+}
 
 func TestConnection(t *testing.T) {
 	ctx := context.Background()
