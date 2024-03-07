@@ -271,7 +271,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 func TestGetCheckDatabaseExistsStatement(t *testing.T) {
 	statement, err := GetCheckDatabaseExistsStatement("foo")
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT COUNT(*) FROM system.databases WHERE name = 'foo'", statement)
+	assert.Equal(t, "SELECT COUNT(*) FROM system.databases WHERE `name` = 'foo'", statement)
 
 	_, err = GetCheckDatabaseExistsStatement("")
 	assert.ErrorContains(t, err, "schema name is empty")
@@ -284,4 +284,13 @@ func TestGetCreateDatabaseStatement(t *testing.T) {
 
 	_, err = GetCreateDatabaseStatement("")
 	assert.ErrorContains(t, err, "schema name is empty")
+}
+
+func TestGetSelectFromSystemGrantsQuery(t *testing.T) {
+	query, err := GetSelectFromSystemGrantsQuery("foo")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT `access_type`, `database`, `table`, `column` FROM system.grants WHERE `user_name` = 'foo'", query)
+
+	_, err = GetSelectFromSystemGrantsQuery("")
+	assert.ErrorContains(t, err, "username is empty")
 }
