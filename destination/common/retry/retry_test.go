@@ -82,7 +82,7 @@ func TestRetryNetError(t *testing.T) {
 		}
 		return makeNetError()
 	}, context.Background(), "TestRetryNetError", false)
-	assert.ErrorContains(t, err, "failed to execute TestRetryNetError after 2 attempts")
+	assert.ErrorContains(t, err, "TestRetryNetError failed after 2 attempts")
 }
 
 func TestRetryNetErrorWithData(t *testing.T) {
@@ -117,7 +117,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 		}
 		return 0, makeNetError()
 	}, context.Background(), "TestRetryNetErrorWithData", false)
-	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData after 2 attempts")
+	assert.ErrorContains(t, err, "TestRetryNetErrorWithData failed after 2 attempts")
 
 	// also works with an arbitrary type
 	dataT, err := OnNetErrorWithData(func() (myType, error) {
@@ -145,7 +145,7 @@ func TestRetryNetErrorWithData(t *testing.T) {
 		}
 		return myType{}, makeNetError()
 	}, context.Background(), "TestRetryNetErrorWithData(T)", false)
-	assert.ErrorContains(t, err, "failed to execute TestRetryNetErrorWithData(T) after 2 attempts")
+	assert.ErrorContains(t, err, "TestRetryNetErrorWithData(T) failed after 2 attempts")
 }
 
 func TestRetryNetErrorDelayConfiguration(t *testing.T) {

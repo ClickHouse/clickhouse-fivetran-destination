@@ -50,7 +50,7 @@ func OnNetError(
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("failed to execute %s after %d attempts: %w", opName, *flags.MaxRetries, err)
+		return fmt.Errorf("%s failed after %d attempts: %w", opName, *flags.MaxRetries, err)
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func OnNetErrorWithData[T any](
 	}
 	if err != nil {
 		var empty T
-		return empty, fmt.Errorf("failed to execute %s after %d attempts: %w", opName, *flags.MaxRetries, err)
+		return empty, fmt.Errorf("%s failed after %d attempts: %w", opName, *flags.MaxRetries, err)
 	}
 	return data, nil
 }

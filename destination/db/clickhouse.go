@@ -79,13 +79,13 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	}
 	err = retry.OnNetError(func() error {
 		return conn.Ping(ctx)
-	}, ctx, "Ping", false)
+	}, ctx, "ping", false)
 	if err != nil {
 		if err.Error() == "EOF" {
-			err = fmt.Errorf("ping ClickHouse service error: unexpected EOF; " +
+			err = fmt.Errorf("ClickHouse connection error: unexpected EOF; " +
 				"this may indicate that incoming traffic is not allowed in the service networking settings")
 		} else {
-			err = fmt.Errorf("ping ClickHouse service error: %w", err)
+			err = fmt.Errorf("ClickHouse connection error: %w", err)
 		}
 		log.Error(err)
 		return nil, err
