@@ -243,7 +243,7 @@ func TestTruncateBefore(t *testing.T) {
 
 	startServer(t)
 	conf := readConfigMap(t)
-	conn, err := db.GetClickHouseConnection(conf)
+	conn, err := db.GetClickHouseConnection(context.Background(), conf)
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -287,7 +287,7 @@ func TestTruncateExistingRecordsThenSync(t *testing.T) {
 
 	startServer(t)
 	conf := readConfigMap(t)
-	conn, err := db.GetClickHouseConnection(conf)
+	conn, err := db.GetClickHouseConnection(context.Background(), conf)
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -543,14 +543,11 @@ func readConfig(t *testing.T) *config.Config {
 
 func runQuery(t *testing.T, query string) string {
 	conf := readConfig(t)
-	split := strings.Split(conf.Host, ":")
-	require.Len(t, split, 2)
 	cmdArgs := []string{
 		"exec", "fivetran-destination-clickhouse-server",
 		"clickhouse-client", "--query", query,
-		"--host", split[0],
-		"--port", split[1],
-		"--database", conf.Database,
+		"--host", conf.Host,
+		"--port", fmt.Sprint(conf.Port),
 		"--user", conf.Username,
 		"--password", conf.Password,
 	}
@@ -606,7 +603,7 @@ func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool
 	}
 	require.NoError(t, err)
 	out := string(byteOut)
-	require.Contains(t, out, "[Test connection and basic operations]: PASSED")
+	require.Contains(t, out, "[Connection test]: PASSED")
 }
 
 var schemaName = "tester"

@@ -1,6 +1,6 @@
 {
-  "host": "clickhouse:9000",
-  "database": "default",
+  "host": "clickhouse",
+  "port": "9000",
   "password": "",
   "username": "default",
   "local": "true"

@@ -8,7 +8,8 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-var hostDescription = "ClickHouse Cloud service host. Format: address:port"
+var hostDescription = "ClickHouse Cloud service host without protocol or port. For example, my.service.clickhouse.cloud"
+var portDescription = "ClickHouse Cloud service native protocol SSL/TLS port. Usually, it is 9440"
 
 func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 	return &pb.ConfigurationFormResponse{
@@ -25,9 +26,10 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				},
 			},
 			{
-				Name:     config.DatabaseKey,
-				Label:    "Database",
-				Required: true,
+				Name:        config.PortKey,
+				Label:       "Port",
+				Description: &portDescription,
+				Required:    true,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_PlainText,
 				},
@@ -37,7 +39,7 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				Label:    "Username",
 				Required: true,
 				Type: &pb.FormField_TextField{
-					TextField: pb.TextField_Password,
+					TextField: pb.TextField_PlainText,
 				},
 			},
 			{
@@ -52,7 +54,11 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 		Tests: []*pb.ConfigurationTest{
 			{
 				Name:  ConnectionTest,
-				Label: "Test connection and basic operations",
+				Label: "Connection test",
+			},
+			{
+				Name:  GrantsTest,
+				Label: "User grants test",
 			},
 		},
 	}

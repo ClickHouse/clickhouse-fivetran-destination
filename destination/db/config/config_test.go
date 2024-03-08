@@ -8,30 +8,30 @@ import (
 
 func TestGetWithDefault(t *testing.T) {
 	configuration := map[string]string{"key": "value"}
-	assert.Equal(t, "value", GetWithDefault(configuration, "key", "default", false))
-	assert.Equal(t, "default", GetWithDefault(configuration, "missing", "default", false))
-	assert.Equal(t, "", GetWithDefault(configuration, "missing", "", false))
+	assert.Equal(t, "value", getWithDefault(configuration, "key", "default", false))
+	assert.Equal(t, "default", getWithDefault(configuration, "missing", "default", false))
+	assert.Equal(t, "", getWithDefault(configuration, "missing", "", false))
 }
 
 func TestGetWithDefaultTrim(t *testing.T) {
 	configuration := map[string]string{"key": " value "}
-	assert.Equal(t, "value", GetWithDefault(configuration, "key", "default", true))
-	assert.Equal(t, " value ", GetWithDefault(configuration, "key", "default", false))
-	assert.Equal(t, "default", GetWithDefault(configuration, "missing", "default", true))
+	assert.Equal(t, "value", getWithDefault(configuration, "key", "default", true))
+	assert.Equal(t, " value ", getWithDefault(configuration, "key", "default", false))
+	assert.Equal(t, "default", getWithDefault(configuration, "missing", "default", true))
 }
 
 func TestParseConfig(t *testing.T) {
 	defaultConfig := Config{
-		Host:     "localhost:9000",
-		Database: "default",
+		Host:     "localhost",
+		Port:     9000,
 		Username: "default",
 		Password: "",
 		Local:    false,
 	}
 	withHostOnly := defaultConfig
-	withHostOnly.Host = "my.host:9440"
-	withDatabaseOnly := defaultConfig
-	withDatabaseOnly.Database = "my_db"
+	withHostOnly.Host = "my.host"
+	withPortOnly := defaultConfig
+	withPortOnly.Port = 9440
 	withUsernameOnly := defaultConfig
 	withUsernameOnly.Username = "5t"
 	withPasswordOnly := defaultConfig
@@ -44,14 +44,15 @@ func TestParseConfig(t *testing.T) {
 		{
 			name: "valid config (all set)",
 			configuration: map[string]string{
-				"host":     "my.host:9440",
+				"host":     "my.host",
+				"port":     "9440",
 				"database": "my_db",
 				"username": "5t",
 				"password": "foo_bar",
 			},
 			expected: &Config{
-				Host:     "my.host:9440",
-				Database: "my_db",
+				Host:     "my.host",
+				Port:     9440,
 				Username: "5t",
 				Password: "foo_bar",
 				Local:    false,
@@ -61,8 +62,8 @@ func TestParseConfig(t *testing.T) {
 			name:          "valid config (all defaults)",
 			configuration: map[string]string{},
 			expected: &Config{
-				Host:     "localhost:9000",
-				Database: "default",
+				Host:     "localhost",
+				Port:     9000,
 				Username: "default",
 				Password: "",
 				Local:    false,
@@ -70,13 +71,13 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:          "valid config (host only)",
-			configuration: map[string]string{"host": "my.host:9440"},
+			configuration: map[string]string{"host": "my.host"},
 			expected:      &withHostOnly,
 		},
 		{
-			name:          "valid config (database only)",
-			configuration: map[string]string{"database": "my_db"},
-			expected:      &withDatabaseOnly,
+			name:          "valid config (port only)",
+			configuration: map[string]string{"port": "9440"},
+			expected:      &withPortOnly,
 		},
 		{
 			name:          "valid config (username only)",
@@ -104,23 +105,23 @@ func TestParseConfigErrors(t *testing.T) {
 	}{
 		{
 			name:          "invalid port",
-			configuration: map[string]string{"host": "ch:foo"},
-			expectedError: "ch:foo port foo must be a number in range [1, 65535]",
+			configuration: map[string]string{"port": "foo"},
+			expectedError: "port foo must be a number in range [1, 65535]",
 		},
 		{
 			name:          "invalid port > 65535",
-			configuration: map[string]string{"host": "ch:65536"},
-			expectedError: "ch:65536 port 65536 must be in range [1, 65535]",
+			configuration: map[string]string{"port": "65536"},
+			expectedError: "port 65536 must be in range [1, 65535]",
 		},
 		{
 			name:          "invalid port 0",
-			configuration: map[string]string{"host": "ch:0"},
-			expectedError: "ch:0 port 0 must be in range [1, 65535]",
+			configuration: map[string]string{"port": "0"},
+			expectedError: "port 0 must be in range [1, 65535]",
 		},
 		{
 			name:          "invalid port < 0",
-			configuration: map[string]string{"host": "ch:-1"},
-			expectedError: "ch:-1 port -1 must be in range [1, 65535]",
+			configuration: map[string]string{"port": "-1"},
+			expectedError: "port -1 must be in range [1, 65535]",
 		},
 	}
 	for _, test := range tests {
@@ -128,4 +129,19 @@ func TestParseConfigErrors(t *testing.T) {
 		assert.ErrorContains(t, err, test.expectedError, "Test %s", test.name)
 		assert.Equal(t, (*Config)(nil), actual, "Test %s", test.name)
 	}
+}
+
+func TestConfigHostValidation(t *testing.T) {
+	parsed, err := Parse(map[string]string{"host": "my.host"})
+	assert.NoError(t, err)
+	assert.Equal(t, "my.host", parsed.Host)
+
+	_, err = Parse(map[string]string{"host": "my.host:9000"})
+	assert.ErrorContains(t, err, "host my.host:9000 should not contain protocol or port")
+
+	_, err = Parse(map[string]string{"host": "my.host/path"})
+	assert.ErrorContains(t, err, "host my.host/path should not contain path")
+
+	_, err = Parse(map[string]string{"host": "tcp://my.host"})
+	assert.ErrorContains(t, err, "host tcp://my.host should not contain protocol or port")
 }
