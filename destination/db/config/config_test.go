@@ -23,7 +23,7 @@ func TestGetWithDefaultTrim(t *testing.T) {
 func TestParseConfig(t *testing.T) {
 	defaultConfig := Config{
 		Host:     "localhost",
-		Port:     9000,
+		Port:     9440,
 		Username: "default",
 		Password: "",
 		Local:    false,
@@ -31,7 +31,7 @@ func TestParseConfig(t *testing.T) {
 	withHostOnly := defaultConfig
 	withHostOnly.Host = "my.host"
 	withPortOnly := defaultConfig
-	withPortOnly.Port = 9440
+	withPortOnly.Port = 9441
 	withUsernameOnly := defaultConfig
 	withUsernameOnly.Username = "5t"
 	withPasswordOnly := defaultConfig
@@ -45,16 +45,15 @@ func TestParseConfig(t *testing.T) {
 			name: "valid config (all set)",
 			configuration: map[string]string{
 				"host":     "my.host",
-				"port":     "9440",
-				"database": "my_db",
+				"port":     "9441",
 				"username": "5t",
-				"password": "foo_bar",
+				"password": " foo_bar ",
 			},
 			expected: &Config{
 				Host:     "my.host",
-				Port:     9440,
+				Port:     9441,
 				Username: "5t",
-				Password: "foo_bar",
+				Password: " foo_bar ",
 				Local:    false,
 			},
 		},
@@ -63,7 +62,7 @@ func TestParseConfig(t *testing.T) {
 			configuration: map[string]string{},
 			expected: &Config{
 				Host:     "localhost",
-				Port:     9000,
+				Port:     9440,
 				Username: "default",
 				Password: "",
 				Local:    false,
@@ -76,7 +75,7 @@ func TestParseConfig(t *testing.T) {
 		},
 		{
 			name:          "valid config (port only)",
-			configuration: map[string]string{"port": "9440"},
+			configuration: map[string]string{"port": "9441"},
 			expected:      &withPortOnly,
 		},
 		{

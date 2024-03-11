@@ -27,7 +27,7 @@ func Parse(configuration map[string]string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	port, err := validatePort(getWithDefault(configuration, PortKey, "9000", true))
+	port, err := validatePort(getWithDefault(configuration, PortKey, "9440", true))
 	if err != nil {
 		return nil, err
 	}
