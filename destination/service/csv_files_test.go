@@ -19,13 +19,27 @@ func TestReadCSVFile(t *testing.T) {
 	records, err := ReadCSVFile(fileName, map[string][]byte{fileName: key}, pb.Compression_ZSTD, pb.Encryption_AES)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedCSV, records)
+}
 
-	_, err = ReadCSVFile("nonexistent.csv", map[string][]byte{"nonexistent.csv": key}, pb.Compression_ZSTD, pb.Encryption_AES)
+func TestReadCSVWithHeaderOnly(t *testing.T) {
+	shortCSVFileName := "../../tests/resources/short.csv"
+	shortCSV, err := ReadCSVFile(shortCSVFileName, map[string][]byte{shortCSVFileName: key}, pb.Compression_OFF, pb.Encryption_NONE)
+	assert.NoError(t, err)
+	assert.Equal(t, [][]string{{"foo", "bar"}}, shortCSV)
+}
+
+func TestReadCSVErrors(t *testing.T) {
+	fileName := "../../tests/resources/campaign.csv.zst.aes"
+
+	// File not found
+	_, err := ReadCSVFile("nonexistent.csv", map[string][]byte{"nonexistent.csv": key}, pb.Compression_ZSTD, pb.Encryption_AES)
 	assert.ErrorContains(t, err, "file nonexistent.csv does not exist")
 
+	// Key was not provided
 	_, err = ReadCSVFile("nonexistent.csv", map[string][]byte{"not-found": key}, pb.Compression_ZSTD, pb.Encryption_AES)
 	assert.ErrorContains(t, err, "key for file nonexistent.csv not found")
 
+	// Wrong key
 	_, err = ReadCSVFile(fileName, map[string][]byte{fileName: []byte("wrong-key")}, pb.Compression_ZSTD, pb.Encryption_AES)
 	assert.ErrorContains(t, err, "failed to decrypt")
 
@@ -42,10 +56,10 @@ func TestReadCSVFile(t *testing.T) {
 	_, err = ReadCSVFile(invalidCSVFileName, map[string][]byte{invalidCSVFileName: key}, pb.Compression_OFF, pb.Encryption_NONE)
 	assert.ErrorContains(t, err, "parse error")
 
-	// CSV has column names only
-	shortCSVFileName := "../../tests/resources/short.csv"
-	_, err = ReadCSVFile(shortCSVFileName, map[string][]byte{shortCSVFileName: key}, pb.Compression_OFF, pb.Encryption_NONE)
-	assert.ErrorContains(t, err, "expected to have more than 1 line in file")
+	// CSV is empty
+	emptyCSVName := "../../tests/resources/empty.csv"
+	_, err = ReadCSVFile(emptyCSVName, map[string][]byte{emptyCSVName: key}, pb.Compression_OFF, pb.Encryption_NONE)
+	assert.ErrorContains(t, err, "received an empty CSV file")
 }
 
 func readExpectedCSV(t *testing.T, path string) [][]string {
@@ -53,5 +67,5 @@ func readExpectedCSV(t *testing.T, path string) [][]string {
 	assert.NoError(t, err)
 	expectedCSV, err := csv.NewReader(bytes.NewBuffer(expectedBytes)).ReadAll()
 	assert.NoError(t, err)
-	return expectedCSV[1:] // skip the column names
+	return expectedCSV
 }

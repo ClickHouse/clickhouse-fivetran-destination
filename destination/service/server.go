@@ -8,8 +8,10 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
 	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/log"
+	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
 const ConnectionTest = "connection"
@@ -175,10 +177,11 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		nullStr = csvParams.NullString
 		unmodifiedStr = csvParams.UnmodifiedString
 	} else {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("write batch request without CSV params")), nil
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name,
+			fmt.Errorf("cannot process a write batch request without CSV params")), nil
 	}
 
-	metadata, err := GetPrimaryKeysAndMetadataColumns(in.Table)
+	metadata, err := GetFivetranTableMetadata(in.Table)
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -198,70 +201,24 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
+	driverColumnMap := types.MakeDriverColumnMap(columnTypes)
 
-	// Benchmark overall WriteBatchRequest and Replace/Update/Delete operations
+	// Benchmark overall WriteBatchRequest and, separately, Replace/Update/Delete operations
 	err = benchmark.RunAndNotice(func() error {
-		if len(in.ReplaceFiles) > 0 {
-			err = benchmark.RunAndNotice(func() error {
-				for _, replaceFile := range in.ReplaceFiles {
-					csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
-					if err != nil {
-						return err
-					}
-					err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData, nullStr)
-					if err != nil {
-						return err
-					}
-				}
-				return nil
-			}, "WriteBatchRequest(Replace)")
-			if err != nil {
-				return err
-			}
+		err = s.processReplaceFiles(ctx, in, conn, compression, encryption, nullStr, metadata, driverColumnMap)
+		if err != nil {
+			return err
 		}
-
-		if len(in.UpdateFiles) > 0 {
-			err = benchmark.RunAndNotice(func() error {
-				for _, updateFile := range in.UpdateFiles {
-					csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
-					if err != nil {
-						return err
-					}
-					err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
-						nullStr, unmodifiedStr)
-					if err != nil {
-						return err
-					}
-				}
-				return nil
-			}, "WriteBatchRequest(Update)")
-			if err != nil {
-				return err
-			}
+		err = s.processUpdateFiles(ctx, in, conn, compression, encryption, nullStr, unmodifiedStr, metadata, columnTypes, driverColumnMap)
+		if err != nil {
+			return err
 		}
-
-		if len(in.DeleteFiles) > 0 {
-			err = benchmark.RunAndNotice(func() error {
-				for _, deleteFile := range in.DeleteFiles {
-					csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
-					if err != nil {
-						return err
-					}
-					err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes, csvData,
-						metadata.FivetranSyncedIdx, uint(metadata.FivetranDeletedIdx))
-					if err != nil {
-						return err
-					}
-				}
-				return nil
-			}, "WriteBatchRequest(Delete)")
-			if err != nil {
-				return err
-			}
+		err = s.processDeleteFiles(ctx, in, conn, compression, encryption, metadata, columnTypes, driverColumnMap)
+		if err != nil {
+			return err
 		}
-
 		return nil
-	}, "WriteBatchRequest(Total)")
+	}, writeBatchTotalOp)
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
@@ -272,3 +229,163 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		},
 	}, nil
 }
+
+func (s *Server) processReplaceFiles(
+	ctx context.Context,
+	in *pb.WriteBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	nullStr string,
+	metadata *types.FivetranTableMetadata,
+	driverColumnMap map[string]*types.DriverColumn,
+) (err error) {
+	if len(in.ReplaceFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, replaceFile := range in.ReplaceFiles {
+				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeBatchReplaceOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   replaceFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(driverColumnMap, csvData[0], metadata.ColumnsMap)
+				if err != nil {
+					return err
+				}
+				// dropping the processed header from the CSV
+				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData[1:], csvColumns, nullStr)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}, writeBatchReplaceOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) processUpdateFiles(
+	ctx context.Context,
+	in *pb.WriteBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	nullStr string,
+	unmodifiedStr string,
+	metadata *types.FivetranTableMetadata,
+	columnTypes []driver.ColumnType,
+	driverColumnMap map[string]*types.DriverColumn,
+) (err error) {
+	if len(in.UpdateFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, updateFile := range in.UpdateFiles {
+				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeBatchUpdateOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   updateFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(driverColumnMap, csvData[0], metadata.ColumnsMap)
+				if err != nil {
+					return err
+				}
+				// dropping the processed header from the CSV
+				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes,
+					csvData[1:], csvColumns, nullStr, unmodifiedStr)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}, writeBatchUpdateOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) processDeleteFiles(
+	ctx context.Context,
+	in *pb.WriteBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	metadata *types.FivetranTableMetadata,
+	columnTypes []driver.ColumnType,
+	driverColumnMap map[string]*types.DriverColumn,
+) (err error) {
+	if len(in.DeleteFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, deleteFile := range in.DeleteFiles {
+				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeBatchDeleteOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   deleteFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(driverColumnMap, csvData[0], metadata.ColumnsMap)
+				if err != nil {
+					return err
+				}
+				// dropping the processed header from the CSV
+				err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes,
+					csvData[1:], csvColumns, metadata.FivetranSyncedIdx, uint(metadata.FivetranDeletedIdx))
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}, writeBatchDeleteOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type emptyCSVWarnParams struct {
+	operation  string
+	schemaName string
+	tableName  string
+	fileName   string
+}
+
+func logEmptyCSV(params *emptyCSVWarnParams) {
+	log.Warn(fmt.Sprintf("[%s] %s.%s got a CSV file %s which contains the header only. Skipping",
+		params.operation, params.schemaName, params.tableName, params.fileName))
+}
+
+type writeBatchOpType = string
+
+const (
+	writeBatchReplaceOp writeBatchOpType = "WriteBatchRequest(Replace)"
+	writeBatchUpdateOp  writeBatchOpType = "WriteBatchRequest(Update)"
+	writeBatchDeleteOp  writeBatchOpType = "WriteBatchRequest(Delete)"
+	writeBatchTotalOp   writeBatchOpType = "WriteBatchRequest(Total)"
+)

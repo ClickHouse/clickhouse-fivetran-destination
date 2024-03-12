@@ -313,10 +313,10 @@ func TestTruncateExistingRecordsThenSync(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, PrimaryKey: false},
 		}}
 
-	metadata, err := service.GetPrimaryKeysAndMetadataColumns(table)
+	metadata, err := service.GetFivetranTableMetadata(table)
 	require.NoError(t, err)
 
-	colTypes, err := conn.GetColumnTypes(ctx, schemaName, tableName)
+	colTypes, _, err := conn.GetColumnTypes(ctx, schemaName, tableName) // FIXME
 	require.NoError(t, err)
 
 	nullStr := "this-is-null"

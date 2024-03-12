@@ -164,6 +164,11 @@ func (conn *ClickHouseConnection) DescribeTable(
 	return types.MakeTableDescription(columns), nil
 }
 
+// GetColumnTypes
+// returns the information about the table columns as reported by the driver;
+// columns have the same order as in the ClickHouse table definition.
+// It is used to determine the scan types of the rows that we will insert into the table,
+// as well as validate the CSV header and build a proper mapping of CSV -> database columns indices.
 func (conn *ClickHouseConnection) GetColumnTypes(
 	ctx context.Context,
 	schemaName string,
@@ -173,7 +178,7 @@ func (conn *ClickHouseConnection) GetColumnTypes(
 	if err != nil {
 		return nil, err
 	}
-	rows, err := conn.ExecQuery(ctx, query, getColumnTypes, false)
+	rows, err := conn.ExecQuery(ctx, query, getColumnTypesWithIndexMap, false)
 	if err != nil {
 		return nil, err
 	}
@@ -410,16 +415,16 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 						if err = rows.Scan(scanRows[i]...); err != nil {
 							return err
 						}
-						mappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+						rowMappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
 						if err != nil {
 							return err
 						}
-						_, ok := rowsByPKValues[mappingKey]
+						_, ok := rowsByPKValues[rowMappingKey]
 						if ok {
 							// should never happen in practice
-							log.Error(fmt.Errorf("primary key mapping collision: %s", mappingKey))
+							log.Error(fmt.Errorf("primary key mapping collision: %s", rowMappingKey))
 						}
-						rowsByPKValues[mappingKey] = scanRows[i]
+						rowsByPKValues[rowMappingKey] = scanRows[i]
 					}
 					return nil
 				})
@@ -447,6 +452,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	schemaName string,
 	table *pb.Table,
 	csv [][]string,
+	csvColumns types.CSVColumns,
 	nullStr string,
 ) error {
 	return benchmark.RunAndNotice(func() error {
@@ -499,6 +505,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	pkCols []*types.PrimaryKeyColumn,
 	columnTypes []driver.ColumnType,
 	csv [][]string,
+	csvColumns types.CSVColumns,
 	nullStr string,
 	unmodifiedStr string,
 ) error {
@@ -555,6 +562,7 @@ func (conn *ClickHouseConnection) SoftDeleteBatch(
 	pkCols []*types.PrimaryKeyColumn,
 	columnTypes []driver.ColumnType,
 	csv [][]string,
+	csvColumns types.CSVColumns,
 	fivetranSyncedIdx uint,
 	fivetranDeletedIdx uint,
 ) error {
@@ -661,24 +669,24 @@ func joinMissingGrants(userGrants map[grantType]bool) string {
 type connectionOpType string
 
 const (
-	createDatabase         connectionOpType = "CreateDatabase"
-	checkDatabaseExists    connectionOpType = "CheckDatabaseExists"
-	createTable            connectionOpType = "CreateTable"
-	describeTable          connectionOpType = "DescribeTable"
-	alterTable             connectionOpType = "AlterTable"
-	softTruncateTable      connectionOpType = "SoftTruncateTable"
-	hardTruncateTable      connectionOpType = "HardTruncateTable"
-	dropTable              connectionOpType = "DropTable"
-	insertBatchReplace     connectionOpType = "InsertBatch(Replace)"
-	insertBatchReplaceTask connectionOpType = "InsertBatch(Replace task)"
-	insertBatchUpdate      connectionOpType = "InsertBatch(Update)"
-	insertBatchUpdateTask  connectionOpType = "InsertBatch(Update task)"
-	insertBatchDelete      connectionOpType = "InsertBatch(Delete)"
-	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
-	getColumnTypes         connectionOpType = "GetColumnTypes"
-	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
-	getUserGrants          connectionOpType = "GetUserGrants"
-	connectionTest         connectionOpType = "ConnectionTest"
+	createDatabase             connectionOpType = "CreateDatabase"
+	checkDatabaseExists        connectionOpType = "CheckDatabaseExists"
+	createTable                connectionOpType = "CreateTable"
+	describeTable              connectionOpType = "DescribeTable"
+	alterTable                 connectionOpType = "AlterTable"
+	softTruncateTable          connectionOpType = "SoftTruncateTable"
+	hardTruncateTable          connectionOpType = "HardTruncateTable"
+	dropTable                  connectionOpType = "DropTable"
+	insertBatchReplace         connectionOpType = "InsertBatch(Replace)"
+	insertBatchReplaceTask     connectionOpType = "InsertBatch(Replace task)"
+	insertBatchUpdate          connectionOpType = "InsertBatch(Update)"
+	insertBatchUpdateTask      connectionOpType = "InsertBatch(Update task)"
+	insertBatchDelete          connectionOpType = "InsertBatch(Delete)"
+	insertBatchDeleteTask      connectionOpType = "InsertBatch(Delete task)"
+	getColumnTypesWithIndexMap connectionOpType = "GetColumnTypes"
+	selectByPrimaryKeys        connectionOpType = "SelectByPrimaryKeys"
+	getUserGrants              connectionOpType = "GetUserGrants"
+	connectionTest             connectionOpType = "ConnectionTest"
 )
 
 type grantType = string

@@ -183,7 +183,11 @@ func MergeSoftDeletedRows(
 }
 
 // ToInsertRow converts a CSV row to a ClickHouse row, parsing strings and converting them to the correct types.
-func ToInsertRow(csvRow []string, table *pb.Table, nullStr string) ([]any, error) {
+func ToInsertRow(
+	csvRow []string,
+	table *pb.Table,
+	nullStr string,
+) ([]any, error) {
 	if nullStr == "" {
 		return nil, fmt.Errorf("nullStr can't be empty")
 	}
@@ -210,7 +214,13 @@ func ToInsertRow(csvRow []string, table *pb.Table, nullStr string) ([]any, error
 
 // ToUpdatedRow merges an existing ClickHouse row with the CSV row values.
 // Fields that are equal to unmodifiedStr are not updated.
-func ToUpdatedRow(csvRow []string, dbRow []any, table *pb.Table, nullStr string, unmodifiedStr string) ([]any, error) {
+func ToUpdatedRow(
+	csvRow []string,
+	dbRow []any,
+	table *pb.Table,
+	nullStr string,
+	unmodifiedStr string,
+) ([]any, error) {
 	if unmodifiedStr == "" {
 		return nil, fmt.Errorf("unmodifiedStr can't be empty")
 	}
@@ -246,7 +256,12 @@ func ToUpdatedRow(csvRow []string, dbRow []any, table *pb.Table, nullStr string,
 
 // ToSoftDeletedRow updates an existing ClickHouse row with _fivetran_deleted and _fivetran_synced values from the CSV.
 // The rest of the fields are not updated (all other fields are marked as nullStr in the CSV).
-func ToSoftDeletedRow(csvRow []string, dbRow []any, fivetranSyncedIdx uint, fivetranDeletedIdx uint) ([]any, error) {
+func ToSoftDeletedRow(
+	csvRow []string,
+	dbRow []any,
+	fivetranSyncedIdx uint,
+	fivetranDeletedIdx uint,
+) ([]any, error) {
 	if fivetranDeletedIdx >= uint(len(csvRow)) {
 		return nil, fmt.Errorf("can't find column %s with index %d in a CSV row",
 			constants.FivetranDeleted, fivetranDeletedIdx)
