@@ -1,0 +1,47 @@
+{
+  "create_table": {
+    "table_to_truncate": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "table_to_truncate"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "table_to_truncate": [
+          {
+            "id": 1,
+            "name": "foo"
+          }
+        ]
+      }
+    },
+    {
+      "soft_truncate_before": [
+        "table_to_truncate"
+      ]
+    },
+    {
+      "upsert": {
+        "table_to_truncate": [
+          {
+            "id": 2,
+            "name": "bar"
+          },
+          {
+            "id": 3,
+            "name": "qaz"
+          }
+        ]
+      }
+    }
+  ]
+}

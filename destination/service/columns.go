@@ -51,37 +51,23 @@ func ToClickHouse(table *pb.Table) (*types.TableDescription, error) {
 	return types.MakeTableDescription(result), nil
 }
 
-func GetPrimaryKeysAndMetadataColumns(table *pb.Table) (*types.PrimaryKeysAndMetadataColumns, error) {
+func GetFivetranTableMetadata(table *pb.Table) (*types.FivetranTableMetadata, error) {
 	if table == nil || len(table.Columns) == 0 {
 		return nil, fmt.Errorf("no columns in Fivetran table definition")
 	}
-	var pkCols []*types.PrimaryKeyColumn
+	colMap := make(map[string]*pb.Column, len(table.Columns))
 	fivetranSyncedIdx := -1
-	fivetranDeletedIdx := -1
 	for i, col := range table.Columns {
-		if col.PrimaryKey {
-			pkCols = append(pkCols, &types.PrimaryKeyColumn{
-				Name:  col.Name,
-				Type:  col.Type,
-				Index: uint(i),
-			})
-		}
 		if col.Name == constants.FivetranSynced {
 			fivetranSyncedIdx = i
 		}
-		if col.Name == constants.FivetranDeleted {
-			fivetranDeletedIdx = i
-		}
-	}
-	if len(pkCols) == 0 {
-		return nil, fmt.Errorf("no primary keys found")
+		colMap[col.Name] = col
 	}
 	if fivetranSyncedIdx < 0 {
 		return nil, fmt.Errorf("no %s column found", constants.FivetranSynced)
 	}
-	return &types.PrimaryKeysAndMetadataColumns{
-		PrimaryKeys:        pkCols,
-		FivetranSyncedIdx:  uint(fivetranSyncedIdx),
-		FivetranDeletedIdx: fivetranDeletedIdx,
+	return &types.FivetranTableMetadata{
+		FivetranSyncedIdx: uint(fivetranSyncedIdx),
+		ColumnsMap:        colMap,
 	}, nil
 }

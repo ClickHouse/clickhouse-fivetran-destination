@@ -59,8 +59,8 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 	assert.NoError(t, err)
 	defer rows.Close()
 
-	columnTypes := rows.ColumnTypes()
-	emptyRows := ColumnTypesToEmptyScanRows(columnTypes, 10)
+	driverColumns := types.MakeDriverColumns(rows.ColumnTypes())
+	emptyRows := ColumnTypesToEmptyScanRows(driverColumns, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, 10, len(emptyRows))
 
@@ -184,8 +184,8 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 	rows, err := conn.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE false", tableName))
 	assert.NoError(t, err)
 
-	columnTypes := rows.ColumnTypes()
-	dbRow := ColumnTypesToEmptyScanRows(columnTypes, 1)[0]
+	driverColumns := types.MakeDriverColumns(rows.ColumnTypes())
+	dbRow := ColumnTypesToEmptyScanRows(driverColumns, 1)[0]
 	rows.Close()
 
 	// Scan into that "proto" row
@@ -197,64 +197,66 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 
 	// Serialization of a single PK to a mapping key (assuming one column is defined as a PK in Fivetran)
 	singlePrimaryKeyArgs := []struct {
-		*types.PrimaryKeyColumn
-		string
+		col *types.CSVColumn
+		key string
 	}{
-		{&types.PrimaryKeyColumn{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0}, "b:true"},
-		{&types.PrimaryKeyColumn{Name: "i16", Type: pb.DataType_SHORT, Index: 1}, "i16:42"},
-		{&types.PrimaryKeyColumn{Name: "i32", Type: pb.DataType_INT, Index: 2}, "i32:43"},
-		{&types.PrimaryKeyColumn{Name: "i64", Type: pb.DataType_LONG, Index: 3}, "i64:44"},
-		{&types.PrimaryKeyColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4}, "f32:100.5"},
-		{&types.PrimaryKeyColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5}, "f64:200.5"},
-		{&types.PrimaryKeyColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6}, "dec:47.47"},
-		{&types.PrimaryKeyColumn{Name: "utc_datetime_nanos", Type: pb.DataType_UTC_DATETIME, Index: 7}, "utc_datetime_nanos:1614897862123456789"},
-		{&types.PrimaryKeyColumn{Name: "utc_datetime_micros", Type: pb.DataType_UTC_DATETIME, Index: 8}, "utc_datetime_micros:1614897862123456000"},
-		{&types.PrimaryKeyColumn{Name: "utc_datetime_millis", Type: pb.DataType_UTC_DATETIME, Index: 9}, "utc_datetime_millis:1614897862123000000"},
-		{&types.PrimaryKeyColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 10}, "utc_datetime:1614897862000000000"},
-		{&types.PrimaryKeyColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 11}, "naive_datetime:2023-05-07T18:22:44"},
-		{&types.PrimaryKeyColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 12}, "naive_date:2019-12-15"},
-		{&types.PrimaryKeyColumn{Name: "str", Type: pb.DataType_STRING, Index: 13}, "str:test"},
+		{&types.CSVColumn{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0, TableIndex: 0}, "b:true"},
+		{&types.CSVColumn{Name: "i16", Type: pb.DataType_SHORT, Index: 1, TableIndex: 1}, "i16:42"},
+		{&types.CSVColumn{Name: "i32", Type: pb.DataType_INT, Index: 2, TableIndex: 2}, "i32:43"},
+		{&types.CSVColumn{Name: "i64", Type: pb.DataType_LONG, Index: 3, TableIndex: 3}, "i64:44"},
+		{&types.CSVColumn{Name: "f32", Type: pb.DataType_FLOAT, Index: 4, TableIndex: 4}, "f32:100.5"},
+		{&types.CSVColumn{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5, TableIndex: 5}, "f64:200.5"},
+		{&types.CSVColumn{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6, TableIndex: 6}, "dec:47.47"},
+		{&types.CSVColumn{Name: "utc_datetime_nanos", Type: pb.DataType_UTC_DATETIME, Index: 7, TableIndex: 7}, "utc_datetime_nanos:1614897862123456789"},
+		{&types.CSVColumn{Name: "utc_datetime_micros", Type: pb.DataType_UTC_DATETIME, Index: 8, TableIndex: 8}, "utc_datetime_micros:1614897862123456000"},
+		{&types.CSVColumn{Name: "utc_datetime_millis", Type: pb.DataType_UTC_DATETIME, Index: 9, TableIndex: 9}, "utc_datetime_millis:1614897862123000000"},
+		{&types.CSVColumn{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 10, TableIndex: 10}, "utc_datetime:1614897862000000000"},
+		{&types.CSVColumn{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 11, TableIndex: 11}, "naive_datetime:2023-05-07T18:22:44"},
+		{&types.CSVColumn{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 12, TableIndex: 12}, "naive_date:2019-12-15"},
+		{&types.CSVColumn{Name: "str", Type: pb.DataType_STRING, Index: 13, TableIndex: 13}, "str:test"},
 	}
 	for _, arg := range singlePrimaryKeyArgs {
-		key, err := GetDatabaseRowMappingKey(dbRow, []*types.PrimaryKeyColumn{arg.PrimaryKeyColumn})
-		assert.NoError(t, err, "Expected no error for key %s", arg.string)
-		assert.Equal(t, arg.string, key, "Expected key to be %s", arg.string)
+		csvColumns := &types.CSVColumns{All: []*types.CSVColumn{arg.col}, PrimaryKeys: []*types.CSVColumn{arg.col}}
+		key, err := GetDatabaseRowMappingKey(dbRow, csvColumns)
+		assert.NoError(t, err, "Expected no error for key %s", arg.key)
+		assert.Equal(t, arg.key, key, "Expected key to be %s", arg.key)
 	}
 
 	// Serialization of multiple PKs to a mapping key (assuming two columns are defined as PKs in Fivetran)
 	multiplePrimaryKeyArgs := []struct {
-		pkCols []*types.PrimaryKeyColumn
-		key    string
+		csvCols []*types.CSVColumn
+		key     string
 	}{
-		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0},
-			{Name: "i16", Type: pb.DataType_SHORT, Index: 1},
+		{csvCols: []*types.CSVColumn{
+			{Name: "b", Type: pb.DataType_BOOLEAN, Index: 0, TableIndex: 0},
+			{Name: "i16", Type: pb.DataType_SHORT, Index: 1, TableIndex: 1},
 		}, key: "b:true,i16:42"},
-		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "i32", Type: pb.DataType_INT, Index: 2},
-			{Name: "i64", Type: pb.DataType_LONG, Index: 3},
+		{csvCols: []*types.CSVColumn{
+			{Name: "i32", Type: pb.DataType_INT, Index: 2, TableIndex: 2},
+			{Name: "i64", Type: pb.DataType_LONG, Index: 3, TableIndex: 3},
 		}, key: "i32:43,i64:44"},
-		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "f32", Type: pb.DataType_FLOAT, Index: 4},
-			{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5},
+		{csvCols: []*types.CSVColumn{
+			{Name: "f32", Type: pb.DataType_FLOAT, Index: 4, TableIndex: 4},
+			{Name: "f64", Type: pb.DataType_DOUBLE, Index: 5, TableIndex: 5},
 		}, key: "f32:100.5,f64:200.5"},
-		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6},
-			{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7},
+		{csvCols: []*types.CSVColumn{
+			{Name: "dec", Type: pb.DataType_DECIMAL, Index: 6, TableIndex: 6},
+			{Name: "utc_datetime", Type: pb.DataType_UTC_DATETIME, Index: 7, TableIndex: 7},
 		}, key: "dec:47.47,utc_datetime:1614897862123456789"},
-		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "utc_datetime_nanos", Type: pb.DataType_UTC_DATETIME, Index: 7},
-			{Name: "utc_datetime_micros", Type: pb.DataType_UTC_DATETIME, Index: 8},
-			{Name: "utc_datetime_millis", Type: pb.DataType_UTC_DATETIME, Index: 9},
+		{csvCols: []*types.CSVColumn{
+			{Name: "utc_datetime_nanos", Type: pb.DataType_UTC_DATETIME, Index: 7, TableIndex: 7},
+			{Name: "utc_datetime_micros", Type: pb.DataType_UTC_DATETIME, Index: 8, TableIndex: 8},
+			{Name: "utc_datetime_millis", Type: pb.DataType_UTC_DATETIME, Index: 9, TableIndex: 9},
 		}, key: "utc_datetime_nanos:1614897862123456789,utc_datetime_micros:1614897862123456000,utc_datetime_millis:1614897862123000000"},
-		{pkCols: []*types.PrimaryKeyColumn{
-			{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 11},
-			{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 12},
-			{Name: "str", Type: pb.DataType_STRING, Index: 13},
+		{csvCols: []*types.CSVColumn{
+			{Name: "naive_datetime", Type: pb.DataType_NAIVE_DATETIME, Index: 11, TableIndex: 11},
+			{Name: "naive_date", Type: pb.DataType_NAIVE_DATE, Index: 12, TableIndex: 12},
+			{Name: "str", Type: pb.DataType_STRING, Index: 13, TableIndex: 13},
 		}, key: "naive_datetime:2023-05-07T18:22:44,naive_date:2019-12-15,str:test"},
 	}
 	for i, arg := range multiplePrimaryKeyArgs {
-		key, err := GetDatabaseRowMappingKey(dbRow, arg.pkCols)
+		csvColumns := &types.CSVColumns{All: arg.csvCols, PrimaryKeys: arg.csvCols}
+		key, err := GetDatabaseRowMappingKey(dbRow, csvColumns)
 		assert.NoError(t, err, "Expected no error for idx %d with key %s", i, arg.key)
 		assert.Equal(t, arg.key, key, "Expected key to be %s for idx %d", arg.key, i)
 	}

@@ -1,0 +1,59 @@
+{
+  "create_table": {
+    "soft_delete_table": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "soft_delete_table"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "soft_delete_table": [
+          {
+            "id": 1,
+            "name": null
+          },
+          {
+            "id": 2,
+            "name": "two"
+          },
+          {
+            "id": 3,
+            "name": "three"
+          },
+          {
+            "id": 4,
+            "name": "four"
+          },
+          {
+            "id": 5,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "soft_delete": {
+        "soft_delete_table": [
+          {
+            "id": 3
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 5
+          }
+        ]
+      }
+    }
+  ]
+}

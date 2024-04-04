@@ -17,6 +17,8 @@ var WriteBatchSize = flag.Uint("write-batch-size", 100_000,
 	"Batch size for all write operations")
 var SelectBatchSize = flag.Uint("select-batch-size", 5_000,
 	"Batch size for SELECT operations")
+var HardDeleteBatchSize = flag.Uint("hard-delete-batch-size", 5_000,
+	"Batch size for hard delete operations")
 var MaxParallelSelects = flag.Uint("max-parallel-selects", 10,
 	"Max number of parallel SELECT queries")
 

@@ -29,7 +29,7 @@ sdk-test:
 		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=172.17.0.1 \
 		--network=host \
-		fivetrandocker/sdk-destination-tester:024.0306.001 $$TEST_ARGS
+		fivetrandocker/sdk-destination-tester:024.0314.001 $$TEST_ARGS
 
 recreate-test-db:
 	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123

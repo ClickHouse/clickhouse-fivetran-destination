@@ -66,9 +66,9 @@ func ReadCSVFile(
 		return nil, fmt.Errorf("failed to load CSV file %s with encryption %s and compression %s, cause: %w",
 			fileName, encryption.String(), compression.String(), err)
 	}
-	if len(records) < 2 {
-		return nil, fmt.Errorf("expected to have more than 1 line in file %s", fileName)
+	if len(records) < 1 {
+		return nil, fmt.Errorf("received an empty CSV file %s without a header", fileName)
 	}
 
-	return records[1:], nil // skip the column names
+	return records, nil
 }

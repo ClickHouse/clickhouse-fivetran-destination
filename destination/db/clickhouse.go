@@ -93,10 +93,15 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	return &ClickHouseConnection{Conn: conn, username: connConfig.Username}, nil
 }
 
-func (conn *ClickHouseConnection) ExecDDL(ctx context.Context, statement string, op connectionOpType) error {
+func (conn *ClickHouseConnection) ExecStatement(
+	ctx context.Context,
+	statement string,
+	op connectionOpType,
+	benchmark bool,
+) error {
 	err := retry.OnNetError(func() error {
 		return conn.Exec(ctx, statement)
-	}, ctx, string(op), false)
+	}, ctx, string(op), benchmark)
 	if err != nil {
 		err = fmt.Errorf("error while executing %s: %w", statement, err)
 		log.Error(err)
@@ -164,6 +169,11 @@ func (conn *ClickHouseConnection) DescribeTable(
 	return types.MakeTableDescription(columns), nil
 }
 
+// GetColumnTypes
+// returns the information about the table columns as reported by the driver;
+// columns have the same order as in the ClickHouse table definition.
+// It is used to determine the scan types of the rows that we will insert into the table,
+// as well as validate the CSV header and build a proper mapping of CSV -> database columns indices.
 func (conn *ClickHouseConnection) GetColumnTypes(
 	ctx context.Context,
 	schemaName string,
@@ -173,7 +183,7 @@ func (conn *ClickHouseConnection) GetColumnTypes(
 	if err != nil {
 		return nil, err
 	}
-	rows, err := conn.ExecQuery(ctx, query, getColumnTypes, false)
+	rows, err := conn.ExecQuery(ctx, query, getColumnTypesWithIndexMap, false)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +253,7 @@ func (conn *ClickHouseConnection) CreateDatabase(
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(ctx, statement, createDatabase)
+	return conn.ExecStatement(ctx, statement, createDatabase, false)
 }
 
 // CreateTable will additionally create a database if it does not exist yet.
@@ -268,7 +278,7 @@ func (conn *ClickHouseConnection) CreateTable(
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(ctx, statement, createTable)
+	return conn.ExecStatement(ctx, statement, createTable, false)
 }
 
 // AlterTable will not execute any statements if both table definitions are identical.
@@ -290,7 +300,7 @@ func (conn *ClickHouseConnection) AlterTable(
 	if err != nil {
 		return false, err
 	}
-	err = conn.ExecDDL(ctx, statement, alterTable)
+	err = conn.ExecStatement(ctx, statement, alterTable, true)
 	if err == nil {
 		return true, nil
 	}
@@ -317,7 +327,7 @@ func (conn *ClickHouseConnection) TruncateTable(
 	} else {
 		op = softTruncateTable
 	}
-	return conn.ExecDDL(ctx, statement, op)
+	return conn.ExecStatement(ctx, statement, op, true)
 }
 
 func (conn *ClickHouseConnection) DropTable(
@@ -328,7 +338,7 @@ func (conn *ClickHouseConnection) DropTable(
 	if err != nil {
 		return err
 	}
-	return conn.ExecDDL(ctx, statement, dropTable)
+	return conn.ExecStatement(ctx, statement, dropTable, false)
 }
 
 func (conn *ClickHouseConnection) InsertBatch(
@@ -376,12 +386,12 @@ func (conn *ClickHouseConnection) InsertBatch(
 func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	ctx context.Context,
 	qualifiedTableName sql.QualifiedTableName,
-	columnTypes []driver.ColumnType,
-	pkCols []*types.PrimaryKeyColumn,
+	driverColumns *types.DriverColumns,
+	csvCols *types.CSVColumns,
 	csv [][]string,
 ) (RowsByPrimaryKeyValue, error) {
 	return benchmark.RunAndNoticeWithData(func() (RowsByPrimaryKeyValue, error) {
-		scanRows := ColumnTypesToEmptyScanRows(columnTypes, uint(len(csv)))
+		scanRows := ColumnTypesToEmptyScanRows(driverColumns, uint(len(csv)))
 		groups, err := GroupSlices(uint(len(csv)), *flags.SelectBatchSize, *flags.MaxParallelSelects)
 		if err != nil {
 			return nil, err
@@ -395,7 +405,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 				s := slice
 				eg.Go(func() error {
 					batch := csv[s.Start:s.End]
-					query, err := sql.GetSelectByPrimaryKeysQuery(batch, qualifiedTableName, pkCols)
+					query, err := sql.GetSelectByPrimaryKeysQuery(batch, csvCols, qualifiedTableName)
 					if err != nil {
 						return err
 					}
@@ -410,16 +420,16 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 						if err = rows.Scan(scanRows[i]...); err != nil {
 							return err
 						}
-						mappingKey, err := GetDatabaseRowMappingKey(scanRows[i], pkCols)
+						rowMappingKey, err := GetDatabaseRowMappingKey(scanRows[i], csvCols)
 						if err != nil {
 							return err
 						}
-						_, ok := rowsByPKValues[mappingKey]
+						_, ok := rowsByPKValues[rowMappingKey]
 						if ok {
 							// should never happen in practice
-							log.Error(fmt.Errorf("primary key mapping collision: %s", mappingKey))
+							log.Error(fmt.Errorf("primary key mapping collision: %s", rowMappingKey))
 						}
-						rowsByPKValues[mappingKey] = scanRows[i]
+						rowsByPKValues[rowMappingKey] = scanRows[i]
 					}
 					return nil
 				})
@@ -447,6 +457,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	schemaName string,
 	table *pb.Table,
 	csv [][]string,
+	csvColumns *types.CSVColumns,
 	nullStr string,
 ) error {
 	return benchmark.RunAndNotice(func() error {
@@ -463,7 +474,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 				batch := csv[slice.Start:slice.End]
 				insertRows := make([][]interface{}, len(batch))
 				for j, csvRow := range batch {
-					insertRow, err := ToInsertRow(csvRow, table, nullStr)
+					insertRow, err := ToInsertRow(csvRow, csvColumns, nullStr)
 					if err != nil {
 						return err
 					}
@@ -496,8 +507,8 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	pkCols []*types.PrimaryKeyColumn,
-	columnTypes []driver.ColumnType,
+	driverColumns *types.DriverColumns,
+	csvColumns *types.CSVColumns,
 	csv [][]string,
 	nullStr string,
 	unmodifiedStr string,
@@ -514,11 +525,11 @@ func (conn *ClickHouseConnection) UpdateBatch(
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, columnTypes, pkCols, batch)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, driverColumns, csvColumns, batch)
 				if err != nil {
 					return err
 				}
-				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, pkCols, table, nullStr, unmodifiedStr)
+				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr)
 				if err != nil {
 					return err
 				}
@@ -532,60 +543,40 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	}, string(insertBatchUpdate))
 }
 
-// SoftDeleteBatch uses one of "delete" CSV to mark the records as deleted (_fivetran_deleted = True),
-// and update their Fivetran sync time (_fivetran_synced) to the CSV row value.
-//
-// Selects rows by PK found in CSV, merges these rows with the CSV values, and inserts them back.
-//
-// If a record is not found in the table, it is skipped (though it should not usually happen).
-// If a record is found, `_fivetran_deleted` is set to True,
-// and `_fivetran_synced` is updated with a new value from the CSV.
-//
-// All other columns are left as-is in the original record (CSV does not contain these values, thus we need to SELECT).
-//
-// In the end, ReplacingMergeTree handles the merging of the "soft deleted" records with their previous versions.
-// Any duplicates are also handled by ReplacingMergeTree itself (during merges or when using SELECT FINAL),
-// so it's safe to retry and not care about inserting the same record several times.
-//
-// NB: retries are handled by SelectByPrimaryKeys and InsertBatch.
-func (conn *ClickHouseConnection) SoftDeleteBatch(
+// HardDelete is called when processing "delete" CSVs.
+// Uses lightweight deletes to remove records from the table.
+// See also: sql.GetHardDeleteStatement
+func (conn *ClickHouseConnection) HardDelete(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	pkCols []*types.PrimaryKeyColumn,
-	columnTypes []driver.ColumnType,
 	csv [][]string,
-	fivetranSyncedIdx uint,
-	fivetranDeletedIdx uint,
+	csvColumns *types.CSVColumns,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
 			return err
 		}
-		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
+		groups, err := GroupSlices(uint(len(csv)), *flags.HardDeleteBatchSize, 1)
 		if err != nil {
 			return err
 		}
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, columnTypes, pkCols, batch)
+				statement, err := sql.GetHardDeleteStatement(batch, csvColumns, qualifiedTableName)
 				if err != nil {
 					return err
 				}
-				insertRows, skipIdx, err := MergeSoftDeletedRows(batch, selectRows, pkCols, fivetranSyncedIdx, fivetranDeletedIdx)
-				if err != nil {
-					return err
-				}
-				err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, skipIdx, string(insertBatchDeleteTask))
+				err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
 				if err != nil {
 					return err
 				}
 			}
 		}
 		return nil
-	}, string(insertBatchDelete))
+	}, string(insertBatchHardDelete))
 }
 
 func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
@@ -661,24 +652,26 @@ func joinMissingGrants(userGrants map[grantType]bool) string {
 type connectionOpType string
 
 const (
-	createDatabase         connectionOpType = "CreateDatabase"
-	checkDatabaseExists    connectionOpType = "CheckDatabaseExists"
-	createTable            connectionOpType = "CreateTable"
-	describeTable          connectionOpType = "DescribeTable"
-	alterTable             connectionOpType = "AlterTable"
-	softTruncateTable      connectionOpType = "SoftTruncateTable"
-	hardTruncateTable      connectionOpType = "HardTruncateTable"
-	dropTable              connectionOpType = "DropTable"
-	insertBatchReplace     connectionOpType = "InsertBatch(Replace)"
-	insertBatchReplaceTask connectionOpType = "InsertBatch(Replace task)"
-	insertBatchUpdate      connectionOpType = "InsertBatch(Update)"
-	insertBatchUpdateTask  connectionOpType = "InsertBatch(Update task)"
-	insertBatchDelete      connectionOpType = "InsertBatch(Delete)"
-	insertBatchDeleteTask  connectionOpType = "InsertBatch(Delete task)"
-	getColumnTypes         connectionOpType = "GetColumnTypes"
-	selectByPrimaryKeys    connectionOpType = "SelectByPrimaryKeys"
-	getUserGrants          connectionOpType = "GetUserGrants"
-	connectionTest         connectionOpType = "ConnectionTest"
+	createDatabase             connectionOpType = "CreateDatabase"
+	checkDatabaseExists        connectionOpType = "CheckDatabaseExists"
+	createTable                connectionOpType = "CreateTable"
+	describeTable              connectionOpType = "DescribeTable"
+	alterTable                 connectionOpType = "AlterTable"
+	softTruncateTable          connectionOpType = "SoftTruncateTable"
+	hardTruncateTable          connectionOpType = "HardTruncateTable"
+	dropTable                  connectionOpType = "DropTable"
+	insertBatchReplace         connectionOpType = "InsertBatch(Replace)"
+	insertBatchReplaceTask     connectionOpType = "InsertBatch(Replace task)"
+	insertBatchUpdate          connectionOpType = "InsertBatch(Update)"
+	insertBatchUpdateTask      connectionOpType = "InsertBatch(Update task)"
+	insertBatchSoftDelete      connectionOpType = "InsertBatch(Soft delete)"
+	insertBatchSoftDeleteTask  connectionOpType = "InsertBatch(Soft delete task)"
+	insertBatchHardDelete      connectionOpType = "InsertBatch(Hard delete)"
+	insertBatchHardDeleteTask  connectionOpType = "InsertBatch(Hard delete task)"
+	getColumnTypesWithIndexMap connectionOpType = "GetColumnTypes"
+	selectByPrimaryKeys        connectionOpType = "SelectByPrimaryKeys"
+	getUserGrants              connectionOpType = "GetUserGrants"
+	connectionTest             connectionOpType = "ConnectionTest"
 )
 
 type grantType = string
