@@ -131,61 +131,49 @@ func TestToClickHouseColumns(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown datatype UNSPECIFIED")
 }
 
-func TestGetPrimaryKeysAndMetadataColumns(t *testing.T) {
-	pkCols, err := GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{
-		{Name: "i16", Type: pb.DataType_SHORT, PrimaryKey: false},
-		{Name: "i32", Type: pb.DataType_INT, PrimaryKey: false},
-		{Name: "str", Type: pb.DataType_STRING, PrimaryKey: true},
-		{Name: "_fivetran_synced", Type: pb.DataType_UTC_DATETIME, PrimaryKey: false},
-		{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, PrimaryKey: false},
-	}})
+func TestGetFivetranTableMetadata(t *testing.T) {
+	colInt32 := &pb.Column{Name: "i32", Type: pb.DataType_INT, PrimaryKey: false}
+	colStr := &pb.Column{Name: "str", Type: pb.DataType_STRING, PrimaryKey: true}
+	colFivetranSynced := &pb.Column{Name: "_fivetran_synced", Type: pb.DataType_UTC_DATETIME, PrimaryKey: false}
+	colFivetranDeleted := &pb.Column{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, PrimaryKey: false}
+
+	metadata, err := GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{colInt32, colStr, colFivetranSynced, colFivetranDeleted}})
 	assert.NoError(t, err)
-	assert.Equal(t, pkCols, &types.FivetranTableMetadata{
-		PrimaryKeys: []*types.PrimaryKeyColumn{
-			{Index: 2, Name: "str", Type: pb.DataType_STRING},
+	assert.Equal(t, metadata, &types.FivetranTableMetadata{
+		ColumnsMap: map[string]*pb.Column{
+			"i32":               colInt32,
+			"str":               colStr,
+			"_fivetran_synced":  colFivetranSynced,
+			"_fivetran_deleted": colFivetranDeleted,
 		},
-		FivetranSyncedIdx:  3,
-		FivetranDeletedIdx: 4,
+		FivetranSyncedIdx: 2,
 	})
 
 	// _fivetran_deleted column may not be always present
-	pkCols, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{
-		{Name: "i16", Type: pb.DataType_SHORT, PrimaryKey: false},
-		{Name: "i32", Type: pb.DataType_INT, PrimaryKey: false},
-		{Name: "str", Type: pb.DataType_STRING, PrimaryKey: true},
-		{Name: "_fivetran_synced", Type: pb.DataType_UTC_DATETIME, PrimaryKey: false},
-	}})
+	metadata, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{colInt32, colStr, colFivetranSynced}})
 	assert.NoError(t, err)
-	assert.Equal(t, pkCols, &types.FivetranTableMetadata{
-		PrimaryKeys: []*types.PrimaryKeyColumn{
-			{Index: 2, Name: "str", Type: pb.DataType_STRING},
+	assert.Equal(t, metadata, &types.FivetranTableMetadata{
+		ColumnsMap: map[string]*pb.Column{
+			"i32":              colInt32,
+			"str":              colStr,
+			"_fivetran_synced": colFivetranSynced,
 		},
-		FivetranSyncedIdx:  3,
-		FivetranDeletedIdx: -1,
+		FivetranSyncedIdx: 2,
 	})
 
-	pkCols, err = GetFivetranTableMetadata(nil)
+	metadata, err = GetFivetranTableMetadata(nil)
 	assert.ErrorContains(t, err, "no columns in Fivetran table definition")
-	assert.Nil(t, pkCols)
+	assert.Nil(t, metadata)
 
-	pkCols, err = GetFivetranTableMetadata(&pb.Table{})
+	metadata, err = GetFivetranTableMetadata(&pb.Table{})
 	assert.ErrorContains(t, err, "no columns in Fivetran table definition")
-	assert.Nil(t, pkCols)
+	assert.Nil(t, metadata)
 
-	pkCols, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{}})
+	metadata, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{}})
 	assert.ErrorContains(t, err, "no columns in Fivetran table definition")
-	assert.Nil(t, pkCols)
+	assert.Nil(t, metadata)
 
-	pkCols, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{
-		{Name: "a", Type: pb.DataType_STRING},
-	}})
-	assert.ErrorContains(t, err, "no primary keys found")
-	assert.Nil(t, pkCols)
-
-	pkCols, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{
-		{Name: "a", Type: pb.DataType_STRING, PrimaryKey: true},
-		{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, PrimaryKey: false},
-	}})
+	metadata, err = GetFivetranTableMetadata(&pb.Table{Columns: []*pb.Column{colStr, colFivetranDeleted}})
 	assert.ErrorContains(t, err, "no _fivetran_synced column found")
-	assert.Nil(t, pkCols)
+	assert.Nil(t, metadata)
 }

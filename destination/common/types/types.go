@@ -33,16 +33,11 @@ type PrimaryKeyColumn struct {
 }
 
 // FivetranTableMetadata
-// PrimaryKeys are used when generating select queries, see sql.GetSelectByPrimaryKeysQuery.
-// also used for generating mapping keys, see db.GetCSVRowMappingKey and db.GetDatabaseRowMappingKey.
-// FivetranSyncedIdx index of the _fivetran_synced column in fivetran_sdk.Table (see db.ToSoftDeletedRow)
-// FivetranDeletedIdx index of the _fivetran_deleted column in fivetran_sdk.Table (see db.ToSoftDeletedRow)
-// NB: allowed to be -1, e.g. when _fivetran_deleted column is not present in the table definition immediately.
+// ColumnsMap extracted from fivetran_sdk.Table.
+// FivetranSyncedIdx index of the _fivetran_synced column in fivetran_sdk.Table.
 type FivetranTableMetadata struct {
-	PrimaryKeys        []*PrimaryKeyColumn
-	ColumnsMap         map[string]*pb.Column
-	FivetranSyncedIdx  uint
-	FivetranDeletedIdx int
+	ColumnsMap        map[string]*pb.Column
+	FivetranSyncedIdx uint
 }
 
 type AlterTableOpType int
@@ -85,8 +80,15 @@ type CSVColumn struct {
 // Example: suppose we have a table in ClickHouse with columns (id Int32, name String, ts DateTime),
 // and we receive a CSV with the header (ts, id, name) + fivetran_sdk.Table with the information about the data types.
 // Then the resulting CSVColumns would be 0 -> { 2, name, STRING }, 1 -> { 0, id, INT }, 2 -> { 1, ts, NAIVE_DATETIME }.
+//
+// All = all columns in the CSV file.
+// PrimaryKeys = only primary key columns in the CSV file.
+//
 // See also: MakeCSVColumns.
-type CSVColumns []*CSVColumn
+type CSVColumns struct {
+	All         []*CSVColumn
+	PrimaryKeys []*CSVColumn
+}
 
 // DriverColumn is similar to driver.ColumnType, but it is a struct with extracted values, not an interface;
 // additionally, contains the database index.
@@ -95,4 +97,12 @@ type DriverColumn struct {
 	Name         string
 	ScanType     reflect.Type
 	DatabaseType string
+}
+
+// DriverColumns
+// Mapping is DriverColumn.Name -> DriverColumn (unordered)
+// Columns are the same as in Mapping, but ordered.
+type DriverColumns struct {
+	Mapping map[string]*DriverColumn
+	Columns []*DriverColumn
 }

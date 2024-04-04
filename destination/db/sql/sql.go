@@ -226,44 +226,44 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 // Where N is the number of rows in the CSV slice.
 func GetSelectByPrimaryKeysQuery(
 	csv [][]string,
+	csvColumns *types.CSVColumns,
 	qualifiedTableName QualifiedTableName,
-	pkCols []*types.PrimaryKeyColumn,
 ) (string, error) {
-	if len(pkCols) == 0 {
-		return "", fmt.Errorf("expected non-empty list of primary keys columns")
-	}
 	if qualifiedTableName == "" {
 		return "", fmt.Errorf("table name is empty")
 	}
 	if len(csv) == 0 {
-		return "", fmt.Errorf("expected non-empty CSV slice")
+		return "", fmt.Errorf("expected non-empty CSV slice for table %s", qualifiedTableName)
+	}
+	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
+		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
 	}
 	var orderByBuilder strings.Builder
 	orderByBuilder.WriteRune('(')
 	var clauseBuilder strings.Builder
 	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", qualifiedTableName))
-	for i, col := range pkCols {
+	for i, col := range csvColumns.PrimaryKeys {
 		clauseBuilder.WriteString(identifier(col.Name))
 		orderByBuilder.WriteString(identifier(col.Name))
-		if i < len(pkCols)-1 {
+		if i < len(csvColumns.PrimaryKeys)-1 {
 			clauseBuilder.WriteString(", ")
 			orderByBuilder.WriteString(", ")
 		}
 	}
 	orderByBuilder.WriteRune(')')
 	clauseBuilder.WriteString(") IN (")
-	for i, row := range csv {
+	for i, csvRow := range csv {
 		clauseBuilder.WriteRune('(')
-		for j, col := range pkCols {
-			if col.Index > uint(len(row)) {
+		for j, col := range csvColumns.PrimaryKeys {
+			if col.Index > uint(len(csvRow)) {
 				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
 			}
-			value, err := values.Value(col.Type, row[col.Index])
+			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
 				return "", err
 			}
 			clauseBuilder.WriteString(value)
-			if j < len(pkCols)-1 {
+			if j < len(csvColumns.PrimaryKeys)-1 {
 				clauseBuilder.WriteString(", ")
 			}
 		}
@@ -275,6 +275,58 @@ func GetSelectByPrimaryKeysQuery(
 	clauseBuilder.WriteString(") ORDER BY ")
 	clauseBuilder.WriteString(orderByBuilder.String())
 	clauseBuilder.WriteString(fmt.Sprintf(" LIMIT %d", len(csv)))
+	return clauseBuilder.String(), nil
+}
+
+// GetHardDeleteStatement generates statements such as:
+//
+//	DELETE FROM `foo`.`bar` WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar'))
+//
+// See also: https://clickhouse.com/docs/en/guides/developer/lightweight-delete
+func GetHardDeleteStatement(
+	csv [][]string,
+	csvColumns *types.CSVColumns,
+	qualifiedTableName QualifiedTableName,
+) (string, error) {
+	if qualifiedTableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if len(csv) == 0 {
+		return "", fmt.Errorf("expected non-empty CSV slice for table %s", qualifiedTableName)
+	}
+	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
+		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
+	}
+	var clauseBuilder strings.Builder
+	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE (", qualifiedTableName))
+	for i, col := range csvColumns.PrimaryKeys {
+		clauseBuilder.WriteString(identifier(col.Name))
+		if i < len(csvColumns.PrimaryKeys)-1 {
+			clauseBuilder.WriteString(", ")
+		}
+	}
+	clauseBuilder.WriteString(") IN (")
+	for i, csvRow := range csv {
+		clauseBuilder.WriteRune('(')
+		for j, col := range csvColumns.PrimaryKeys {
+			if col.Index > uint(len(csvRow)) {
+				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
+			}
+			value, err := values.Value(col.Type, csvRow[col.Index])
+			if err != nil {
+				return "", err
+			}
+			clauseBuilder.WriteString(value)
+			if j < len(csvColumns.PrimaryKeys)-1 {
+				clauseBuilder.WriteString(", ")
+			}
+		}
+		clauseBuilder.WriteRune(')')
+		if i < len(csv)-1 {
+			clauseBuilder.WriteString(", ")
+		}
+	}
+	clauseBuilder.WriteRune(')')
 	return clauseBuilder.String(), nil
 }
 

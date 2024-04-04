@@ -224,48 +224,75 @@ func TestGetDescribeTableQuery(t *testing.T) {
 }
 
 func TestGetSelectByPrimaryKeysQueryValidation(t *testing.T) {
-	pkCols := []*types.PrimaryKeyColumn{{Index: 0, Name: "id", Type: pb.DataType_LONG}}
+	fullTableName := QualifiedTableName("`foo`.`bar`")
+	csvCols := &types.CSVColumns{
+		All:         []*types.CSVColumn{{Index: 0, Name: "id", Type: pb.DataType_LONG}},
+		PrimaryKeys: nil,
+	}
+	batch := [][]string{{"42", "foo", "2022-03-05T04:45:12.123456789Z"}}
 
-	_, err := GetSelectByPrimaryKeysQuery(nil, "", nil)
-	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
-
-	_, err = GetSelectByPrimaryKeysQuery(nil, "", pkCols)
+	_, err := GetSelectByPrimaryKeysQuery(batch, csvCols, "")
 	assert.ErrorContains(t, err, "table name is empty")
 
-	_, err = GetSelectByPrimaryKeysQuery([][]string{}, "test_table", pkCols)
+	_, err = GetSelectByPrimaryKeysQuery([][]string{}, csvCols, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty CSV slice")
+	_, err = GetSelectByPrimaryKeysQuery(nil, csvCols, fullTableName)
 	assert.ErrorContains(t, err, "expected non-empty CSV slice")
 
-	_, err = GetSelectByPrimaryKeysQuery([][]string{{"foo"}}, "test_table",
-		[]*types.PrimaryKeyColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG}})
+	_, err = GetSelectByPrimaryKeysQuery(batch, nil, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty primary keys")
+	_, err = GetSelectByPrimaryKeysQuery(batch, csvCols, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty primary keys")
+
+	withInvalidCol := []*types.CSVColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}}
+	invalidIndexCSVCols := &types.CSVColumns{
+		All:         withInvalidCol,
+		PrimaryKeys: withInvalidCol,
+	}
+	_, err = GetSelectByPrimaryKeysQuery([][]string{{"foo"}}, invalidIndexCSVCols, fullTableName)
 	assert.ErrorContains(t, err, "can't find matching value for primary key with index 5")
 }
 
 func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 	fullTableName := QualifiedTableName("`foo`.`bar`")
 	batch := [][]string{
-		{"42", "foo", "2022-03-05T04:45:12.123456789Z", "false"},
-		{"43", "bar", "2022-03-05T04:45:12.123456789Z", "false"},
+		{"42", "foo", "2022-03-05T04:45:12.123456789Z"},
+		{"43", "bar", "2023-04-06T12:30:00.234567890Z"},
 	}
-	pkCols := []*types.PrimaryKeyColumn{
-		{Index: 0, Name: "id", Type: pb.DataType_LONG},
-	}
-	query, err := GetSelectByPrimaryKeysQuery(batch, fullTableName, pkCols)
+	statement, err := GetSelectByPrimaryKeysQuery(batch, &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING},
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}},
+	}, fullTableName)
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`) IN ((42), (43)) ORDER BY (`id`) LIMIT 2", query)
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`) IN ((42), (43)) ORDER BY (`id`) LIMIT 2", statement)
 
-	batch = [][]string{
-		{"42", "foo", "2022-03-05T04:45:12.123456789Z", "false"},
-		{"43", "bar", "2022-03-05T04:45:12.123456789Z", "false"},
-		{"44", "qaz", "2022-03-05T04:45:12.123456789Z", "false"},
-		{"45", "qux", "2022-03-05T04:45:12.123456789Z", "false"},
-	}
-	pkCols = []*types.PrimaryKeyColumn{
-		{Index: 0, Name: "id", Type: pb.DataType_LONG},
-		{Index: 1, Name: "name", Type: pb.DataType_STRING},
-	}
-	query, err = GetSelectByPrimaryKeysQuery(batch, fullTableName, pkCols)
+	statement, err = GetSelectByPrimaryKeysQuery(batch, &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true},
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}},
+	}, fullTableName)
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar'), (44, 'qaz'), (45, 'qux')) ORDER BY (`id`, `name`) LIMIT 4", query)
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar')) ORDER BY (`id`, `name`) LIMIT 2", statement)
+
+	statement, err = GetSelectByPrimaryKeysQuery(batch, &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING},
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
+	}, fullTableName)
+	assert.NoError(t, err)
+	// DateTime64(9, 'UTC') is converted to nanoseconds.
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890')) ORDER BY (`ts`) LIMIT 2", statement)
 }
 
 func TestGetCheckDatabaseExistsStatement(t *testing.T) {
@@ -293,4 +320,76 @@ func TestGetSelectFromSystemGrantsQuery(t *testing.T) {
 
 	_, err = GetSelectFromSystemGrantsQuery("")
 	assert.ErrorContains(t, err, "username is empty")
+}
+
+func TestGetHardDeleteStatementValidation(t *testing.T) {
+	fullTableName := QualifiedTableName("`foo`.`bar`")
+	csvCols := &types.CSVColumns{
+		All:         []*types.CSVColumn{{Index: 0, Name: "id", Type: pb.DataType_LONG}},
+		PrimaryKeys: nil,
+	}
+	batch := [][]string{{"42", "foo", "2022-03-05T04:45:12.123456789Z"}}
+
+	_, err := GetHardDeleteStatement(batch, csvCols, "")
+	assert.ErrorContains(t, err, "table name is empty")
+
+	_, err = GetHardDeleteStatement(batch, nil, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty primary keys")
+	_, err = GetHardDeleteStatement(batch, &types.CSVColumns{}, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty primary keys")
+
+	_, err = GetHardDeleteStatement(nil, csvCols, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty CSV slice")
+	_, err = GetHardDeleteStatement([][]string{}, csvCols, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty CSV slice")
+
+	withInvalidCol := []*types.CSVColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}}
+	invalidIndexCSVCols := &types.CSVColumns{
+		All:         withInvalidCol,
+		PrimaryKeys: withInvalidCol,
+	}
+	_, err = GetHardDeleteStatement([][]string{{"foo"}}, invalidIndexCSVCols, fullTableName)
+	assert.ErrorContains(t, err, "can't find matching value for primary key with index 5")
+}
+
+func TestGetHardDeleteStatement(t *testing.T) {
+	fullTableName := QualifiedTableName("`foo`.`bar`")
+	batch := [][]string{
+		{"42", "foo", "2022-03-05T04:45:12.123456789Z"},
+		{"43", "bar", "2023-04-06T12:30:00.234567890Z"},
+	}
+	statement, err := GetHardDeleteStatement(batch, &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING},
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}},
+	}, fullTableName)
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`) IN ((42), (43))", statement)
+
+	statement, err = GetHardDeleteStatement(batch, &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true},
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}},
+	}, fullTableName)
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar'))", statement)
+
+	statement, err = GetHardDeleteStatement(batch, &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING},
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
+	}, fullTableName)
+	assert.NoError(t, err)
+	// DateTime64(9, 'UTC') is converted to nanoseconds.
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890'))", statement)
 }

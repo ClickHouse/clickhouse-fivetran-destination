@@ -88,14 +88,14 @@ func TestGrants(t *testing.T) {
 	password := fmt.Sprintf("secret_%s", guid())
 	defer func() {
 		dropUserStatement := fmt.Sprintf("DROP USER IF EXISTS %s", username)
-		err = defaultConn.ExecDDL(ctx, dropUserStatement, "[TestGrants] DropUser")
+		err = defaultConn.ExecStatement(ctx, dropUserStatement, "[TestGrants] DropUser", false)
 		assert.NoError(t, err)
 		err = defaultConn.Close()
 		require.NoError(t, err)
 	}()
 
 	createUserStatement := fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s'", username, password)
-	err = defaultConn.ExecDDL(ctx, createUserStatement, "[TestGrants] CreateUser")
+	err = defaultConn.ExecStatement(ctx, createUserStatement, "[TestGrants] CreateUser", false)
 	require.NoError(t, err)
 
 	conn, err := GetClickHouseConnection(ctx, map[string]string{
@@ -110,7 +110,7 @@ func TestGrants(t *testing.T) {
 
 	addGrant := func(grant string) {
 		grantCreateDatabaseStatement := fmt.Sprintf("GRANT %s ON *.* TO %s", grant, username)
-		err = defaultConn.ExecDDL(ctx, grantCreateDatabaseStatement, "")
+		err = defaultConn.ExecStatement(ctx, grantCreateDatabaseStatement, "", false)
 		require.NoError(t, err)
 	}
 

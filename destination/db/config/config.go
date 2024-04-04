@@ -52,10 +52,10 @@ func getWithDefault(configuration map[string]string, key string, defaultValue st
 }
 
 func validateHost(host string) (string, error) {
-	if strings.Index(host, ":") != -1 {
+	if strings.Contains(host, ":") {
 		return "", fmt.Errorf("host %s should not contain protocol or port", host)
 	}
-	if strings.Index(host, "/") != -1 {
+	if strings.Contains(host, "/") {
 		return "", fmt.Errorf("host %s should not contain path", host)
 	}
 	return host, nil

@@ -56,35 +56,18 @@ func GetFivetranTableMetadata(table *pb.Table) (*types.FivetranTableMetadata, er
 		return nil, fmt.Errorf("no columns in Fivetran table definition")
 	}
 	colMap := make(map[string]*pb.Column, len(table.Columns))
-	var pkCols []*types.PrimaryKeyColumn
 	fivetranSyncedIdx := -1
-	fivetranDeletedIdx := -1
 	for i, col := range table.Columns {
-		if col.PrimaryKey {
-			pkCols = append(pkCols, &types.PrimaryKeyColumn{
-				Name:  col.Name,
-				Type:  col.Type,
-				Index: uint(i),
-			})
-		}
 		if col.Name == constants.FivetranSynced {
 			fivetranSyncedIdx = i
 		}
-		if col.Name == constants.FivetranDeleted {
-			fivetranDeletedIdx = i
-		}
 		colMap[col.Name] = col
-	}
-	if len(pkCols) == 0 {
-		return nil, fmt.Errorf("no primary keys found")
 	}
 	if fivetranSyncedIdx < 0 {
 		return nil, fmt.Errorf("no %s column found", constants.FivetranSynced)
 	}
 	return &types.FivetranTableMetadata{
-		PrimaryKeys:        pkCols,
-		FivetranSyncedIdx:  uint(fivetranSyncedIdx),
-		FivetranDeletedIdx: fivetranDeletedIdx,
-		ColumnsMap:         colMap,
+		FivetranSyncedIdx: uint(fivetranSyncedIdx),
+		ColumnsMap:        colMap,
 	}, nil
 }

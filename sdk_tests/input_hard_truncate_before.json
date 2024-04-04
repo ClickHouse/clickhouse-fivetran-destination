@@ -25,7 +25,7 @@
       }
     },
     {
-      "truncate": [
+      "truncate_before": [
         "table_to_truncate"
       ]
     },

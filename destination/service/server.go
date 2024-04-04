@@ -6,12 +6,10 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
-	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
 	pb "fivetran.com/fivetran_sdk/proto"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
 const ConnectionTest = "connection"
@@ -186,11 +184,6 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	if len(in.DeleteFiles) > 0 && metadata.FivetranDeletedIdx < 0 {
-		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name,
-			fmt.Errorf("missing required column %s for delete operations", constants.FivetranDeleted)), nil
-	}
-
 	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
@@ -201,19 +194,19 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	if err != nil {
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	driverColumnMap := types.MakeDriverColumnMap(columnTypes)
+	driverColumns := types.MakeDriverColumns(columnTypes)
 
 	// Benchmark overall WriteBatchRequest and, separately, Replace/Update/Delete operations
 	err = benchmark.RunAndNotice(func() error {
-		err = s.processReplaceFiles(ctx, in, conn, compression, encryption, nullStr, metadata, driverColumnMap)
+		err = s.processReplaceFiles(ctx, in, conn, compression, encryption, nullStr, metadata, driverColumns)
 		if err != nil {
 			return err
 		}
-		err = s.processUpdateFiles(ctx, in, conn, compression, encryption, nullStr, unmodifiedStr, metadata, columnTypes, driverColumnMap)
+		err = s.processUpdateFiles(ctx, in, conn, compression, encryption, nullStr, unmodifiedStr, metadata, driverColumns)
 		if err != nil {
 			return err
 		}
-		err = s.processDeleteFiles(ctx, in, conn, compression, encryption, metadata, columnTypes, driverColumnMap)
+		err = s.processDeleteFiles(ctx, in, conn, compression, encryption, metadata, driverColumns)
 		if err != nil {
 			return err
 		}
@@ -238,7 +231,7 @@ func (s *Server) processReplaceFiles(
 	encryption pb.Encryption,
 	nullStr string,
 	metadata *types.FivetranTableMetadata,
-	driverColumnMap map[string]*types.DriverColumn,
+	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.ReplaceFiles) > 0 {
 		err = benchmark.RunAndNotice(func() error {
@@ -256,12 +249,12 @@ func (s *Server) processReplaceFiles(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(driverColumnMap, csvData[0], metadata.ColumnsMap)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap)
 				if err != nil {
 					return err
 				}
-				// dropping the processed header from the CSV
-				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvData[1:], csvColumns, nullStr)
+				csvWithoutHeader := csvData[1:]
+				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, nullStr)
 				if err != nil {
 					return err
 				}
@@ -284,8 +277,7 @@ func (s *Server) processUpdateFiles(
 	nullStr string,
 	unmodifiedStr string,
 	metadata *types.FivetranTableMetadata,
-	columnTypes []driver.ColumnType,
-	driverColumnMap map[string]*types.DriverColumn,
+	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.UpdateFiles) > 0 {
 		err = benchmark.RunAndNotice(func() error {
@@ -303,13 +295,12 @@ func (s *Server) processUpdateFiles(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(driverColumnMap, csvData[0], metadata.ColumnsMap)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap)
 				if err != nil {
 					return err
 				}
-				// dropping the processed header from the CSV
-				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes,
-					csvData[1:], csvColumns, nullStr, unmodifiedStr)
+				csvWithoutHeader := csvData[1:]
+				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr)
 				if err != nil {
 					return err
 				}
@@ -330,8 +321,7 @@ func (s *Server) processDeleteFiles(
 	compression pb.Compression,
 	encryption pb.Encryption,
 	metadata *types.FivetranTableMetadata,
-	columnTypes []driver.ColumnType,
-	driverColumnMap map[string]*types.DriverColumn,
+	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.DeleteFiles) > 0 {
 		err = benchmark.RunAndNotice(func() error {
@@ -349,13 +339,12 @@ func (s *Server) processDeleteFiles(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(driverColumnMap, csvData[0], metadata.ColumnsMap)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap)
 				if err != nil {
 					return err
 				}
-				// dropping the processed header from the CSV
-				err = conn.SoftDeleteBatch(ctx, in.SchemaName, in.Table, metadata.PrimaryKeys, columnTypes,
-					csvData[1:], csvColumns, metadata.FivetranSyncedIdx, uint(metadata.FivetranDeletedIdx))
+				csvWithoutHeader := csvData[1:]
+				err = conn.HardDelete(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
 				if err != nil {
 					return err
 				}
