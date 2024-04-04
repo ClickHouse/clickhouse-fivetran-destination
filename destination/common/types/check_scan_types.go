@@ -41,8 +41,8 @@ func CheckScanTypes(
 			}
 		}
 		if driverCol.ScanType != scanType {
-			return fmt.Errorf("database column %s has type %s which is incompatible with the input %s (%s)",
-				fivetranCol.Name, driverCol.DatabaseType, fivetranCol.Type.String(), driverCol.ScanType.String())
+			return fmt.Errorf("database column %s (PK: %v) has type %s (scan type: %s) which is incompatible with the input %s (scan type: %s)",
+				fivetranCol.Name, fivetranCol.PrimaryKey, driverCol.DatabaseType, driverCol.ScanType.String(), fivetranCol.Type.String(), scanType)
 		}
 	}
 	return nil
