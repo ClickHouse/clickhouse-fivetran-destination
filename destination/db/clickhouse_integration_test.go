@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
+	"fivetran.com/fivetran_sdk/destination/common/types"
+	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,6 +112,7 @@ func TestGrants(t *testing.T) {
 
 	addGrant := func(grant string) {
 		grantCreateDatabaseStatement := fmt.Sprintf("GRANT %s ON *.* TO %s", grant, username)
+		fmt.Printf("%s\n", grantCreateDatabaseStatement)
 		err = defaultConn.ExecStatement(ctx, grantCreateDatabaseStatement, "", false)
 		require.NoError(t, err)
 	}
@@ -176,4 +179,115 @@ func TestGrants(t *testing.T) {
 	addGrant("SHOW TABLES")
 	err = conn.GrantsTest(ctx)
 	require.NoError(t, err)
+}
+
+func TestDescribeTable(t *testing.T) {
+	conn, err := GetClickHouseConnection(
+		context.Background(),
+		map[string]string{
+			"host":     "localhost",
+			"port":     "9000",
+			"username": "default",
+			"local":    "true",
+		})
+	require.NoError(t, err)
+	defer conn.Close()
+
+	dbName := "fivetran_test"
+	tableName := fmt.Sprintf("test_describe_table_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+
+	err = conn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
+	require.NoError(t, err)
+
+	err = conn.Exec(context.Background(), fmt.Sprintf(`
+		CREATE OR REPLACE TABLE %s.%s (
+			nb    Nullable(Bool),
+			ni16  Nullable(Int16),
+			ni32  Nullable(Int32),
+			ni64  Nullable(Int64),
+			nf32  Nullable(Float32),
+			nf64  Nullable(Float64),
+			ndd   Nullable(Decimal(18, 10)),
+			nd    Nullable(Date),
+			ndt   Nullable(DateTime),
+			ndt64 Nullable(DateTime64(9, 'UTC')),
+			ns    Nullable(String),
+            nxml  Nullable(String) COMMENT 'XML',
+			njson Nullable(String) COMMENT 'JSON',
+            nbin  Nullable(String) COMMENT 'BIN',
+
+			b     Bool,
+			i16   Int16,
+			i32   Int32,
+			i64   Int64,
+			f32   Float32,
+			f64   Float64,
+			dd    Decimal(4, 2),
+			d     Date,
+			dt    DateTime,
+			dt64  DateTime64(9, 'UTC'),
+			s     String,
+            xml   String COMMENT 'XML',
+			json  String COMMENT 'JSON',
+            bin   String COMMENT 'BIN',
+           
+            _fivetran_id      String,
+			_fivetran_synced  DateTime,
+			_fivetran_deleted Bool
+		) ENGINE MergeTree ORDER BY (b, i16, i32, i64, f32, f64, dd, d, dt, dt64, s, xml, json, bin)`,
+		dbName, tableName))
+	require.NoError(t, err)
+
+	tableDescription, err := conn.DescribeTable(context.Background(), dbName, tableName)
+	require.NoError(t, err)
+
+	nb := &types.ColumnDefinition{Name: "nb", Type: "Nullable(Bool)", IsPrimaryKey: false}
+	ni16 := &types.ColumnDefinition{Name: "ni16", Type: "Nullable(Int16)", IsPrimaryKey: false}
+	ni32 := &types.ColumnDefinition{Name: "ni32", Type: "Nullable(Int32)", IsPrimaryKey: false}
+	ni64 := &types.ColumnDefinition{Name: "ni64", Type: "Nullable(Int64)", IsPrimaryKey: false}
+	nf32 := &types.ColumnDefinition{Name: "nf32", Type: "Nullable(Float32)", IsPrimaryKey: false}
+	nf64 := &types.ColumnDefinition{Name: "nf64", Type: "Nullable(Float64)", IsPrimaryKey: false}
+	ndd := &types.ColumnDefinition{Name: "ndd", Type: "Nullable(Decimal(18, 10))", IsPrimaryKey: false, DecimalParams: &pb.DecimalParams{Precision: 18, Scale: 10}}
+	nd := &types.ColumnDefinition{Name: "nd", Type: "Nullable(Date)", IsPrimaryKey: false}
+	ndt := &types.ColumnDefinition{Name: "ndt", Type: "Nullable(DateTime)", IsPrimaryKey: false}
+	ndt64 := &types.ColumnDefinition{Name: "ndt64", Type: "Nullable(DateTime64(9, 'UTC'))", IsPrimaryKey: false}
+	ns := &types.ColumnDefinition{Name: "ns", Type: "Nullable(String)", IsPrimaryKey: false}
+	nxml := &types.ColumnDefinition{Name: "nxml", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "XML"}
+	njson := &types.ColumnDefinition{Name: "njson", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "JSON"}
+	nbin := &types.ColumnDefinition{Name: "nbin", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "BIN"}
+	b := &types.ColumnDefinition{Name: "b", Type: "Bool", IsPrimaryKey: true}
+	i16 := &types.ColumnDefinition{Name: "i16", Type: "Int16", IsPrimaryKey: true}
+	i32 := &types.ColumnDefinition{Name: "i32", Type: "Int32", IsPrimaryKey: true}
+	i64 := &types.ColumnDefinition{Name: "i64", Type: "Int64", IsPrimaryKey: true}
+	f32 := &types.ColumnDefinition{Name: "f32", Type: "Float32", IsPrimaryKey: true}
+	f64 := &types.ColumnDefinition{Name: "f64", Type: "Float64", IsPrimaryKey: true}
+	dd := &types.ColumnDefinition{Name: "dd", Type: "Decimal(4, 2)", IsPrimaryKey: true, DecimalParams: &pb.DecimalParams{Precision: 4, Scale: 2}}
+	d := &types.ColumnDefinition{Name: "d", Type: "Date", IsPrimaryKey: true}
+	dt := &types.ColumnDefinition{Name: "dt", Type: "DateTime", IsPrimaryKey: true}
+	dt64 := &types.ColumnDefinition{Name: "dt64", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true}
+	s := &types.ColumnDefinition{Name: "s", Type: "String", IsPrimaryKey: true}
+	xml := &types.ColumnDefinition{Name: "xml", Type: "String", IsPrimaryKey: true, Comment: "XML"}
+	json := &types.ColumnDefinition{Name: "json", Type: "String", IsPrimaryKey: true, Comment: "JSON"}
+	bin := &types.ColumnDefinition{Name: "bin", Type: "String", IsPrimaryKey: true, Comment: "BIN"}
+	fivetranId := &types.ColumnDefinition{Name: "_fivetran_id", Type: "String", IsPrimaryKey: false}
+	fivetranSynced := &types.ColumnDefinition{Name: "_fivetran_synced", Type: "DateTime", IsPrimaryKey: false}
+	fivetranDeleted := &types.ColumnDefinition{Name: "_fivetran_deleted", Type: "Bool", IsPrimaryKey: false}
+
+	require.Equal(t, tableDescription, &types.TableDescription{
+		Columns: []*types.ColumnDefinition{
+			nb, ni16, ni32, ni64, nf32, nf64, ndd,
+			nd, ndt, ndt64, ns, nxml, njson, nbin,
+			b, i16, i32, i64, f32, f64, dd,
+			d, dt, dt64, s, xml, json, bin,
+			fivetranId, fivetranSynced, fivetranDeleted,
+		},
+		Mapping: map[string]*types.ColumnDefinition{
+			"nb": nb, "ni16": ni16, "ni32": ni32, "ni64": ni64, "nf32": nf32, "nf64": nf64, "ndd": ndd,
+			"nd": nd, "ndt": ndt, "ndt64": ndt64, "ns": ns, "nxml": nxml, "njson": njson, "nbin": nbin,
+			"b": b, "i16": i16, "i32": i32, "i64": i64, "f32": f32, "f64": f64, "dd": dd,
+			"d": d, "dt": dt, "dt64": dt64, "s": s, "xml": xml, "json": json, "bin": bin,
+			"_fivetran_id": fivetranId, "_fivetran_synced": fivetranSynced, "_fivetran_deleted": fivetranDeleted,
+		},
+		PrimaryKeys: []string{"b", "i16", "i32", "i64", "f32", "f64", "dd", "d", "dt", "dt64", "s", "xml", "json", "bin"},
+	})
 }

@@ -155,7 +155,7 @@ func (conn *ClickHouseConnection) DescribeTable(
 			return nil, err
 		}
 		var decimalParams *pb.DecimalParams = nil
-		if precision != nil && scale != nil {
+		if hasDecimalPrefix(colType) && precision != nil && scale != nil {
 			decimalParams = &pb.DecimalParams{Precision: uint32(*precision), Scale: uint32(*scale)}
 		}
 		columns = append(columns, &types.ColumnDefinition{
@@ -649,6 +649,10 @@ func joinMissingGrants(userGrants map[grantType]bool) string {
 	return ""
 }
 
+func hasDecimalPrefix(colType string) bool {
+	return strings.HasPrefix(colType, "Decimal(") || strings.HasPrefix(colType, "Nullable(Decimal(")
+}
+
 type connectionOpType string
 
 const (
@@ -664,8 +668,6 @@ const (
 	insertBatchReplaceTask     connectionOpType = "InsertBatch(Replace task)"
 	insertBatchUpdate          connectionOpType = "InsertBatch(Update)"
 	insertBatchUpdateTask      connectionOpType = "InsertBatch(Update task)"
-	insertBatchSoftDelete      connectionOpType = "InsertBatch(Soft delete)"
-	insertBatchSoftDeleteTask  connectionOpType = "InsertBatch(Soft delete task)"
 	insertBatchHardDelete      connectionOpType = "InsertBatch(Hard delete)"
 	insertBatchHardDeleteTask  connectionOpType = "InsertBatch(Hard delete task)"
 	getColumnTypesWithIndexMap connectionOpType = "GetColumnTypes"
