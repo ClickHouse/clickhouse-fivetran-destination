@@ -36,8 +36,11 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Checkout SDK Repo
-        run: |
-          make prepare-fivetran-sdk
+        uses: actions/checkout@v2
+        with:
+          repository: fivetran/fivetran_sdk
+          # FIXME: this is the commit before the NAIVE_TIME update; checkout the latest when it's implemented.
+          ref: 1fabb7626b6ec81a4f56d49a16a654210cb1d0be
 
       - name: Install Go ${{ matrix.go }}
         uses: actions/setup-go@v4
