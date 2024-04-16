@@ -607,20 +607,14 @@ func (conn *ClickHouseConnection) GrantsTest(ctx context.Context) error {
 		return err
 	}
 	verifiedGrants := map[grantType]bool{
-		createDatabaseGrant:    false,
-		createTableGrant:       false,
-		showColumnsGrant:       false,
-		showTablesGrant:        false,
-		alterAddColumnGrant:    false,
-		alterDropColumnGrant:   false,
-		alterModifyColumnGrant: false,
-		insertGrant:            false,
-		selectGrant:            false,
-		alterUpdateGrant:       false,
-		alterDeleteGrant:       false,
+		createDatabaseGrant: false,
+		createTableGrant:    false,
+		insertGrant:         false,
+		selectGrant:         false,
+		alterGrant:          false,
 	}
 	if len(grants) == 0 {
-		return fmt.Errorf("user is missing the required grants: %s", joinMissingGrants(verifiedGrants))
+		return fmt.Errorf("user is missing the required grants on *.*: %s", joinMissingGrants(verifiedGrants))
 	}
 	for _, grant := range grants {
 		_, ok := verifiedGrants[grant.AccessType]
@@ -630,7 +624,7 @@ func (conn *ClickHouseConnection) GrantsTest(ctx context.Context) error {
 	}
 	joinedMissingGrants := joinMissingGrants(verifiedGrants)
 	if joinedMissingGrants != "" {
-		return fmt.Errorf("user is missing the required grants: %s", joinedMissingGrants)
+		return fmt.Errorf("user is missing the required grants on *.*: %s", joinedMissingGrants)
 	}
 	return nil
 }
@@ -679,15 +673,9 @@ const (
 type grantType = string
 
 const (
-	createDatabaseGrant    grantType = "CREATE DATABASE"
-	createTableGrant       grantType = "CREATE TABLE"
-	showColumnsGrant       grantType = "SHOW COLUMNS"
-	showTablesGrant        grantType = "SHOW TABLES"
-	alterAddColumnGrant    grantType = "ALTER ADD COLUMN"
-	alterDropColumnGrant   grantType = "ALTER DROP COLUMN"
-	alterModifyColumnGrant grantType = "ALTER MODIFY COLUMN"
-	insertGrant            grantType = "INSERT"
-	selectGrant            grantType = "SELECT"
-	alterUpdateGrant       grantType = "ALTER UPDATE"
-	alterDeleteGrant       grantType = "ALTER DELETE"
+	createDatabaseGrant grantType = "CREATE DATABASE"
+	createTableGrant    grantType = "CREATE TABLE"
+	insertGrant         grantType = "INSERT"
+	selectGrant         grantType = "SELECT"
+	alterGrant          grantType = "ALTER"
 )
