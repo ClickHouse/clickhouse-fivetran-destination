@@ -30,6 +30,13 @@ To connect Fivetran to ClickHouse Cloud, you will need the following:
 
    GRANT CURRENT GRANTS ON *.* TO fivetran_user;
    ```
+  
+  Additionally, you can revoke access to certain databases from the `fivetran_user`. 
+  For example, by executing the following statement, we restrict access to the `default` database:
+
+  ```sql
+  REVOKE ALL ON default.* FROM fivetran_user;
+  ```
 
   You can execute these statements in the ClickHouse Cloud SQL console. Click on your service in the services list, and
   then press the "SQL Console" button on the left sidebar. Click the "+" button to add a new query.

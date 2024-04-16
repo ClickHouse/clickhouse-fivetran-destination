@@ -117,6 +117,8 @@ func TestGrants(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	missingPart := "user is missing the required grants on *.*: "
+
 	// users start with zero privileges and the first check immediately fails
 	err = conn.GrantsTest(ctx)
 	assert.ErrorContains(t, err, "it's necessary to have the grant SHOW USERS, SHOW ROLES ON *.*")
@@ -124,59 +126,25 @@ func TestGrants(t *testing.T) {
 	// gradually add more privileges
 	addGrant("SHOW USERS, SHOW ROLES")
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"ALTER ADD COLUMN, ALTER DELETE, ALTER DROP COLUMN, ALTER MODIFY COLUMN, ALTER UPDATE, "+
-		"CREATE DATABASE, CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
+	assert.ErrorContains(t, err, missingPart+"ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT")
 
-	addGrant("ALTER ADD COLUMN")
+	addGrant("ALTER")
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"ALTER DELETE, ALTER DROP COLUMN, ALTER MODIFY COLUMN, ALTER UPDATE, "+
-		"CREATE DATABASE, CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
-
-	addGrant("ALTER DELETE")
-	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"ALTER DROP COLUMN, ALTER MODIFY COLUMN, ALTER UPDATE, "+
-		"CREATE DATABASE, CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
-
-	addGrant("ALTER DROP COLUMN")
-	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"ALTER MODIFY COLUMN, ALTER UPDATE, CREATE DATABASE, CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
-
-	addGrant("ALTER MODIFY COLUMN")
-	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"ALTER UPDATE, CREATE DATABASE, CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
-
-	addGrant("ALTER UPDATE")
-	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"CREATE DATABASE, CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
+	assert.ErrorContains(t, err, missingPart+"CREATE DATABASE, CREATE TABLE, INSERT, SELECT")
 
 	addGrant("CREATE DATABASE")
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: "+
-		"CREATE TABLE, INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
+	assert.ErrorContains(t, err, missingPart+"CREATE TABLE, INSERT, SELECT")
 
 	addGrant("CREATE TABLE")
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: INSERT, SELECT, SHOW COLUMNS, SHOW TABLES")
+	assert.ErrorContains(t, err, missingPart+"INSERT, SELECT")
 
 	addGrant("INSERT")
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: SELECT, SHOW COLUMNS, SHOW TABLES")
+	assert.ErrorContains(t, err, missingPart+"SELECT")
 
 	addGrant("SELECT")
-	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: SHOW COLUMNS, SHOW TABLES")
-
-	addGrant("SHOW COLUMNS")
-	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "user is missing the required grants: SHOW TABLES")
-
-	addGrant("SHOW TABLES")
 	err = conn.GrantsTest(ctx)
 	require.NoError(t, err)
 }
