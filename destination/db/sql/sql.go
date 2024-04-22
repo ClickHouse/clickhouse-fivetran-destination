@@ -335,8 +335,9 @@ func GetHardDeleteStatement(
 	return clauseBuilder.String(), nil
 }
 
-// GetInactiveReplicaQuery generates a query to check if there is at least one inactive replica.
-func GetInactiveReplicaQuery(
+// GetAllReplicasActiveQuery
+// generates a query to check if there are no inactive replicas.
+func GetAllReplicasActiveQuery(
 	schemaName string,
 	tableName string,
 ) (string, error) {
@@ -347,7 +348,25 @@ func GetInactiveReplicaQuery(
 		return "", fmt.Errorf("schema name for table %s is empty", tableName)
 	}
 	return fmt.Sprintf(
-		"SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active)) AS has_inactive_replica FROM system.replicas WHERE database = '%s' AND table = '%s' LIMIT 1",
+		"SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active) = 0) AS has_inactive_replica FROM system.replicas WHERE database = '%s' AND table = '%s' LIMIT 1",
+		schemaName, tableName,
+	), nil
+}
+
+// GetAllMutationsCompletedQuery
+// generates a query to check that all mutations over a particular table on all cluster replicas are completed.
+func GetAllMutationsCompletedQuery(
+	schemaName string,
+	tableName string,
+) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
+	}
+	return fmt.Sprintf(
+		"SELECT toBool(count(*) = 0) FROM clusterAllReplicas(default, system.mutations) WHERE database = '%s' AND table = '%s' AND is_done = 0",
 		schemaName, tableName,
 	), nil
 }

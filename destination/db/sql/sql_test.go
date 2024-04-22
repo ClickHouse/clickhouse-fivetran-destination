@@ -394,14 +394,26 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890'))", statement)
 }
 
-func TestGetInactiveReplicaQuery(t *testing.T) {
-	query, err := GetInactiveReplicaQuery("foo", "bar")
+func TestGetAllReplicasActiveQuery(t *testing.T) {
+	query, err := GetAllReplicasActiveQuery("foo", "bar")
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active)) AS has_inactive_replica FROM system.replicas WHERE database = 'foo' AND table = 'bar' LIMIT 1", query)
+	assert.Equal(t, "SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active) = 0) AS has_inactive_replica FROM system.replicas WHERE database = 'foo' AND table = 'bar' LIMIT 1", query)
 
-	_, err = GetInactiveReplicaQuery("", "bar")
+	_, err = GetAllReplicasActiveQuery("", "bar")
 	assert.ErrorContains(t, err, "schema name for table bar is empty")
 
-	_, err = GetInactiveReplicaQuery("foo", "")
+	_, err = GetAllReplicasActiveQuery("foo", "")
+	assert.ErrorContains(t, err, "table name is empty")
+}
+
+func TestGetAllMutationsCompletedQuery(t *testing.T) {
+	query, err := GetAllMutationsCompletedQuery("foo", "bar")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT toBool(count(*) = 0) FROM clusterAllReplicas(default, system.mutations) WHERE database = 'foo' AND table = 'bar' AND is_done = 0", query)
+
+	_, err = GetAllMutationsCompletedQuery("", "bar")
+	assert.ErrorContains(t, err, "schema name for table bar is empty")
+
+	_, err = GetAllMutationsCompletedQuery("foo", "")
 	assert.ErrorContains(t, err, "table name is empty")
 }
