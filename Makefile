@@ -2,9 +2,7 @@ _:
 	@echo -e "Check Makefile for all available targets"
 
 prepare-fivetran-sdk:
-	rm -rf fivetran_sdk
-	git clone --depth 1 https://github.com/fivetran/fivetran_sdk.git fivetran_sdk
-	mkdir -p proto
+	sh .scripts/prepare_fivetran_sdk.sh
 
 install-protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
