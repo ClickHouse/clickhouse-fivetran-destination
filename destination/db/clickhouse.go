@@ -647,13 +647,16 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 		return err
 	}
 
-	err = retry.OnFalseWithFixedDelay(func() (bool, error) {
-		allActive, err := conn.ExecBoolQuery(ctx, query, allReplicasActive, false)
-		if err != nil {
-			return false, err
-		}
-		return allActive, nil
-	}, ctx, query, *flags.MaxInactiveReplicaCheckRetries, *flags.InactiveReplicaCheckInterval)
+	// Measure the total execution (or, more precisely, waiting) time of all the operations here
+	err = benchmark.RunAndNotice(func() error {
+		return retry.OnFalseWithFixedDelay(func() (bool, error) {
+			allActive, err := conn.ExecBoolQuery(ctx, query, allReplicasActive, false)
+			if err != nil {
+				return false, err
+			}
+			return allActive, nil
+		}, ctx, query, *flags.MaxInactiveReplicaCheckRetries, *flags.InactiveReplicaCheckInterval)
+	}, string(allReplicasActive))
 
 	if err != nil {
 		return err
@@ -688,13 +691,16 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 		return fmt.Errorf("error while generating the mutations status query: %w; initial cause: %w", err, mutationError)
 	}
 
-	err = retry.OnFalseWithFixedDelay(func() (bool, error) {
-		allCompleted, err := conn.ExecBoolQuery(ctx, query, allMutationsCompleted, false)
-		if err != nil {
-			return false, err
-		}
-		return allCompleted, nil
-	}, ctx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
+	// Measure the total execution (or, more precisely, waiting) time of all the operations here
+	err = benchmark.RunAndNotice(func() error {
+		return retry.OnFalseWithFixedDelay(func() (bool, error) {
+			allCompleted, err := conn.ExecBoolQuery(ctx, query, allMutationsCompleted, false)
+			if err != nil {
+				return false, err
+			}
+			return allCompleted, nil
+		}, ctx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
+	}, string(allMutationsCompleted))
 
 	if err != nil {
 		return fmt.Errorf("error while waiting for all mutations to be completed: %w; initial cause: %w", err, mutationError)
