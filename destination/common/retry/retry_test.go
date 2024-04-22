@@ -182,6 +182,39 @@ func TestRetryNetErrorDelayConfiguration(t *testing.T) {
 	assert.GreaterOrEqual(t, time.Since(start).Milliseconds(), int64(50*2))
 }
 
+func TestRetryOnFalseWithFixedDelay(t *testing.T) {
+	delayMs := 20
+	delay := time.Duration(delayMs) * time.Millisecond
+	err := OnFalseWithFixedDelay(func() (bool, error) {
+		return true, nil
+	}, context.Background(), "TestRetryOnFalseWithFixedDelay", 3, delay)
+	assert.NoError(t, err)
+
+	count := 0
+	start := time.Now()
+	err = OnFalseWithFixedDelay(func() (bool, error) {
+		if count == 2 {
+			return true, nil
+		}
+		count++
+		return false, nil
+	}, context.Background(), "TestRetryOnFalseWithFixedDelay", 3, delay)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, time.Since(start).Milliseconds(), int64(delayMs*2))
+
+	count = 0
+	start = time.Now()
+	err = OnFalseWithFixedDelay(func() (bool, error) {
+		if count == 4 { // max retries == 3, will fail anyway
+			return true, nil
+		}
+		count++
+		return false, nil
+	}, context.Background(), "TestRetryOnFalseWithFixedDelay", 4, delay)
+	assert.ErrorContains(t, err, "TestRetryOnFalseWithFixedDelay failed after 4 attempts with 20ms interval between retries")
+	assert.GreaterOrEqual(t, time.Since(start).Milliseconds(), int64(delayMs*3)) // #1 (delay) #2 (delay) #3 (delay) #4
+}
+
 func setupSuite() func(t *testing.T) {
 	td := teardown()
 	*flags.MaxRetries = 2
