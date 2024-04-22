@@ -393,3 +393,15 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890'))", statement)
 }
+
+func TestGetInactiveReplicaQuery(t *testing.T) {
+	query, err := GetInactiveReplicaQuery("foo", "bar")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active)) AS has_inactive_replica FROM system.replicas WHERE database = 'foo' AND table = 'bar' LIMIT 1", query)
+
+	_, err = GetInactiveReplicaQuery("", "bar")
+	assert.ErrorContains(t, err, "schema name for table bar is empty")
+
+	_, err = GetInactiveReplicaQuery("foo", "")
+	assert.ErrorContains(t, err, "table name is empty")
+}

@@ -96,7 +96,10 @@ func GetSelectFromSystemGrantsQuery(username string) (string, error) {
 	if username == "" {
 		return "", fmt.Errorf("username is empty")
 	}
-	return fmt.Sprintf("SELECT `access_type`, `database`, `table`, `column` FROM system.grants WHERE `user_name` = '%s'", username), nil
+	return fmt.Sprintf(
+		"SELECT `access_type`, `database`, `table`, `column` FROM system.grants WHERE `user_name` = '%s'",
+		username,
+	), nil
 }
 
 // GetCreateTableStatement sample generated query:
@@ -141,7 +144,8 @@ func GetCreateTableStatement(
 	}
 	columns := columnsBuilder.String()
 
-	query := fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
+	query := fmt.Sprintf(
+		"CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
 		fullName, columns, identifier(constants.FivetranSynced), strings.Join(orderByCols, ", "))
 	return query, nil
 }
@@ -213,7 +217,8 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 	if tableName == "" {
 		return "", fmt.Errorf("table name is empty")
 	}
-	return fmt.Sprintf("SELECT name, type, comment, is_in_primary_key, numeric_precision, numeric_scale FROM system.columns WHERE database = '%s' AND table = '%s'",
+	return fmt.Sprintf(
+		"SELECT name, type, comment, is_in_primary_key, numeric_precision, numeric_scale FROM system.columns WHERE database = '%s' AND table = '%s'",
 		schemaName, tableName), nil
 }
 
@@ -328,6 +333,23 @@ func GetHardDeleteStatement(
 	}
 	clauseBuilder.WriteRune(')')
 	return clauseBuilder.String(), nil
+}
+
+// GetInactiveReplicaQuery generates a query to check if there is at least one inactive replica.
+func GetInactiveReplicaQuery(
+	schemaName string,
+	tableName string,
+) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
+	}
+	return fmt.Sprintf(
+		"SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active)) AS has_inactive_replica FROM system.replicas WHERE database = '%s' AND table = '%s' LIMIT 1",
+		schemaName, tableName,
+	), nil
 }
 
 func identifier(s string) string {

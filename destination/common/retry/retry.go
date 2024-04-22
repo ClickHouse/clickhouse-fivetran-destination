@@ -101,6 +101,36 @@ func OnNetErrorWithData[T any](
 	return data, nil
 }
 
+func OnFalseWithFixedDelay(
+	op func() (bool, error),
+	ctx context.Context,
+	opName string,
+	maxRetries uint,
+	delay time.Duration,
+) error {
+	attempts := uint(1)
+	for {
+		isSuccess, err := op()
+		if err != nil {
+			return err
+		}
+		if isSuccess {
+			return nil
+		}
+		attempts++
+		if attempts > maxRetries {
+			return fmt.Errorf("%s failed after %d attempts with %s interval between retries", opName, maxRetries, delay)
+		}
+		log.Notice(fmt.Sprintf("retrying %s (attempt %d)", opName, attempts))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			continue
+		}
+	}
+}
+
 func IsNetError(err error) bool {
 	var netErr net.Error
 	return errors.As(err, &netErr)
