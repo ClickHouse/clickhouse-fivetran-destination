@@ -49,6 +49,21 @@ ClickHouse Cloud.
 > [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type is not used as it is marked as
 > obsolete, and was never recommended for production usage.
 
+### Date and DateTime data types ranges
+
+The destination will accept the following ranges for the `LOCALDATE`, `LOCALDATETIME`, and `INSTANT` data types:
+
+| Fivetran type | ClickHouse type                                                                            | Min value                       | Max value                       |
+|---------------|--------------------------------------------------------------------------------------------|---------------------------------|---------------------------------|
+| LOCALDATE     | [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32)                   | `1900-01-01`                    | `2299-12-31`                    |
+| LOCALDATETIME | [DateTime64(0, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) | `1900-01-01 00:00:00`           | `2299-12-31 23:59:59`           | 
+| INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) | `1900-01-01 00:00:00.000000000` | `2262-04-11 23:47:16.000000000` |
+
+If the source data contains a value outside of these ranges, the destination will truncate this value to the nearest valid one. Values within acceptable ranges will be stored as is.
+
+For example, if the source data contains the `LOCALDATE` value `1899-12-31`, the destination will store it
+as `1900-01-01`. Similarly, a `LOCALDATETIME` value of `2300-01-01 00:00:00` will be stored as `2299-12-31 23:59:59`.
+
 ## Destination tables
 
 The ClickHouse destination uses
