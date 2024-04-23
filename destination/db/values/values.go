@@ -149,16 +149,3 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		return nil, fmt.Errorf("no target type for column %s with type %s", colName, colType.String())
 	}
 }
-
-func normalizeDate(date time.Time) time.Time {
-	year := date.Year()
-	if year < 1900 {
-		log.Warn(fmt.Sprintf("Date value %s is before 1900, setting to 1900-01-01", date.Format(constants.NaiveDateFormat)))
-		return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC)
-	}
-	if year > 2299 {
-		log.Warn(fmt.Sprintf("Date value %s is after 2299, setting to 2299-12-31", date.Format(constants.NaiveDateFormat)))
-		return time.Date(2299, time.December, 31, 0, 0, 0, 0, time.UTC)
-	}
-	return date
-}
