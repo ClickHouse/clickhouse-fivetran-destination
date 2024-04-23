@@ -45,8 +45,8 @@ func TestAllDataTypes(t *testing.T) {
 		{"f32", "Nullable(Float32)", ""},
 		{"f64", "Nullable(Float64)", ""},
 		{"dec", "Nullable(Decimal(10, 4))", ""},
-		{"d", "Nullable(Date)", ""},
-		{"dt", "Nullable(DateTime)", ""},
+		{"d", "Nullable(Date32)", ""},
+		{"dt", "Nullable(DateTime64(0, 'UTC'))", ""},
 		{"utc", "Nullable(DateTime64(9, 'UTC'))", ""},
 		{"s", "Nullable(String)", ""},
 		{"j", "Nullable(String)", "JSON"},
@@ -132,7 +132,7 @@ func TestNaiveDateTimePK(t *testing.T) {
 		"dt")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
-		{"dt", "DateTime", ""},
+		{"dt", "DateTime64(0, 'UTC')", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
 }
 
@@ -146,7 +146,7 @@ func TestNaiveDatePK(t *testing.T) {
 		"d")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
-		{"d", "Date", ""},
+		{"d", "Date32", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
 }
 
@@ -256,7 +256,7 @@ func TestLargeInputFile(t *testing.T) {
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int64", ""},
 		{"data", "Nullable(String)", ""},
-		{"created_at", "Nullable(DateTime)", ""},
+		{"created_at", "Nullable(DateTime64(0, 'UTC'))", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
 }
 

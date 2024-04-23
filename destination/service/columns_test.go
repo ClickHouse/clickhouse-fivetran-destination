@@ -17,8 +17,8 @@ func TestToFivetranColumns(t *testing.T) {
 		{Name: "f32", Type: "Float32", IsPrimaryKey: false},
 		{Name: "f64", Type: "Float64", IsPrimaryKey: false},
 		{Name: "dec", Type: "Decimal(10, 4)", IsPrimaryKey: false, DecimalParams: &pb.DecimalParams{Precision: 10, Scale: 4}},
-		{Name: "d", Type: "Date", IsPrimaryKey: false},
-		{Name: "dt", Type: "DateTime", IsPrimaryKey: false},
+		{Name: "d", Type: "Date32", IsPrimaryKey: false},
+		{Name: "dt", Type: "DateTime64(0, 'UTC')", IsPrimaryKey: false},
 		{Name: "dt_utc", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true},
 		{Name: "str", Type: "String", IsPrimaryKey: false},
 		{Name: "j", Type: "String", IsPrimaryKey: false, Comment: "JSON"},
@@ -86,8 +86,8 @@ func TestToClickHouseColumns(t *testing.T) {
 	f32Col := &types.ColumnDefinition{Name: "f32", Type: "Nullable(Float32)", IsPrimaryKey: false}
 	f64Col := &types.ColumnDefinition{Name: "f64", Type: "Nullable(Float64)", IsPrimaryKey: false}
 	decimalCol := &types.ColumnDefinition{Name: "dec", Type: "Nullable(Decimal(10, 4))", IsPrimaryKey: false}
-	dateCol := &types.ColumnDefinition{Name: "d", Type: "Nullable(Date)", IsPrimaryKey: false}
-	datetimeCol := &types.ColumnDefinition{Name: "dt", Type: "Nullable(DateTime)", IsPrimaryKey: false}
+	dateCol := &types.ColumnDefinition{Name: "d", Type: "Nullable(Date32)", IsPrimaryKey: false}
+	datetimeCol := &types.ColumnDefinition{Name: "dt", Type: "Nullable(DateTime64(0, 'UTC'))", IsPrimaryKey: false}
 	strCol := &types.ColumnDefinition{Name: "str", Type: "Nullable(String)", IsPrimaryKey: false}
 	jsonCol := &types.ColumnDefinition{Name: "j", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "JSON"}
 	xmlCol := &types.ColumnDefinition{Name: "x", Type: "Nullable(String)", IsPrimaryKey: false, Comment: "XML"}

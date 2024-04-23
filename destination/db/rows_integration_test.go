@@ -44,10 +44,10 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 			nf64  Nullable(Float64),
 			dd    Decimal(4, 2),
 			ndd   Nullable(Decimal(4, 2)),
-			d     Date,
-			nd    Nullable(Date),
-			dt    DateTime,
-			ndt   Nullable(DateTime),
+			d     Date32,
+			nd    Nullable(Date32),
+			dt    DateTime64(0, 'UTC'),
+			ndt   Nullable(DateTime64(0, 'UTC')),
 			dt64  DateTime64(9, 'UTC'),
 			ndt64 Nullable(DateTime64(9, 'UTC')),
 			s     String,
@@ -152,8 +152,8 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 			dt64_micros DateTime64(9, 'UTC'),
 			dt64_millis DateTime64(9, 'UTC'),
 			dt64        DateTime64(9, 'UTC'),
-			dt          DateTime,
-			d           Date,
+			dt          DateTime64(0, 'UTC'),
+			d           Date32,
 			s           String
 		) ENGINE Memory`, tableName))
 	assert.NoError(t, err)

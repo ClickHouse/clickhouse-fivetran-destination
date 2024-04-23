@@ -35,8 +35,8 @@ ClickHouse Cloud.
 | BIGDECIMAL    | [Decimal(P, S)](https://clickhouse.com/docs/en/sql-reference/data-types/decimal)           |
 | FLOAT         | [Float32](https://clickhouse.com/docs/en/sql-reference/data-types/float)                   |
 | DOUBLE        | [Float64](https://clickhouse.com/docs/en/sql-reference/data-types/float)                   |
-| LOCALDATE     | [Date](https://clickhouse.com/docs/en/sql-reference/data-types/date)                       |
-| LOCALDATETIME | [DateTime](https://clickhouse.com/docs/en/sql-reference/data-types/datetime)               |
+| LOCALDATE     | [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32)                   |
+| LOCALDATETIME | [DateTime64(0, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) |
 | INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) |
 | STRING        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
 | BINARY        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
