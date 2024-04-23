@@ -35,3 +35,13 @@ var InitialRetryDelayMilliseconds = flag.Uint("initial-retry-delay-ms", 100,
 	"Initial delay in milliseconds for backoff retries in case of network errors")
 var MaxRetryDelayMilliseconds = flag.Uint("max-retry-delay-ms", 10_000,
 	"Max delay in milliseconds for backoff retries in case of network errors")
+
+var MaxInactiveReplicaCheckRetries = flag.Uint("max-inactive-replica-check-retries", 600,
+	"Max number of retries when checking inactive replicas before failing")
+var InactiveReplicaCheckInterval = flag.Duration("inactive-replica-check-interval", 1*time.Second,
+	"Interval between inactive replicas check retries")
+
+var MaxAsyncMutationsCheckRetries = flag.Uint("max-async-mutations-check-retries", 600,
+	"Max number of retries when checking async mutations status before failing")
+var AsyncMutationsCheckInterval = flag.Duration("async-mutations-check-interval", 1*time.Second,
+	"Interval between async mutations status check retries")
