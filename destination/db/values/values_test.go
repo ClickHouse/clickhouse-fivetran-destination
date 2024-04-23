@@ -191,3 +191,136 @@ func TestParseValue(t *testing.T) {
 	_, err = Parse("test", pb.DataType_UNSPECIFIED, "foobar")
 	assert.ErrorContains(t, err, "no target type for column test with type UNSPECIFIED")
 }
+
+func TestParseTruncatedDate(t *testing.T) {
+	val, err := Parse("test", pb.DataType_NAIVE_DATE, "1899-12-31")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "1900-01-01")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "1900-01-02")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 2, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "2300-01-01")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "2299-12-31")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "2299-12-30")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 30, 0, 0, 0, 0, time.UTC), val)
+
+	// MySQL-like edge cases
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "0000-01-01")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATE, "9999-12-31")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 0, 0, 0, 0, time.UTC), val)
+}
+
+func TestParseTruncatedDateTime(t *testing.T) {
+	val, err := Parse("test", pb.DataType_NAIVE_DATETIME, "1899-12-31T23:59:59")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "1900-01-01T00:00:00")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "1900-01-01T00:00:01")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 1, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2300-01-01T00:00:00")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 59, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2299-12-31T23:59:59")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 59, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2299-12-31T23:59:58")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 58, 0, time.UTC), val)
+
+	// MySQL-like edge cases
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "0000-01-01T00:00:00")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "9999-12-31T23:59:59")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 59, 0, time.UTC), val)
+}
+
+func TestParseTruncatedUTCDateTime(t *testing.T) {
+	val, err := Parse("test", pb.DataType_UTC_DATETIME, "1899-12-31T23:59:59.999999999Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "1900-01-01T00:00:00.000000000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "1900-01-01T00:00:00.000000001Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 1, time.UTC), val)
+
+	// year > 2262
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2263-04-11T00:00:00.000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// year == 2262, month > 04
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-05-11T00:00:00.000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// year == 2262, month == 04, day > 11
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-04-12T00:00:00.000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// minute > 47
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-04-11T23:48:00.000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// seconds > 16
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-04-11T23:47:17.000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// non-zero nanoseconds
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-04-11T23:47:16.000000001Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// an exact fit
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-04-11T23:47:16.0Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// barely fits
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "2262-04-11T23:47:15.999999999Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 15, 999_999_999, time.UTC), val)
+
+	// MySQL-like edge cases
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "0000-01-01T00:00:00.000000000Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), val)
+
+	val, err = Parse("test", pb.DataType_UTC_DATETIME, "9999-12-31T23:59:59.999999999Z")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+}

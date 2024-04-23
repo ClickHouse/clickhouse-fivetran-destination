@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
+	"fivetran.com/fivetran_sdk/destination/common/log"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/shopspring/decimal"
 )
@@ -84,17 +85,58 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("can't parse value %s as naive date for column %s: %w", val, colName, err)
 		}
+		// Date32 date range is the same as DateTime64, so that makes it [1900-01-01, 2299-12-31].
+		// See https://clickhouse.com/docs/en/sql-reference/data-types/date32
+		// See https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
+		year := result.Year()
+		if year < 1900 {
+			log.Warn(fmt.Sprintf("Date value %s is before 1900, truncating to 1900-01-01", val))
+			return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC), nil
+		}
+		if year > 2299 {
+			log.Warn(fmt.Sprintf("Date value %s is after 2299, truncating to 2299-12-31", val))
+			return time.Date(2299, time.December, 31, 0, 0, 0, 0, time.UTC), nil
+		}
 		return result, nil
 	case pb.DataType_NAIVE_DATETIME:
 		result, err := time.Parse(constants.NaiveDateTimeFormat, val)
 		if err != nil {
 			return nil, fmt.Errorf("can't parse value %s as naive datetime for column %s: %w", val, colName, err)
 		}
+		// Supported range of values: [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999].
+		// See https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
+		year := result.Year()
+		if year < 1900 {
+			log.Warn(fmt.Sprintf("DateTime value %s is before 1900, truncating to 1900-01-01 00:00:00", val))
+			return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC), nil
+		}
+		if year > 2299 {
+			log.Warn(fmt.Sprintf("DateTime value %s is after 2299, truncating to 2299-12-31 23:59:59", val))
+			return time.Date(2299, time.December, 31, 23, 59, 59, 0, time.UTC), nil
+		}
 		return result, nil
 	case pb.DataType_UTC_DATETIME:
 		result, err := time.Parse(constants.UTCDateTimeFormat, val)
 		if err != nil {
 			return nil, fmt.Errorf("can't parse value %s as UTC datetime for column %s: %w", val, colName, err)
+		}
+		// With max precision (9, which is nanoseconds), the maximum supported value is 2262-04-11 23:47:16 in UTC.
+		// See https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
+		year, month, day := result.Date()
+		if year > 2262 || (year == 2262 && month > 4) || (year == 2262 && month == 4 && day > 11) {
+			log.Warn(fmt.Sprintf("UTC DateTime value %s is after 2262-04-11 23:47:16, truncating to that value", val))
+			return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+		}
+		if year < 1900 {
+			log.Warn(fmt.Sprintf("UTC DateTime value %s is before 1900, truncating to 1900-01-01 00:00:00", val))
+			return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC), nil
+		}
+		hours, minutes, seconds := result.Clock()
+		if year == 2262 && month == 4 && day == 11 && hours == 23 {
+			if minutes > 47 || minutes == 47 && seconds > 16 || minutes == 47 && seconds == 16 && result.Nanosecond() > 0 {
+				log.Warn(fmt.Sprintf("UTC DateTime value %s is after 2262-04-11 23:47:16, truncating to that value", val))
+				return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+			}
 		}
 		return result, nil
 	case // "string" types work as-is
