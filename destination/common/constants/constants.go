@@ -15,8 +15,8 @@ const (
 const (
 	String      = "String"
 	Bool        = "Bool"
-	Date        = "Date"
-	DateTime    = "DateTime"
+	Date        = "Date32"               // Date32 has a wider range than a regular Date
+	DateTime    = "DateTime64(0, 'UTC')" // DateTime64(0, 'UTC') has a wider range than a regular DateTime
 	DateTimeUTC = "DateTime64(9, 'UTC')"
 	Decimal     = "Decimal"
 	Int16       = "Int16"
