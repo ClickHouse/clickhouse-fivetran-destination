@@ -45,3 +45,8 @@ var MaxAsyncMutationsCheckRetries = flag.Uint("max-async-mutations-check-retries
 	"Max number of retries when checking async mutations status before failing")
 var AsyncMutationsCheckInterval = flag.Duration("async-mutations-check-interval", 1*time.Second,
 	"Interval between async mutations status check retries")
+
+var MaxDatabaseCreatedCheckRetries = flag.Uint("max-database-created-check-retries", 30,
+	"Max number of retries when checking database creation status before failing")
+var DatabaseCreatedCheckInterval = flag.Duration("database-created-check-interval", 1*time.Second,
+	"Interval between database creation status check retries")
