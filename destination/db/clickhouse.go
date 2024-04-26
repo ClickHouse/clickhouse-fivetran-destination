@@ -278,7 +278,15 @@ func (conn *ClickHouseConnection) CreateDatabase(
 	if err != nil {
 		return err
 	}
-	return conn.ExecStatement(ctx, statement, createDatabase, false)
+	err = conn.ExecStatement(ctx, statement, createDatabase, false)
+	if err != nil {
+		waitErr := conn.WaitDatabaseIsCreated(ctx, err, schemaName)
+		if waitErr != nil {
+			return waitErr
+		}
+		return nil
+	}
+	return nil
 }
 
 // CreateTable will additionally create a database if it does not exist yet.
@@ -708,6 +716,33 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	return nil
 }
 
+func (conn *ClickHouseConnection) WaitDatabaseIsCreated(
+	ctx context.Context,
+	mutationError error,
+	schemaName string,
+) error {
+	if !isDatabaseBeingCreatedErr(mutationError) {
+		return mutationError
+	}
+
+	// Measure the total execution (or, more precisely, waiting) time of all the operations here
+	err := benchmark.RunAndNotice(func() error {
+		return retry.OnFalseWithFixedDelay(func() (bool, error) {
+			dbExists, err := conn.CheckDatabaseExists(ctx, schemaName)
+			if err != nil {
+				return false, err
+			}
+			return dbExists, nil
+		}, ctx, string(waitDatabaseIsCreated), *flags.MaxDatabaseCreatedCheckRetries, *flags.DatabaseCreatedCheckInterval)
+	}, string(waitDatabaseIsCreated))
+
+	if err != nil {
+		return fmt.Errorf("error while waiting for the database %s to be created: %w; initial cause: %w",
+			schemaName, err, mutationError)
+	}
+	return nil
+}
+
 func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
 	rows, err := conn.ExecQuery(ctx, "SELECT toInt8(42) AS fivetran_connection_check", connectionTest, false)
 	if err != nil {
@@ -786,6 +821,15 @@ func isIncompleteMutationErr(err error) bool {
 	return true
 }
 
+func isDatabaseBeingCreatedErr(err error) bool {
+	var exception *clickhouse.Exception
+	ok := errors.As(err, &exception)
+	if !ok || exception.Code != 81 {
+		return false
+	}
+	return true
+}
+
 type connectionOpType string
 
 const (
@@ -809,6 +853,7 @@ const (
 	connectionTest             connectionOpType = "ConnectionTest"
 	allReplicasActive          connectionOpType = "AllReplicasActive"
 	allMutationsCompleted      connectionOpType = "AllMutationsCompleted"
+	waitDatabaseIsCreated      connectionOpType = "WaitDatabaseIsCreated"
 )
 
 type grantType = string
