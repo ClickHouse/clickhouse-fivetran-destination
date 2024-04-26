@@ -716,6 +716,18 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	return nil
 }
 
+// WaitDatabaseIsCreated
+// if there are parallel requests to create tables in a particular database which does not exist yet,
+// and some of these requests will get "false" on database existence check,
+// each of these requests will try to create the database by itself.
+// Despite having NOT EXISTS modifier on the database creation statement,
+// we could still _rarely_ get a "Database ... is currently dropped or renamed" error (code 81).
+//
+// As there is no guarantee that there will be only one instance of the app running at a time, we can't use a mutex.
+// Instead, we will try to wait until the database is created (as it is likely being created by some other request).
+//
+// NB: another (more robust) option is to use a distributed lock (maybe via a KeeperMap table engine),
+// but since this error is very rare, it is probably not worth to overcomplicate.
 func (conn *ClickHouseConnection) WaitDatabaseIsCreated(
 	ctx context.Context,
 	mutationError error,
