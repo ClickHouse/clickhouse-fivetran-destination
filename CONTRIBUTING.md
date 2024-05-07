@@ -15,6 +15,12 @@ For example (Linux x86_64):
 unzip protoc-25.2-linux-x86_64.zip -d $HOME/.local
 ```
 
+Make sure that you have `export PATH="$HOME/.local/bin:$PATH"` in your `.bashrc`/`.zshrc`.
+
+(macOS only): try to run `protoc` from the terminal. If `protoc` cannot be executed due to the OS security policy, 
+go to Settings -> Privacy & Security, find "protoc" there, and click "Allow anyway". 
+Run `protoc` one more time from the terminal, and click "Open".
+
 Then, install the Go plugin for the protocol buffer compiler:
 
 ```bash
