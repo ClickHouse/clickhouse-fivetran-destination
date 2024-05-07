@@ -1,17 +1,20 @@
 _:
 	@echo -e "Check Makefile for all available targets"
 
+fivetran_tag     = "1fabb7626b6ec81a4f56d49a16a654210cb1d0be"
+fivetran_sdk_url = "https://raw.githubusercontent.com/fivetran/fivetran_sdk/$(fivetran_tag)"
+
 prepare-fivetran-sdk:
-	sh .scripts/prepare_fivetran_sdk.sh
+	mkdir -p proto
+	curl -o proto/common.proto          "$(fivetran_sdk_url)/common.proto"
+	curl -o proto/destination_sdk.proto "$(fivetran_sdk_url)/destination_sdk.proto"
 
 install-protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 generate-proto:
-	rm -f proto/*.proto
 	rm -f proto/*.go
-	cp fivetran_sdk/common.proto fivetran_sdk/destination_sdk.proto proto/
 	protoc \
         --proto_path=proto \
         --go_out=proto \
