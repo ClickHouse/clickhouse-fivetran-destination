@@ -29,9 +29,11 @@ make install-protoc-gen-go
 
 ## Generate Go code from the Protobuf definitions
 
-Clone the Fivetran SDK repo first. It contains
-the [protobuf definitions](https://github.com/fivetran/fivetran_sdk/blob/main/destination_sdk.proto) for the destination
-GRPC server.
+Download the Fivetran SDK protobuf files first. These files contain
+the [types definitions](https://github.com/fivetran/fivetran_sdk/blob/main/destination_sdk.proto) for the destination
+GRPC server. 
+
+You can do it by executing the following command:
 
 ```bash
 make prepare-fivetran-sdk
