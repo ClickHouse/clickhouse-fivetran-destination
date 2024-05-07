@@ -111,7 +111,7 @@ func TestGrants(t *testing.T) {
 	defer conn.Close()
 
 	addGrant := func(grant string) {
-		grantCreateDatabaseStatement := fmt.Sprintf("GRANT %s ON *.* TO %s", grant, username)
+		grantCreateDatabaseStatement := fmt.Sprintf("GRANT %s TO %s", grant, username)
 		fmt.Printf("%s\n", grantCreateDatabaseStatement)
 		err = defaultConn.ExecStatement(ctx, grantCreateDatabaseStatement, "", false)
 		require.NoError(t, err)
@@ -121,30 +121,30 @@ func TestGrants(t *testing.T) {
 
 	// users start with zero privileges and the first check immediately fails
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "it's necessary to have the grant SHOW USERS, SHOW ROLES ON *.*")
+	assert.ErrorContains(t, err, "To execute this query, it's necessary to have the grant SELECT(access_type, database, `table`, column, user_name) ON system.grants")
 
 	// gradually add more privileges
-	addGrant("SHOW USERS, SHOW ROLES")
+	addGrant("SELECT ON system.grants")
 	err = conn.GrantsTest(ctx)
 	assert.ErrorContains(t, err, missingPart+"ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT")
 
-	addGrant("ALTER")
+	addGrant("ALTER ON *.*")
 	err = conn.GrantsTest(ctx)
 	assert.ErrorContains(t, err, missingPart+"CREATE DATABASE, CREATE TABLE, INSERT, SELECT")
 
-	addGrant("CREATE DATABASE")
+	addGrant("CREATE DATABASE ON *.*")
 	err = conn.GrantsTest(ctx)
 	assert.ErrorContains(t, err, missingPart+"CREATE TABLE, INSERT, SELECT")
 
-	addGrant("CREATE TABLE")
+	addGrant("CREATE TABLE ON *.*")
 	err = conn.GrantsTest(ctx)
 	assert.ErrorContains(t, err, missingPart+"INSERT, SELECT")
 
-	addGrant("INSERT")
+	addGrant("INSERT ON *.*")
 	err = conn.GrantsTest(ctx)
 	assert.ErrorContains(t, err, missingPart+"SELECT")
 
-	addGrant("SELECT")
+	addGrant("SELECT ON *.*")
 	err = conn.GrantsTest(ctx)
 	require.NoError(t, err)
 }
