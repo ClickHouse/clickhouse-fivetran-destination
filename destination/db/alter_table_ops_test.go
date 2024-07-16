@@ -10,7 +10,7 @@ import (
 func TestGetAlterTableOpsModify(t *testing.T) {
 	int64Type := "Int64"
 	emptyComment := ""
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -20,13 +20,14 @@ func TestGetAlterTableOpsModify(t *testing.T) {
 			{Name: "qux", Type: "Int64", IsPrimaryKey: false},
 		}))
 	assert.NoError(t, err)
+	assert.False(t, hasChangedPK)
 	assert.Equal(t, ops, []*types.AlterTableOp{{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment}})
 }
 
 func TestGetAlterTableOpsAdd(t *testing.T) {
 	int64Type := "Int64"
 	emptyComment := ""
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -37,12 +38,13 @@ func TestGetAlterTableOpsAdd(t *testing.T) {
 			{Name: "zaq", Type: "Int64", IsPrimaryKey: false},
 		}))
 	assert.NoError(t, err)
+	assert.False(t, hasChangedPK)
 	assert.Equal(t, ops, []*types.AlterTableOp{{Op: types.AlterTableAdd, Column: "zaq", Type: &int64Type, Comment: &emptyComment}})
 
 }
 
 func TestGetAlterTableOpsDrop(t *testing.T) {
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -51,6 +53,7 @@ func TestGetAlterTableOpsDrop(t *testing.T) {
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 		}))
 	assert.NoError(t, err)
+	assert.False(t, hasChangedPK)
 	assert.Equal(t, ops, []*types.AlterTableOp{{Op: types.AlterTableDrop, Column: "qux", Type: nil, Comment: nil}})
 }
 
@@ -58,7 +61,7 @@ func TestGetAlterTableOpsAllCombined(t *testing.T) {
 	int64Type := "Int64"
 	int16Type := "Int16"
 	emptyComment := ""
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: false},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -68,6 +71,7 @@ func TestGetAlterTableOpsAllCombined(t *testing.T) {
 			{Name: "zaq", Type: "Int16", IsPrimaryKey: false},
 		}))
 	assert.NoError(t, err)
+	assert.False(t, hasChangedPK)
 	assert.Equal(t, ops, []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment},
 		{Op: types.AlterTableAdd, Column: "zaq", Type: &int16Type, Comment: &emptyComment},
@@ -77,7 +81,7 @@ func TestGetAlterTableOpsAllCombined(t *testing.T) {
 
 func TestGetAlterTableOpsEqualTables(t *testing.T) {
 	// Make sure they all are different pointers
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -87,6 +91,7 @@ func TestGetAlterTableOpsEqualTables(t *testing.T) {
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
 		}))
 	assert.NoError(t, err)
+	assert.False(t, hasChangedPK)
 	assert.Equal(t, ops, []*types.AlterTableOp{})
 }
 
@@ -95,7 +100,7 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 	emptyComment := ""
 	xmlComment := "XML"
 	binaryComment := "BINARY"
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "s1", Type: strType, IsPrimaryKey: false, Comment: emptyComment},
 			{Name: "s2", Type: strType, IsPrimaryKey: false, Comment: emptyComment},
@@ -113,6 +118,7 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 			{Name: "s12", Type: strType, IsPrimaryKey: false, Comment: xmlComment},
 		}))
 	assert.NoError(t, err)
+	assert.False(t, hasChangedPK)
 	assert.Equal(t, ops, []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "s1", Type: &strType, Comment: &binaryComment},
 		{Op: types.AlterTableModify, Column: "s2", Type: &strType, Comment: &xmlComment},
@@ -126,7 +132,9 @@ func TestGetAlterTableOpsWithComments(t *testing.T) {
 }
 
 func TestGetAlterTableOpsChangePrimaryKeyType(t *testing.T) {
-	ops, err := GetAlterTableOps(
+	int64Type := "Int64"
+	emptyComment := ""
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -135,12 +143,16 @@ func TestGetAlterTableOpsChangePrimaryKeyType(t *testing.T) {
 			{Name: "qaz", Type: "Int64", IsPrimaryKey: true},
 			{Name: "qux", Type: "Int64", IsPrimaryKey: false},
 		}))
-	assert.ErrorContains(t, err, "primary key columns types cannot be changed")
-	assert.Equal(t, ops, []*types.AlterTableOp(nil))
+	assert.NoError(t, err)
+	assert.True(t, hasChangedPK)
+	assert.Equal(t, ops, []*types.AlterTableOp{
+		{Op: types.AlterTableModify, Column: "qaz", Type: &int64Type, Comment: &emptyComment},
+		{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment},
+	})
 }
 
 func TestGetAlterTableOpsChangeColumnToPrimaryKey(t *testing.T) {
-	ops, err := GetAlterTableOps(
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: false},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -149,12 +161,15 @@ func TestGetAlterTableOpsChangeColumnToPrimaryKey(t *testing.T) {
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: false},
 			{Name: "qux", Type: "String", IsPrimaryKey: true},
 		}))
-	assert.ErrorContains(t, err, "primary key columns cannot be modified")
-	assert.Equal(t, ops, []*types.AlterTableOp(nil))
+	assert.NoError(t, err)
+	assert.True(t, hasChangedPK)
+	assert.Equal(t, ops, []*types.AlterTableOp{})
 }
 
 func TestGetAlterTableOpsChangeColumnFromPrimaryKey(t *testing.T) {
-	ops, err := GetAlterTableOps(
+	int64Type := "Int64"
+	emptyComment := ""
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: false},
 			{Name: "qux", Type: "String", IsPrimaryKey: true},
@@ -163,12 +178,17 @@ func TestGetAlterTableOpsChangeColumnFromPrimaryKey(t *testing.T) {
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: false},
 			{Name: "qux", Type: "Int64", IsPrimaryKey: false},
 		}))
-	assert.ErrorContains(t, err, "primary key columns cannot be modified")
-	assert.Equal(t, ops, []*types.AlterTableOp(nil))
+	assert.NoError(t, err)
+	assert.True(t, hasChangedPK)
+	assert.Equal(t, ops, []*types.AlterTableOp{
+		{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment},
+	})
 }
 
 func TestGetAlterTableOpsDropPrimaryKey(t *testing.T) {
-	ops, err := GetAlterTableOps(
+	int64Type := "Int64"
+	emptyComment := ""
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "String", IsPrimaryKey: false},
@@ -176,12 +196,18 @@ func TestGetAlterTableOpsDropPrimaryKey(t *testing.T) {
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qux", Type: "Int64", IsPrimaryKey: false},
 		}))
-	assert.ErrorContains(t, err, "primary key columns cannot be dropped")
-	assert.Equal(t, ops, []*types.AlterTableOp(nil))
+	assert.True(t, hasChangedPK)
+	assert.NoError(t, err)
+	assert.Equal(t, ops, []*types.AlterTableOp{
+		{Op: types.AlterTableModify, Column: "qux", Type: &int64Type, Comment: &emptyComment},
+		{Op: types.AlterTableDrop, Column: "qaz", Type: nil, Comment: nil},
+	})
 }
 
 func TestGetAlterTableOpsAddPrimaryKey(t *testing.T) {
-	ops, err := GetAlterTableOps(
+	int64Type := "Int64"
+	emptyComment := ""
+	ops, hasChangedPK, err := GetAlterTableOps(
 		types.MakeTableDescription([]*types.ColumnDefinition{
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 		}),
@@ -189,6 +215,9 @@ func TestGetAlterTableOpsAddPrimaryKey(t *testing.T) {
 			{Name: "qaz", Type: "Int32", IsPrimaryKey: true},
 			{Name: "qux", Type: "Int64", IsPrimaryKey: true},
 		}))
-	assert.ErrorContains(t, err, "primary key columns cannot be added")
-	assert.Equal(t, ops, []*types.AlterTableOp(nil))
+	assert.True(t, hasChangedPK)
+	assert.NoError(t, err)
+	assert.Equal(t, ops, []*types.AlterTableOp{
+		{Op: types.AlterTableAdd, Column: "qux", Type: &int64Type, Comment: &emptyComment},
+	})
 }

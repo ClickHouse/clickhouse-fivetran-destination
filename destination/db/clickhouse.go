@@ -322,7 +322,7 @@ func (conn *ClickHouseConnection) AlterTable(
 	from *types.TableDescription,
 	to *types.TableDescription,
 ) (wasExecuted bool, err error) {
-	ops, err := GetAlterTableOps(from, to)
+	ops, _, err := GetAlterTableOps(from, to)
 	if err != nil {
 		return false, err
 	}
