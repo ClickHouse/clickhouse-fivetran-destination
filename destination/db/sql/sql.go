@@ -371,6 +371,38 @@ func GetAllMutationsCompletedQuery(
 	), nil
 }
 
+func GetInsertFromSelectStatement(
+	schemaName string,
+	oldTableName string,
+	newTableName string,
+	colNames []string,
+) (string, error) {
+	if oldTableName == "" {
+		return "", fmt.Errorf("old table name is empty")
+	}
+	if newTableName == "" {
+		return "", fmt.Errorf("new table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for tables %s/%s is empty", oldTableName, newTableName)
+	}
+	if colNames == nil || len(colNames) == 0 {
+		return "", fmt.Errorf("column names list is empty")
+	}
+	b := strings.Builder{}
+	for i, colName := range colNames {
+		b.WriteString(identifier(colName))
+		if i < len(colNames)-1 {
+			b.WriteString(", ")
+		}
+	}
+	joinedColNames := b.String()
+	return fmt.Sprintf(
+		"INSERT INTO %s.%s (%s) SELECT %s FROM %s.%s",
+		identifier(schemaName), identifier(newTableName), joinedColNames,
+		joinedColNames, identifier(schemaName), identifier(oldTableName)), nil
+}
+
 func identifier(s string) string {
 	return fmt.Sprintf("`%s`", s)
 }
