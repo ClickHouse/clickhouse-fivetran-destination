@@ -102,6 +102,7 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		}
 		// Supported range of values: [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999].
 		// See https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
+		// However, due to the way the driver works, the actual upper bound is 2262-04-11 23:47:16.
 		year, month, day := result.Date()
 		if year > 2262 || (year == 2262 && month > 4) || (year == 2262 && month == 4 && day > 11) {
 			return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
