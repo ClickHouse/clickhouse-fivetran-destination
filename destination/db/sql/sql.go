@@ -373,18 +373,18 @@ func GetAllMutationsCompletedQuery(
 
 func GetInsertFromSelectStatement(
 	schemaName string,
-	oldTableName string,
+	tableName string,
 	newTableName string,
 	colNames []string,
 ) (string, error) {
-	if oldTableName == "" {
-		return "", fmt.Errorf("old table name is empty")
+	if tableName == "" {
+		return "", fmt.Errorf("current table name is empty")
 	}
 	if newTableName == "" {
 		return "", fmt.Errorf("new table name is empty")
 	}
 	if schemaName == "" {
-		return "", fmt.Errorf("schema name for tables %s/%s is empty", oldTableName, newTableName)
+		return "", fmt.Errorf("schema name for tables %s/%s is empty", tableName, newTableName)
 	}
 	if colNames == nil || len(colNames) == 0 {
 		return "", fmt.Errorf("column names list is empty")
@@ -397,10 +397,31 @@ func GetInsertFromSelectStatement(
 		}
 	}
 	joinedColNames := b.String()
+	tableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName))
+	newTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(newTableName))
 	return fmt.Sprintf(
-		"INSERT INTO %s.%s (%s) SELECT %s FROM %s.%s",
-		identifier(schemaName), identifier(newTableName), joinedColNames,
-		joinedColNames, identifier(schemaName), identifier(oldTableName)), nil
+		"INSERT INTO %s (%s) SELECT %s FROM %s",
+		newTableIdentifier, joinedColNames, joinedColNames, tableIdentifier), nil
+}
+
+func GetRenameTableStatement(
+	schemaName string,
+	fromTableName string,
+	toTableName string,
+) (string, error) {
+	if fromTableName == "" {
+		return "", fmt.Errorf("from table name is empty")
+	}
+	if toTableName == "" {
+		return "", fmt.Errorf("to table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for tables %s/%s is empty", fromTableName, toTableName)
+	}
+	fromTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(fromTableName))
+	toTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(toTableName))
+	return fmt.Sprintf("RENAME TABLE %s TO %s",
+		fromTableIdentifier, toTableIdentifier), nil
 }
 
 func identifier(s string) string {

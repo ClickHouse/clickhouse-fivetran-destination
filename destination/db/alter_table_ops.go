@@ -10,8 +10,9 @@ import (
 func GetAlterTableOps(
 	from *types.TableDescription,
 	to *types.TableDescription,
-) (ops []*types.AlterTableOp, hasChangedPK bool, err error) {
+) (ops []*types.AlterTableOp, hasChangedPK bool, unchangedColNames []string, err error) {
 	ops = make([]*types.AlterTableOp, 0)
+	unchangedColNames = make([]string, 0)
 	hasChangedPK = false
 
 	// what columns are missing from the current table definition or have a different Data type? (add + modify)
@@ -56,8 +57,10 @@ func GetAlterTableOps(
 				Op:     types.AlterTableDrop,
 				Column: fromCol.Name,
 			})
+		} else {
+			unchangedColNames = append(unchangedColNames, fromCol.Name)
 		}
 	}
 
-	return ops, hasChangedPK, nil
+	return ops, hasChangedPK, unchangedColNames, nil
 }

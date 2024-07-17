@@ -438,8 +438,25 @@ func TestGetInsertFromSelectStatementErrors(t *testing.T) {
 	assert.ErrorContains(t, err, "new table name is empty")
 
 	_, err = GetInsertFromSelectStatement("foo", "", "qaz", []string{"a", "b"})
-	assert.ErrorContains(t, err, "old table name is empty")
+	assert.ErrorContains(t, err, "current table name is empty")
 
 	_, err = GetInsertFromSelectStatement("", "bar", "qaz", []string{"a", "b"})
 	assert.ErrorContains(t, err, "schema name for tables bar/qaz is empty")
+}
+
+func TestGetRenameTablesStatement(t *testing.T) {
+	query, err := GetRenameTableStatement("s", "table", "new")
+	assert.NoError(t, err)
+	assert.Equal(t, "RENAME TABLE `s`.`table` TO `s`.`new`", query)
+}
+
+func TestGetRenameTablesStatementErrors(t *testing.T) {
+	_, err := GetRenameTableStatement("s", "table", "")
+	assert.ErrorContains(t, err, "to table name is empty")
+
+	_, err = GetRenameTableStatement("s", "", "new")
+	assert.ErrorContains(t, err, "from table name is empty")
+
+	_, err = GetRenameTableStatement("", "table", "new")
+	assert.ErrorContains(t, err, "schema name for tables table/new is empty")
 }

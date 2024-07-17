@@ -1,0 +1,90 @@
+{
+  "create_table": {
+    "change_pk": {
+      "columns": {
+        "id": "INT",
+        "amount": "DOUBLE",
+        "s": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "alter_table": {
+    "change_pk": {
+      "columns": {
+        "id": "INT",
+        "amount": "FLOAT",
+        "s": "STRING"
+      },
+      "primary_key": [
+        "id",
+        "s"
+      ]
+    }
+  },
+  "describe_table": [
+    "change_pk"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "change_pk": [
+          {
+            "id": 1,
+            "amount": 100.45,
+            "s": "foo"
+          },
+          {
+            "id": 2,
+            "amount": 150.33,
+            "s": "bar"
+          },
+          {
+            "id": 3,
+            "amount": 777.777,
+            "s": "qux"
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "change_pk": [
+          {
+            "id": 1,
+            "amount": 200,
+            "s": "foo"
+          }
+        ]
+      }
+    },
+    {
+      "upsert": {
+        "change_pk": [
+          {
+            "id": 2,
+            "amount": 50,
+            "s": "bar"
+          },
+          {
+            "id": 4,
+            "amount": 20.5,
+            "s": "qaz"
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "change_pk": [
+          {
+            "id": 3,
+            "s": "qux"
+          }
+        ]
+      }
+    }
+  ]
+}
