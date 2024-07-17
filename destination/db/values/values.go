@@ -109,6 +109,12 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		if year < 1900 {
 			return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC), nil
 		}
+		hours, minutes, seconds := result.Clock()
+		if year == 2262 && month == 4 && day == 11 && hours == 23 {
+			if minutes > 47 || minutes == 47 && seconds > 16 || minutes == 47 && seconds == 16 {
+				return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+			}
+		}
 		return result, nil
 	case pb.DataType_UTC_DATETIME:
 		result, err := time.Parse(constants.UTCDateTimeFormat, val)

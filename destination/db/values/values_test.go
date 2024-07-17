@@ -240,17 +240,35 @@ func TestParseTruncatedDateTime(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, time.Date(1900, 1, 1, 0, 0, 1, 0, time.UTC), val)
 
-	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2300-01-01T00:00:00")
+	// year > 2262
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2263-04-11T00:00:00")
 	assert.NoError(t, err)
-	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 59, 0, time.UTC), val)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
 
-	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2299-12-31T23:59:59")
+	// year == 2262, month > 04
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2262-05-11T00:00:00")
 	assert.NoError(t, err)
-	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 59, 0, time.UTC), val)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
 
-	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2299-12-31T23:59:58")
+	// year == 2262, month == 04, day > 11
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2262-04-12T00:00:00")
 	assert.NoError(t, err)
-	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 58, 0, time.UTC), val)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// minute > 47
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2262-04-11T23:48:00")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// seconds > 16
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2262-04-11T23:47:17")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+
+	// an exact fit
+	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "2262-04-11T23:47:16")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
 
 	// MySQL-like edge cases
 	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "0000-01-01T00:00:00")
@@ -259,7 +277,7 @@ func TestParseTruncatedDateTime(t *testing.T) {
 
 	val, err = Parse("test", pb.DataType_NAIVE_DATETIME, "9999-12-31T23:59:59")
 	assert.NoError(t, err)
-	assert.Equal(t, time.Date(2299, 12, 31, 23, 59, 59, 0, time.UTC), val)
+	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
 }
 
 func TestParseTruncatedUTCDateTime(t *testing.T) {
