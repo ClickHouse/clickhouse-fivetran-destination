@@ -322,14 +322,7 @@ func (conn *ClickHouseConnection) AlterTable(
 	from *types.TableDescription,
 	to *types.TableDescription,
 ) (wasExecuted bool, err error) {
-	ops, err := GetAlterTableOps(from, to)
-	if err != nil {
-		return false, err
-	}
-	if len(ops) == 0 {
-		return false, nil
-	}
-	statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
+	ops, hasChangedPK, unchangedColNames, err := GetAlterTableOps(from, to)
 	if err != nil {
 		return false, err
 	}
@@ -337,15 +330,77 @@ func (conn *ClickHouseConnection) AlterTable(
 	if err != nil {
 		return false, err
 	}
-	err = conn.ExecStatement(ctx, statement, alterTable, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return false, waitErr
+	if hasChangedPK {
+		unixMilli := time.Now().UnixMilli()
+		newTableName := fmt.Sprintf("%s_new_%d", tableName, unixMilli)
+		backupTableName := fmt.Sprintf("%s_backup_%d", tableName, unixMilli)
+		log.Info(fmt.Sprintf("AlterTable with PK change detected; backup table name: %s, new table name: %s",
+			backupTableName, newTableName))
+		createTableStmt, err := sql.GetCreateTableStatement(schemaName, newTableName, to)
+		if err != nil {
+			return false, err
 		}
-		return true, nil
+		err = conn.ExecStatement(ctx, createTableStmt, alterTablePKCreateTable, false)
+		if err != nil {
+			return false, err
+		}
+		if len(unchangedColNames) > 0 {
+			insertStmt, err := sql.GetInsertFromSelectStatement(schemaName, tableName, newTableName, unchangedColNames)
+			if err != nil {
+				return false, err
+			}
+			err = conn.ExecStatement(ctx, insertStmt, alterTablePKInsert, true)
+			if err != nil {
+				return false, err
+			}
+		}
+		// two statements cause:
+		// "Database ... is Replicated, it does not support renaming of multiple tables in single query"
+		// from current table to the "backup" table, which will be not dropped
+		err = conn.RenameTable(ctx, schemaName, tableName, backupTableName)
+		if err != nil {
+			return false, err
+		}
+		// from the new table to the resulting table with the initial name
+		err = conn.RenameTable(ctx, schemaName, newTableName, tableName)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		if len(ops) == 0 {
+			return false, nil
+		}
+		statement, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
+		if err != nil {
+			return false, err
+		}
+		err = conn.ExecStatement(ctx, statement, alterTable, true)
+		if err != nil {
+			waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
+			if waitErr != nil {
+				return false, waitErr
+			}
+			return true, nil
+		}
 	}
 	return true, nil
+}
+
+func (conn *ClickHouseConnection) RenameTable(
+	ctx context.Context,
+	schemaName string,
+	fromTableName string,
+	toTableName string,
+) error {
+	renameStmt, err := sql.GetRenameTableStatement(schemaName, fromTableName, toTableName)
+	if err != nil {
+		return err
+	}
+	err = conn.ExecStatement(ctx, renameStmt, alterTablePKRename, false)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // TruncateTable
@@ -850,6 +905,9 @@ const (
 	createTable                connectionOpType = "CreateTable"
 	describeTable              connectionOpType = "DescribeTable"
 	alterTable                 connectionOpType = "AlterTable"
+	alterTablePKCreateTable    connectionOpType = "AlterTable(PK, Create table)"
+	alterTablePKInsert         connectionOpType = "AlterTable(PK, Insert from select)"
+	alterTablePKRename         connectionOpType = "AlterTable(PK, Rename tables)"
 	softTruncateTable          connectionOpType = "SoftTruncateTable"
 	hardTruncateTable          connectionOpType = "HardTruncateTable"
 	dropTable                  connectionOpType = "DropTable"

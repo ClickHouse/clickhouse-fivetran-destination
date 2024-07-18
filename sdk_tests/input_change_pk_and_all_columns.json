@@ -1,0 +1,80 @@
+{
+  "create_table": {
+    "change_pk_and_all_columns": {
+      "columns": {
+        "id": "INT",
+        "amount": "DOUBLE"
+      },
+      "primary_key": [
+        "amount"
+      ]
+    }
+  },
+  "alter_table": {
+    "change_pk_and_all_columns": {
+      "columns": {
+        "id": "INT",
+        "s": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ]
+    }
+  },
+  "describe_table": [
+    "change_pk_and_all_columns"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "change_pk_and_all_columns": [
+          {
+            "id": 1,
+            "s": "foo"
+          },
+          {
+            "id": 2,
+            "s": "bar"
+          },
+          {
+            "id": 3,
+            "s": "qux"
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "change_pk_and_all_columns": [
+          {
+            "id": 1,
+            "s": "foo"
+          }
+        ]
+      }
+    },
+    {
+      "upsert": {
+        "change_pk_and_all_columns": [
+          {
+            "id": 2,
+            "s": "bar"
+          },
+          {
+            "id": 4,
+            "s": "qaz"
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "change_pk_and_all_columns": [
+          {
+            "id": 3
+          }
+        ]
+      }
+    }
+  ]
+}

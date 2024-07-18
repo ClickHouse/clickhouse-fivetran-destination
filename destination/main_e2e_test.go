@@ -243,6 +243,56 @@ func TestTableNotFound(t *testing.T) {
 	runSDKTestCommand(t, fileName, true) // verify at least no SDK tester errors
 }
 
+func TestChangePK(t *testing.T) {
+	fileName := "input_change_pk.json"
+	tableName := "change_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"1", "200", "foo"},
+		{"2", "50", "bar"},
+		{"4", "20.5", "qaz"}},
+		"id, s")
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float32)", ""},
+		{"s", "String", ""}, // non-nullable, now a PK
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+}
+
+func TestDropPK(t *testing.T) {
+	fileName := "input_drop_pk.json"
+	tableName := "drop_pk"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"1", "200", "foo"},
+		{"2", "50", "bar"},
+		{"4", "20.5", "qaz"}},
+		"id")
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float32)", ""},
+		{"s", "Nullable(String)", ""}, // was PK, now it is Nullable (as a non-PK column)
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+}
+
+func TestChangePKAndAllColumns(t *testing.T) {
+	fileName := "input_change_pk_and_all_columns.json"
+	tableName := "change_pk_and_all_columns"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPKColumns(t, tableName, [][]string{
+		{"1", "foo"},
+		{"2", "bar"},
+		{"4", "qaz"}},
+		"id")
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""}, // the only PK now
+		{"s", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+}
+
 func TestTruncateDateValues(t *testing.T) {
 	fileName := "input_truncate_date_values.json"
 	tableName := "truncate_date_values"
