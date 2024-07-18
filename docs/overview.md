@@ -26,24 +26,32 @@ ClickHouse Cloud.
 
 [Fivetran data types](https://fivetran.com/docs/destinations#datatypes) to ClickHouse mapping overview:
 
-| Fivetran type | ClickHouse type                                                                            |
-|---------------|--------------------------------------------------------------------------------------------|
-| BOOLEAN       | [Bool](https://clickhouse.com/docs/en/sql-reference/data-types/boolean)                    |
-| SHORT         | [Int16](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                  |
-| INT           | [Int32](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                  |
-| LONG          | [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                  |
-| BIGDECIMAL    | [Decimal(P, S)](https://clickhouse.com/docs/en/sql-reference/data-types/decimal)           |
-| FLOAT         | [Float32](https://clickhouse.com/docs/en/sql-reference/data-types/float)                   |
-| DOUBLE        | [Float64](https://clickhouse.com/docs/en/sql-reference/data-types/float)                   |
-| LOCALDATE     | [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32)                   |
-| LOCALDATETIME | [DateTime64(0, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) |
-| INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) |
-| STRING        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
-| BINARY        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
-| XML           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
-| JSON          | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
+| Fivetran type | ClickHouse type                                                                                  |
+|---------------|--------------------------------------------------------------------------------------------------|
+| BOOLEAN       | [Bool](https://clickhouse.com/docs/en/sql-reference/data-types/boolean)                          |
+| SHORT         | [Int16](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                        |
+| INT           | [Int32](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                        |
+| LONG          | [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                        |
+| BIGDECIMAL    | [Decimal(P, S)](https://clickhouse.com/docs/en/sql-reference/data-types/decimal)                 |
+| FLOAT         | [Float32](https://clickhouse.com/docs/en/sql-reference/data-types/float)                         |
+| DOUBLE        | [Float64](https://clickhouse.com/docs/en/sql-reference/data-types/float)                         |
+| LOCALDATE     | [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32) &ast;                   |
+| LOCALDATETIME | [DateTime64(0, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) &ast; |
+| INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) &ast; |
+| STRING        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                         |
+| BINARY        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;&ast;              |
+| XML           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;&ast;              |
+| JSON          | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;&ast;              |
 
-> &ast; NOTE: The ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used
+> &ast; NOTE: the allowed range for `LOCALDATE` values is `[1900-01-01, 2299-12-31]`
+> (see [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32));
+> the allowed range for `LOCALDATETIME` and `INSTANT` is `[1900-01-01 00:00:00, 2262-04-11 23:47:16]`
+> (see [DateTime64](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64)). 
+> If a value does not fit into the allowed range, it will be rounded to the nearest valid value.
+> For example: an input `LOCALDATE` value like `0000-01-01` will be stored as `1900-01-01`, 
+> and `9999-01-01` will be stored as `2299-12-31`.
+
+> &ast;&ast; NOTE: The ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used
 > to represent an arbitrary set of bytes. The ClickHouse destination adds a column comment to the `JSON`, `BINARY`,
 > and `XML` types to indicate the original data type.
 > [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type is not used as it is marked as

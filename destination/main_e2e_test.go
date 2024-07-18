@@ -293,6 +293,22 @@ func TestChangePKAndAllColumns(t *testing.T) {
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
 }
 
+func TestTruncateDateValues(t *testing.T) {
+	fileName := "input_truncate_date_values.json"
+	tableName := "truncate_date_values"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	assertTableRowsWithPK(t, tableName, [][]string{
+		{"1", "1900-01-01", "1900-01-01 00:00:00", "1900-01-01 00:00:00.000000000"},
+		{"2", "2299-12-31", "2262-04-11 23:47:16", "2262-04-11 23:47:16.000000000"}})
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"d", "Nullable(Date32)", ""},
+		{"dt", "Nullable(DateTime64(0, 'UTC'))", ""},
+		{"utc", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+}
+
 func TestLargeInputFile(t *testing.T) {
 	t.Skip("Skip large input file test - SDK tester hangs")
 	tableName := "input_large_file"

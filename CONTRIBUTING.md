@@ -2,7 +2,7 @@
 
 * Git
 * Make (see [Makefile](./Makefile) for all available commands)
-* Go 1.20+
+* Go 1.22+
 
 ## Install Protoc and Go plugin
 
