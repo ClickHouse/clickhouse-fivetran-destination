@@ -1,0 +1,36 @@
+{
+  "create_table": {
+    "truncate_date_values": {
+      "columns": {
+        "id": "INT",
+        "d": "NAIVE_DATE",
+        "dt": "NAIVE_DATETIME",
+        "utc": "UTC_DATETIME"
+      },
+      "primary_key": ["id"]
+    }
+  },
+  "describe_table": [
+    "truncate_date_values"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "truncate_date_values": [
+          {
+            "id": 1,
+            "d": "0000-01-01",
+            "dt": "0000-01-01T00:00:00",
+            "utc": "0000-01-01T00:00:00.000000000Z"
+          },
+          {
+            "id": 2,
+            "d": "9999-12-31",
+            "dt": "9999-12-31T23:59:59",
+            "utc": "9999-12-31T23:59:59.999999999Z"
+          }
+        ]
+      }
+    }
+  ]
+}
