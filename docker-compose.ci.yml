@@ -21,6 +21,6 @@ services:
       context: ./
       dockerfile: ./Dockerfile
     container_name: 'fivetran-destination-app'
-    command: ./clickhouse_destination --replace-batch-size=2 --update-batch-size=2 --delete-batch-size=2
+    command: ./clickhouse_destination
     ports:
       - '50052:50052'
