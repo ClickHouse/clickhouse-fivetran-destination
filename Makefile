@@ -1,7 +1,7 @@
 _:
 	@echo -e "Check Makefile for all available targets"
 
-fivetran_tag     = "466a61bddfc0e541bfec3cb0cc6a3cf3704d64be" # v2
+fivetran_tag     = "466a61bddfc0e541bfec3cb0cc6a3cf3704d64be"
 fivetran_sdk_url = "https://raw.githubusercontent.com/fivetran/fivetran_sdk/$(fivetran_tag)"
 
 prepare-fivetran-sdk:
