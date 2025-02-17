@@ -7,9 +7,10 @@ const (
 )
 
 const (
-	XMLColumnComment    = "XML"
-	JSONColumnComment   = "JSON"
-	BinaryColumnComment = "BINARY"
+	XMLColumnComment       = "XML"
+	JSONColumnComment      = "JSON"
+	BinaryColumnComment    = "BINARY"
+	NaiveTimeColumnComment = "NAIVE_TIME"
 )
 
 const (

@@ -20,11 +20,17 @@ func ToFivetran(description *types.TableDescription) ([]*pb.Column, error) {
 		if err != nil {
 			return nil, err
 		}
+		var dataTypeParams *pb.DataTypeParams = nil
+		if decimalParams != nil {
+			dataTypeParams = &pb.DataTypeParams{
+				Params: &pb.DataTypeParams_Decimal{Decimal: decimalParams},
+			}
+		}
 		columns[i] = &pb.Column{
 			Name:       col.Name,
 			Type:       fivetranType,
 			PrimaryKey: col.IsPrimaryKey,
-			Decimal:    decimalParams,
+			Params:     dataTypeParams,
 		}
 		i++
 	}

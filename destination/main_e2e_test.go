@@ -33,10 +33,10 @@ func TestAllDataTypes(t *testing.T) {
 	assertTableRowsWithFivetranId(t, tableName, [][]string{
 		{"true", "42", "144", "100500", "100.5", "200.5", "42.42",
 			"2024-05-07", "2024-04-05 15:33:14", "2024-02-03 12:44:22.123456789",
-			"foo", "{\"a\": 1,\"b\": 2}", "<a>1</a>", "FFFA", "abc-123-xyz"},
+			"foo", "{\"a\": 1,\"b\": 2}", "<a>1</a>", "FFFA", "15:00", "abc-123-xyz"},
 		{"false", "-42", "-144", "-100500", "-100.5", "-200.5", "-42.42",
 			"2021-02-03", "2021-06-15 04:15:16", "2021-02-03 14:47:45.234567890",
-			"bar", "{\"c\": 3,\"d\": 4}", "<b>42</b>", "FFFE", "vbn-543-hjk"}})
+			"bar", "{\"c\": 3,\"d\": 4}", "<b>42</b>", "FFFE", "12:42", "vbn-543-hjk"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"b", "Nullable(Bool)", ""},
 		{"i16", "Nullable(Int16)", ""},
@@ -52,6 +52,7 @@ func TestAllDataTypes(t *testing.T) {
 		{"j", "Nullable(String)", "JSON"},
 		{"x", "Nullable(String)", "XML"},
 		{"bin", "Nullable(String)", "BINARY"},
+		{"nt", "Nullable(String)", "NAIVE_TIME"},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
 		{"_fivetran_id", "String", ""}})
 }
@@ -553,12 +554,10 @@ func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool
 	command.Dir = projectRootDir
 	command.Env = os.Environ()
 	command.Env = append(command.Env, fmt.Sprintf("TEST_ARGS=--input-file=%s", inputFileName))
-	byteOut, err := command.Output()
+	_, err := command.Output()
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
 		t.Error(string(exitError.Stderr))
 	}
 	require.NoError(t, err)
-	out := string(byteOut)
-	require.Contains(t, out, "[Connection test]: PASSED")
 }

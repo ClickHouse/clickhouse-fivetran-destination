@@ -27,6 +27,7 @@ func TestGetClickHouseDataType(t *testing.T) {
 		{pb.DataType_JSON, ClickHouseType{Type: "Nullable(String)", Comment: "JSON"}},
 		{pb.DataType_BINARY, ClickHouseType{Type: "Nullable(String)", Comment: "BINARY"}},
 		{pb.DataType_XML, ClickHouseType{Type: "Nullable(String)", Comment: "XML"}},
+		{pb.DataType_NAIVE_TIME, ClickHouseType{Type: "Nullable(String)", Comment: "NAIVE_TIME"}},
 	}
 	for _, arg := range args {
 		chType, err := ToClickHouseDataType(&pb.Column{Type: arg.DataType})
@@ -81,6 +82,7 @@ func TestGetClickHouseDataTypePrimaryKeys(t *testing.T) {
 		{pb.DataType_JSON, ClickHouseType{Type: "String", Comment: "JSON"}},
 		{pb.DataType_BINARY, ClickHouseType{Type: "String", Comment: "BINARY"}},
 		{pb.DataType_XML, ClickHouseType{Type: "String", Comment: "XML"}},
+		{pb.DataType_NAIVE_TIME, ClickHouseType{Type: "String", Comment: "NAIVE_TIME"}},
 	}
 	for _, arg := range args {
 		chType, err := ToClickHouseDataType(&pb.Column{Type: arg.DataType, PrimaryKey: true})
@@ -97,50 +99,42 @@ func TestGetClickHouseDataTypePrimaryKeys(t *testing.T) {
 }
 
 func TestGetClickHouseDataTypeDecimals(t *testing.T) {
-	dataType, err := ToClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
-		Precision: 4,
-		Scale:     2,
-	}})
+	dataType, err := ToClickHouseDataType(&pb.Column{
+		Type:   pb.DataType_DECIMAL,
+		Params: getDecimalDataTypeParams(4, 2)})
 	assert.NoError(t, err)
 	assert.Equal(t, ClickHouseType{Type: "Nullable(Decimal(4, 2))"}, dataType)
 
-	dataType, err = ToClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
-		Precision: 76,
-		Scale:     76,
-	}})
+	dataType, err = ToClickHouseDataType(&pb.Column{
+		Type:   pb.DataType_DECIMAL,
+		Params: getDecimalDataTypeParams(76, 76)})
 	assert.NoError(t, err)
 	assert.Equal(t, ClickHouseType{Type: "Nullable(Decimal(76, 76))"}, dataType)
 
 	// Precision and scale normalization
-	dataType, err = ToClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
-		Precision: 5,
-		Scale:     76,
-	}})
+	dataType, err = ToClickHouseDataType(&pb.Column{
+		Type:   pb.DataType_DECIMAL,
+		Params: getDecimalDataTypeParams(5, 76)})
 	assert.NoError(t, err)
 	assert.Equal(t, ClickHouseType{Type: "Nullable(Decimal(5, 5))"}, dataType)
 
-	dataType, err = ToClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
-		Precision: 200,
-		Scale:     5,
-	}})
+	dataType, err = ToClickHouseDataType(&pb.Column{
+		Type:   pb.DataType_DECIMAL,
+		Params: getDecimalDataTypeParams(200, 5)})
 	assert.NoError(t, err)
 	assert.Equal(t, ClickHouseType{Type: "Nullable(Decimal(76, 5))"}, dataType)
 
-	dataType, err = ToClickHouseDataType(&pb.Column{Type: pb.DataType_DECIMAL, Decimal: &pb.DecimalParams{
-		Precision: 200,
-		Scale:     200,
-	}})
+	dataType, err = ToClickHouseDataType(&pb.Column{
+		Type:   pb.DataType_DECIMAL,
+		Params: getDecimalDataTypeParams(200, 200)})
 	assert.NoError(t, err)
 	assert.Equal(t, ClickHouseType{Type: "Nullable(Decimal(76, 76))"}, dataType)
 
 	// PK Decimal is not nullable
 	dataType, err = ToClickHouseDataType(&pb.Column{
 		Type:       pb.DataType_DECIMAL,
-		PrimaryKey: true,
-		Decimal: &pb.DecimalParams{
-			Precision: 4,
-			Scale:     2,
-		}})
+		Params:     getDecimalDataTypeParams(4, 2),
+		PrimaryKey: true})
 	assert.NoError(t, err)
 	assert.Equal(t, ClickHouseType{Type: "Decimal(4, 2)"}, dataType)
 }
@@ -206,6 +200,8 @@ func TestGetFivetranDataTypeWithComments(t *testing.T) {
 		{"Nullable(String)", "BINARY", pb.DataType_BINARY},
 		{"String", "JSON", pb.DataType_JSON},
 		{"Nullable(String)", "JSON", pb.DataType_JSON},
+		{"String", "NAIVE_TIME", pb.DataType_NAIVE_TIME},
+		{"Nullable(String)", "NAIVE_TIME", pb.DataType_NAIVE_TIME},
 	}
 	for _, arg := range args {
 		dataType, decimalParams, err := ToFivetranDataType(arg.Type, arg.Comment, nil)
@@ -219,4 +215,13 @@ func TestGetFivetranDataTypeWithComments(t *testing.T) {
 			"Fivetran type for CH type %s and comment %s should be %s",
 			arg.Type, arg.Comment, arg.FivetranType.String())
 	}
+}
+
+func getDecimalDataTypeParams(precision uint32, scale uint32) *pb.DataTypeParams {
+	return &pb.DataTypeParams{
+		Params: &pb.DataTypeParams_Decimal{
+			Decimal: &pb.DecimalParams{
+				Precision: precision,
+				Scale:     scale,
+			}}}
 }

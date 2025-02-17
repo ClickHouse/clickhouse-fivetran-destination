@@ -16,7 +16,7 @@
   ],
   "ops": [
     {
-      "truncate": [
+      "truncate_before": [
         "truncate_then_sync"
       ]
     },

@@ -44,19 +44,22 @@ var (
 	// Fivetran STRING, XML, BINARY, JSON all are valid ClickHouse String types,
 	// and by default we don't have a way to get the original Fivetran type from just a ClickHouse String.
 	// So we add comments to the table columns using COMMENT clause to be able to distinguish them.
+	// There is no corresponding type for Fivetran NAIVE_TIME in ClickHouse, so we use String with a comment as well.
 	// NB: ClickHouse has JSON data type, see https://clickhouse.com/docs/en/sql-reference/data-types/json
 	// however, it's marked as experimental and not production ready, so we use String instead.
 	FivetranToClickHouseTypeWithComment = map[pb.DataType]ClickHouseType{
-		pb.DataType_XML:    {Type: c.String, Comment: c.XMLColumnComment},
-		pb.DataType_JSON:   {Type: c.String, Comment: c.JSONColumnComment},
-		pb.DataType_BINARY: {Type: c.String, Comment: c.BinaryColumnComment},
+		pb.DataType_XML:        {Type: c.String, Comment: c.XMLColumnComment},
+		pb.DataType_JSON:       {Type: c.String, Comment: c.JSONColumnComment},
+		pb.DataType_BINARY:     {Type: c.String, Comment: c.BinaryColumnComment},
+		pb.DataType_NAIVE_TIME: {Type: c.String, Comment: c.NaiveTimeColumnComment},
 	}
 	// ClickHouseColumnCommentToFivetranType
 	// Mapping back to Fivetran types from FivetranToClickHouseTypeWithComment(ClickHouseType.Comment)
 	ClickHouseColumnCommentToFivetranType = map[string]pb.DataType{
-		c.XMLColumnComment:    pb.DataType_XML,
-		c.JSONColumnComment:   pb.DataType_JSON,
-		c.BinaryColumnComment: pb.DataType_BINARY,
+		c.XMLColumnComment:       pb.DataType_XML,
+		c.JSONColumnComment:      pb.DataType_JSON,
+		c.BinaryColumnComment:    pb.DataType_BINARY,
+		c.NaiveTimeColumnComment: pb.DataType_NAIVE_TIME,
 	}
 	// FivetranMetadataColumnToClickHouseType
 	// Fivetran metadata columns have known constant names and types, and not Nullable.
@@ -109,8 +112,11 @@ func ToClickHouseDataType(col *pb.Column) (ClickHouseType, error) {
 			return ClickHouseType{}, fmt.Errorf("unknown datatype %s", col.Type.String())
 		}
 	}
-	if chType.Type == c.Decimal && col.Decimal != nil {
-		chType.Type = ToClickHouseDecimalType(col.Decimal)
+	if chType.Type == c.Decimal && col.Params != nil {
+		decimal := col.Params.GetDecimal()
+		if decimal != nil {
+			chType.Type = ToClickHouseDecimalType(decimal)
+		}
 	}
 	if col.PrimaryKey {
 		return chType, nil

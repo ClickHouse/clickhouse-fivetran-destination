@@ -107,6 +107,7 @@ var pkToFivetranToScanType = map[bool]map[pb.DataType]reflect.Type{
 		pb.DataType_XML:            scanTypeString,
 		pb.DataType_JSON:           scanTypeString,
 		pb.DataType_BINARY:         scanTypeString,
+		pb.DataType_NAIVE_TIME:     scanTypeString,
 	},
 	false: {
 		pb.DataType_BOOLEAN:        scanTypeNullableBool,
@@ -123,5 +124,6 @@ var pkToFivetranToScanType = map[bool]map[pb.DataType]reflect.Type{
 		pb.DataType_XML:            scanTypeNullableString,
 		pb.DataType_JSON:           scanTypeNullableString,
 		pb.DataType_BINARY:         scanTypeNullableString,
+		pb.DataType_NAIVE_TIME:     scanTypeNullableString,
 	},
 }

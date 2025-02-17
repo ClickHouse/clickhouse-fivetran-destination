@@ -32,7 +32,7 @@ func StartServer() {
 		os.Exit(1)
 	}
 	s := grpc.NewServer()
-	pb.RegisterDestinationServer(s, &service.Server{})
+	pb.RegisterDestinationConnectorServer(s, &service.Server{})
 
 	errChan := make(chan error)
 	signal.Notify(ExitChan, syscall.SIGTERM, syscall.SIGINT)

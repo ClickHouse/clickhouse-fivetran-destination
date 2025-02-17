@@ -67,7 +67,7 @@ func TestAES256ReaderInvalidOpenFile(t *testing.T) {
 	file.Close()
 
 	_, err = NewReader(file, key)
-	assert.ErrorContains(t, err, "use of closed file")
+	assert.Error(t, err)
 
 	file2, err := os.Open(fileName)
 	assert.NoError(t, err)

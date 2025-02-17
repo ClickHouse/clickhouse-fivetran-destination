@@ -142,7 +142,8 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		pb.DataType_BINARY,
 		pb.DataType_XML,
 		pb.DataType_STRING,
-		pb.DataType_JSON:
+		pb.DataType_JSON,
+		pb.DataType_NAIVE_TIME:
 		return val, nil
 	default:
 		return nil, fmt.Errorf("no target type for column %s with type %s", colName, colType.String())
