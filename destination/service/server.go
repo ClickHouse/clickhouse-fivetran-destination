@@ -16,11 +16,15 @@ const ConnectionTest = "connection"
 const GrantsTest = "grants"
 
 type Server struct {
-	pb.UnimplementedDestinationServer
+	pb.UnimplementedDestinationConnectorServer
 }
 
 func (s *Server) ConfigurationForm(_ context.Context, _ *pb.ConfigurationFormRequest) (*pb.ConfigurationFormResponse, error) {
 	return GetConfigurationFormResponse(), nil
+}
+
+func (s *Server) Capabilities(_ context.Context, _ *pb.CapabilitiesRequest) (*pb.CapabilitiesResponse, error) {
+	return &pb.CapabilitiesResponse{BatchFileFormat: pb.BatchFileFormat_CSV}, nil
 }
 
 func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse, error) {
@@ -168,7 +172,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	var encryption pb.Encryption
 	nullStr := ""
 	unmodifiedStr := ""
-	csvParams := in.GetCsv()
+	csvParams := in.GetFileParams()
 	if csvParams != nil {
 		compression = csvParams.Compression
 		encryption = csvParams.Encryption

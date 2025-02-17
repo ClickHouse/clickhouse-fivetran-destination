@@ -12,6 +12,10 @@ var hostDescription = "ClickHouse Cloud service host without protocol or port. F
 var portDescription = "ClickHouse Cloud service native protocol SSL/TLS port. Default is 9440"
 
 func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
+	isHostRequired := true
+	isPortRequired := false
+	isUserNameRequired := true
+	isPasswordRequired := true
 	return &pb.ConfigurationFormResponse{
 		SchemaSelectionSupported: true,
 		TableSelectionSupported:  true,
@@ -20,7 +24,7 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				Name:        config.HostKey,
 				Label:       "Host",
 				Description: &hostDescription,
-				Required:    true,
+				Required:    &isHostRequired,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_PlainText,
 				},
@@ -29,7 +33,7 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				Name:        config.PortKey,
 				Label:       "Port",
 				Description: &portDescription,
-				Required:    false,
+				Required:    &isPortRequired,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_PlainText,
 				},
@@ -37,7 +41,7 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 			{
 				Name:     config.UsernameKey,
 				Label:    "Username",
-				Required: true,
+				Required: &isUserNameRequired,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_PlainText,
 				},
@@ -45,7 +49,7 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 			{
 				Name:     config.PasswordKey,
 				Label:    "Password",
-				Required: true,
+				Required: &isPasswordRequired,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_Password,
 				},
@@ -67,8 +71,8 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 func FailedWriteBatchResponse(schemaName string, tableName string, err error) *pb.WriteBatchResponse {
 	logError("WriteBatch", err)
 	return &pb.WriteBatchResponse{
-		Response: &pb.WriteBatchResponse_Failure{
-			Failure: fmt.Sprintf("Failed to write batch into `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		Response: &pb.WriteBatchResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to write batch into `%s`.`%s`, cause: %s", schemaName, tableName, err)),
 		},
 	}
 }
@@ -76,8 +80,8 @@ func FailedWriteBatchResponse(schemaName string, tableName string, err error) *p
 func FailedDescribeTableResponse(schemaName string, tableName string, err error) *pb.DescribeTableResponse {
 	logError("DescribeTable", err)
 	return &pb.DescribeTableResponse{
-		Response: &pb.DescribeTableResponse_Failure{
-			Failure: fmt.Sprintf("Failed to describe table `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		Response: &pb.DescribeTableResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to describe table `%s`.`%s`, cause: %s", schemaName, tableName, err)),
 		},
 	}
 }
@@ -100,8 +104,8 @@ func FailedTestResponse(name string, err error) *pb.TestResponse {
 func FailedCreateTableResponse(schemaName string, tableName string, err error) *pb.CreateTableResponse {
 	logError("CreateTable", err)
 	return &pb.CreateTableResponse{
-		Response: &pb.CreateTableResponse_Failure{
-			Failure: fmt.Sprintf("Failed to create table `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		Response: &pb.CreateTableResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to create table `%s`.`%s`, cause: %s", schemaName, tableName, err)),
 		},
 	}
 }
@@ -109,8 +113,8 @@ func FailedCreateTableResponse(schemaName string, tableName string, err error) *
 func FailedAlterTableResponse(schemaName string, tableName string, err error) *pb.AlterTableResponse {
 	logError("AlterTable", err)
 	return &pb.AlterTableResponse{
-		Response: &pb.AlterTableResponse_Failure{
-			Failure: fmt.Sprintf("Failed to alter table `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		Response: &pb.AlterTableResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to alter table `%s`.`%s`, cause: %s", schemaName, tableName, err)),
 		},
 	}
 }
@@ -126,12 +130,18 @@ func SuccessfulTruncateTableResponse() *pb.TruncateResponse {
 func FailedTruncateTableResponse(schemaName string, tableName string, err error) *pb.TruncateResponse {
 	logError("TruncateTable", err)
 	return &pb.TruncateResponse{
-		Response: &pb.TruncateResponse_Failure{
-			Failure: fmt.Sprintf("Failed to truncate table `%s`.`%s`, cause: %s", schemaName, tableName, err),
+		Response: &pb.TruncateResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to truncate table `%s`.`%s`, cause: %s", schemaName, tableName, err)),
 		},
 	}
 }
 
 func logError(endpoint string, err error) {
 	log.Error(fmt.Errorf("%s failed: %w", endpoint, err))
+}
+
+func toTask(taskMessage string) *pb.Task {
+	return &pb.Task{
+		Message: taskMessage,
+	}
 }

@@ -19,7 +19,8 @@
         "s": "STRING",
         "j": "JSON",
         "x": "XML",
-        "bin": "BINARY"
+        "bin": "BINARY",
+        "nt": "NAIVE_TIME"
       },
       "primary_key": []
     }
@@ -46,7 +47,8 @@
             "s": "foo",
             "j": "{\"a\": 1,\"b\": 2}",
             "x": "<a>1</a>",
-            "bin": "FFFA"
+            "bin": "FFFA",
+            "nt": "15:00"
           },
           {
             "_fivetran_id": "vbn-543-hjk",
@@ -63,7 +65,8 @@
             "s": "bar",
             "j": "{\"c\": 3,\"d\": 4}",
             "x": "<b>42</b>",
-            "bin": "FFFE"
+            "bin": "FFFE",
+            "nt": "12:42"
           }
         ]
       }

@@ -1,7 +1,7 @@
 _:
 	@echo -e "Check Makefile for all available targets"
 
-fivetran_tag     = "1fabb7626b6ec81a4f56d49a16a654210cb1d0be"
+fivetran_tag     = "466a61bddfc0e541bfec3cb0cc6a3cf3704d64be"
 fivetran_sdk_url = "https://raw.githubusercontent.com/fivetran/fivetran_sdk/$(fivetran_tag)"
 
 prepare-fivetran-sdk:
@@ -30,7 +30,8 @@ sdk-test:
 		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=172.17.0.1 \
 		--network=host \
-		fivetrandocker/sdk-destination-tester:024.0314.001 $$TEST_ARGS
+		us-docker.pkg.dev/build-286712/public-docker-us/sdktesters-v2/sdk-tester:2.25.0131.001 \
+		--tester-type destination --port 50052 $$TEST_ARGS
 
 recreate-test-db:
 	curl --data-binary "DROP DATABASE IF EXISTS tester" http://localhost:8123

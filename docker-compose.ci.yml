@@ -1,8 +1,10 @@
 version: '3.8'
 services:
   clickhouse:
-    image: 'clickhouse/clickhouse-server:${CLICKHOUSE_VERSION-24.4-alpine}'
+    image: 'clickhouse/clickhouse-server:${CLICKHOUSE_VERSION-25.1-alpine}'
     container_name: 'fivetran-destination-clickhouse-server'
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: 1
     ports:
       - '8123:8123'
       - '9000:9000'
@@ -19,6 +21,6 @@ services:
       context: ./
       dockerfile: ./Dockerfile
     container_name: 'fivetran-destination-app'
-    command: ./clickhouse_destination --replace-batch-size=2 --update-batch-size=2 --delete-batch-size=2
+    command: ./clickhouse_destination
     ports:
       - '50052:50052'

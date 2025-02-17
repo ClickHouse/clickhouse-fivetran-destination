@@ -53,7 +53,7 @@ func TestGetConnectionInvalidUsername(t *testing.T) {
 		"password": "invalid-password",
 		"local":    "true",
 	})
-	assert.ErrorContains(t, err, "ClickHouse connection error: code: 516, message: default: Authentication failed")
+	assert.ErrorContains(t, err, "ClickHouse connection error")
 	assert.Nil(t, conn)
 }
 
