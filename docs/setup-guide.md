@@ -4,7 +4,7 @@ title: Fivetran destination for ClickHouse Cloud Setup Guide
 description: Follow the guide to set up ClickHouse Cloud as a destination.
 ---
 
-# ClickHouse Cloud Setup Guide {% badge text="Partner-Built" /%} {% badge text="Private Preview" /%}
+# ClickHouse Cloud Setup Guide {% badge text="Partner-Built" /%} {% availabilityBadge connector="clickhouse" /%}
 
 Follow our setup guide to configure your Fivetran destination for ClickHouse Cloud.
 
@@ -17,8 +17,8 @@ Follow our setup guide to configure your Fivetran destination for ClickHouse Clo
 
 To connect Fivetran to ClickHouse Cloud, you will need the following:
 
-- A Fivetran account with 
-  [permission to add destinations](/docs/using-fivetran/fivetran-dashboard/account-management/role-based-access-control#legacyandnewrbacmodel).
+- A Fivetran account with
+  [permission to add destinations](/docs/using-fivetran/fivetran-dashboard/account-settings/role-based-access-control#legacyandnewrbacmodel).
 - A ClickHouse Cloud service. You can follow the [Quick Start Guide](https://clickhouse.com/docs/en/cloud-quick-start).
   When the service is created, make sure to copy the `default` user credentials - the password will be shown only once.
 - (Recommended) Consider not using the `default` user; instead, create a dedicated one to use it with this Fivetran
@@ -30,52 +30,52 @@ To connect Fivetran to ClickHouse Cloud, you will need the following:
 
    GRANT CURRENT GRANTS ON *.* TO fivetran_user;
    ```
-  
-  Additionally, you can revoke access to certain databases from the `fivetran_user`. 
+
+  Additionally, you can revoke access to certain databases from the `fivetran_user`.
   For example, by executing the following statement, we restrict access to the `default` database:
 
   ```sql
   REVOKE ALL ON default.* FROM fivetran_user;
   ```
 
-  You can execute these statements in the ClickHouse Cloud SQL console. Click on your service in the services list, and
-  then press the "SQL Console" button on the left sidebar. Click the "+" button to add a new query.
+  You can execute these statements in the ClickHouse SQL console. On the navigation menu, select your service 
+  on the services list and then click **+** to add a new query.
 
-  ![SQL Console](./images/clickhouse_setup_guide3.png)
+  ![SQL Console](./_assets/clickhouse_setup_guide3.png)
 
-  Paste the SQL statements into the query editor, replace the `<password>` placeholder with a password of your choice, 
-  and press the "Run" button.
+  Paste the SQL statements into the query editor, replace the `<password>` placeholder with a password of your choice,
+  and press the **Run** button.
 
-  ![Executing the statements](./images/clickhouse_setup_guide4.png)
+  ![Executing the statements](./_assets/clickhouse_setup_guide4.png)
 
   Now, you should be able to use the `fivetran_user` credentials in the destination configuration.
 
 ---
 
-## Gathering the connection details
+## Find connection details
 
-You can find the hostname of your service in the ClickHouse Cloud console. Click on your service in the services list,
-and then press the "Connect" button on the left sidebar.
+You can find the hostname of your service in the ClickHouse console. On the navigation menu, select your service 
+and then click **Connect**.
 
-![Connect button](./images/clickhouse_setup_guide1.png)
+![Connect button](./_assets/clickhouse_setup_guide1.png)
 
-In the connection window, select "Native". The hostname required for the destination configuration matches the `--host`
+In the connection window, select **Native**. The hostname required for the destination configuration matches the `--host`
 argument for the CLI client. It is defined with the following format: `<service>.<region>.<provider>.clickhouse.cloud`.
 
-![Hostname](./images/clickhouse_setup_guide2.png)
+![Hostname](./_assets/clickhouse_setup_guide2.png)
 
-The port required for the destination configuration is ClickHouse native secure port, which is `9440` for most
+The port required for the destination configuration is ClickHouse Cloud native secure port, which is `9440` for most
 instances.
 
 ---
 
 ## Destination configuration
 
-1. Log in to your Fivetran account.
-2. Go to the [**Destinations** page](https://fivetran.com/dashboard/destinations), and then click **+ Add Destination**.
+1. Log in to your [Fivetran account](https://fivetran.com/login).
+2. Go to the **Destinations** page and click **Add destination**.
 3. Choose a **Destination name** of your choice.
 4. Click **Add**.
-5. Select **ClickHouse** as the destination type.
+5. Select **ClickHouse Cloud** as the destination type.
 6. Enter your ClickHouse Cloud service hostname.
 7. Enter your ClickHouse Cloud service port.
 8. Enter the credentials of the user.
@@ -85,6 +85,8 @@ Fivetran will run the connectivity check with your ClickHouse Cloud service usin
 succeeded, you can start ingesting the data into your ClickHouse Cloud service using Fivetran connectors.
 
 In addition, Fivetran automatically configures a [Fivetran Platform Connector](/docs/logs/fivetran-platform) to transfer
-the connector logs and account metadata to a schema in this destination. The Fivetran Platform Connector enables you to
-monitor your connectors, track your usage, and audit changes. The connector sends all these details at the destination
+the connection logs and account metadata to a schema in this destination. The Fivetran Platform Connector enables you to
+monitor your connections, track your usage, and audit changes. The Fivetran Platform Connector sends all these details at the destination
 level.
+
+> IMPORTANT: If you are an Account Administrator, you can manually add the Fivetran Platform Connector on an account level so that it syncs all the metadata and logs for all the destinations in your account to a single destination. If an account-level Fivetran Platform Connector is already configured in a destination in your Fivetran account, then we don't add destination-level Fivetran Platform Connectors to the new destinations you create.

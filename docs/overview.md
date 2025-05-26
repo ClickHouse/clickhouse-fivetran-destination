@@ -5,9 +5,9 @@ description: Move your data to ClickHouse Cloud using Fivetran.
 menuPosition: 50
 ---
 
-# ClickHouse Cloud {% badge text="Partner-Built" /%} {% badge text="Private Preview" /%}
+# ClickHouse Cloud {% badge text="Partner-Built" /%} {% availabilityBadge connector="clickhouse" /%}
 
-The quickest and easiest way to get up and running with ClickHouse is to create a new service
+The quickest and easiest way to get up and running with ClickHouse Cloud is to create a new service
 in [ClickHouse Cloud](https://clickhouse.cloud).
 
 > NOTE: This destination is [partner-built](/docs/partner-built-program). For any questions related to ClickHouse Cloud
@@ -15,73 +15,58 @@ in [ClickHouse Cloud](https://clickhouse.cloud).
 
 ----
 
+{% partial file="destinations/saas-supported-deployment-models.template.md" /%}
+
+-----
+
 ## Setup guide
 
-Follow our [setup guide](/docs/destinations/clickhouse-cloud/setup-guide) to configure your Fivetran destination for
+Follow our [setup guide](/docs/destinations/clickhouse/setup-guide) to configure your Fivetran destination for
 ClickHouse Cloud.
 
 ----
 
-## Data types mapping
+## Type transformation mapping
 
-[Fivetran data types](https://fivetran.com/docs/destinations#datatypes) to ClickHouse mapping overview:
+The [data types](/docs/destinations#datatypes) in ClickHouse Cloud follow Fivetran's standard data type storage.
 
-| Fivetran type | ClickHouse type                                                                                  |
-|---------------|--------------------------------------------------------------------------------------------------|
-| BOOLEAN       | [Bool](https://clickhouse.com/docs/en/sql-reference/data-types/boolean)                          |
-| SHORT         | [Int16](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                        |
-| INT           | [Int32](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                        |
-| LONG          | [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                        |
-| BIGDECIMAL    | [Decimal(P, S)](https://clickhouse.com/docs/en/sql-reference/data-types/decimal)                 |
-| FLOAT         | [Float32](https://clickhouse.com/docs/en/sql-reference/data-types/float)                         |
-| DOUBLE        | [Float64](https://clickhouse.com/docs/en/sql-reference/data-types/float)                         |
-| LOCALDATE     | [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32) &ast;                   |
-| LOCALDATETIME | [DateTime64(0, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) &ast; |
-| INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) &ast; |
-| STRING        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                         |
-| BINARY        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;&ast;              |
-| XML           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;&ast;              |
-| JSON          | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;&ast;              |
+We use the following data type conversions:
 
-> &ast; NOTE: the allowed range for `LOCALDATE` values is `[1900-01-01, 2299-12-31]`
-> (see [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32));
-> the allowed range for `LOCALDATETIME` and `INSTANT` is `[1900-01-01 00:00:00, 2262-04-11 23:47:16]`
-> (see [DateTime64](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64)). 
-> If a value does not fit into the allowed range, it will be rounded to the nearest valid value.
-> For example: an input `LOCALDATE` value like `0000-01-01` will be stored as `1900-01-01`, 
-> and `9999-01-01` will be stored as `2299-12-31`.
+| Fivetran type | ClickHouse Cloud type                                                                            |
+|---------------|--------------------------------------------------------------------------------------------|
+| BOOLEAN       | [Bool](https://clickhouse.com/docs/en/sql-reference/data-types/boolean)                    |
+| SHORT         | [Int16](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                  |
+| INT           | [Int32](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                  |
+| LONG          | [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint)                  |
+| BIGDECIMAL    | [Decimal(P, S)](https://clickhouse.com/docs/en/sql-reference/data-types/decimal)           |
+| FLOAT         | [Float32](https://clickhouse.com/docs/en/sql-reference/data-types/float)                   |
+| DOUBLE        | [Float64](https://clickhouse.com/docs/en/sql-reference/data-types/float)                   |
+| LOCALDATE     | [Date](https://clickhouse.com/docs/en/sql-reference/data-types/date)                       |
+| LOCALDATETIME | [DateTime](https://clickhouse.com/docs/en/sql-reference/data-types/datetime)               |
+| INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) |
+| STRING        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                   |
+| BINARY        | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
+| XML           | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
+| JSON          | [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) &ast;             |
 
-> &ast;&ast; NOTE: The ClickHouse [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used
-> to represent an arbitrary set of bytes. The ClickHouse destination adds a column comment to the `JSON`, `BINARY`,
+> &ast; NOTE: The ClickHouse Cloud [String](https://clickhouse.com/docs/en/sql-reference/data-types/string) type can be used
+> to represent an arbitrary set of bytes. The ClickHouse Cloud destination adds a column comment to the `JSON`, `BINARY`,
 > and `XML` types to indicate the original data type.
 > [JSON](https://clickhouse.com/docs/en/sql-reference/data-types/json) data type is not used as it is marked as
 > obsolete, and was never recommended for production usage.
 
-### Date and DateTime data types ranges
-
-The destination will accept the following ranges for the `LOCALDATE`, `LOCALDATETIME`, and `INSTANT` data types:
-
-| Fivetran type | ClickHouse type                                                                            | Min value                       | Max value                       |
-|---------------|--------------------------------------------------------------------------------------------|---------------------------------|---------------------------------|
-| LOCALDATE     | [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32)                   | `1900-01-01`                    | `2299-12-31`                    |
-| LOCALDATETIME | [DateTime64(0, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) | `1900-01-01 00:00:00`           | `2299-12-31 23:59:59`           | 
-| INSTANT       | [DateTime64(9, 'UTC')](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64) | `1900-01-01 00:00:00.000000000` | `2262-04-11 23:47:16.000000000` |
-
-If the source data contains a value outside of these ranges, the destination will truncate this value to the nearest valid one. Values within acceptable ranges will be stored as is.
-
-For example, if the source data contains the `LOCALDATE` value `1899-12-31`, the destination will store it
-as `1900-01-01`. Similarly, a `LOCALDATETIME` value of `2300-01-01 00:00:00` will be stored as `2299-12-31 23:59:59`.
+------
 
 ## Destination tables
 
-The ClickHouse destination uses
+The ClickHouse Cloud destination uses
 [Replacing](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree) engine type of
 [SharedMergeTree](https://clickhouse.com/docs/en/cloud/reference/shared-merge-tree) family
 (specifically, `SharedReplacingMergeTree`), versioned by the `_fivetran_synced` column.
 
 Every column except primary (ordering) keys and Fivetran metadata columns is created
 as [Nullable(T)](https://clickhouse.com/docs/en/sql-reference/data-types/nullable), where `T` is a
-ClickHouse type based on the [data types mapping](#data-types-mapping).
+ClickHouse Cloud type based on the [data types mapping](#data-types-mapping).
 
 ### Single primary key in the source table
 
@@ -123,7 +108,7 @@ ORDER BY (id, name)
 SETTINGS index_granularity = 8192
 ```
 
-In this case, `id` + `name` columns were chosen as table sorting keys.
+In this case, `id` and `name` columns are chosen as table sorting keys.
 
 ### No primary keys in the source table
 
@@ -162,12 +147,13 @@ SETTINGS select_sequential_consistency = 1;
 
 ### Retries on network failures
 
-The ClickHouse destination retries transient network errors using the exponential backoff algorithm.
+The ClickHouse Cloud destination retries transient network errors using the exponential backoff algorithm.
 This is safe even when the destination inserts the data, as any potential duplicates are handled by
 the `SharedReplacingMergeTree` table engine, either during background merges,
 or when querying the data with `SELECT FINAL`.
 
-## Preview limitations
+## Limitations
 
-- Adding, removing or modifying primary key columns is not supported yet.
-- The custom ClickHouse settings configuration (for example, for the `CREATE TABLE` statements) is not supported yet.
+- Adding, removing or modifying primary key columns is not supported.
+- The custom ClickHouse Cloud settings configuration (for example, for the `CREATE TABLE` statements) is not supported.
+- [History mode](/docs/core-concepts/sync-modes/history-mode) is not supported for ClickHouse destinations.
