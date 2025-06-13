@@ -348,7 +348,7 @@ func GetAllReplicasActiveQuery(
 		return "", fmt.Errorf("schema name for table %s is empty", tableName)
 	}
 	return fmt.Sprintf(
-		"SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active) = 0) AS has_inactive_replica FROM system.replicas WHERE database = '%s' AND table = '%s' LIMIT 1",
+		"SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active) = 0) AS all_replicas_active FROM system.replicas WHERE database = '%s' AND table = '%s' AND is_readonly != 1 LIMIT 1",
 		schemaName, tableName,
 	), nil
 }
