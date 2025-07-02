@@ -722,7 +722,7 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 	}, string(allReplicasActive))
 
 	if err != nil {
-		return err
+		return fmt.Errorf("error while waiting for all nodes to be available: %w; please verify that all nodes in the cluster are running and healthy (including read-only replicas)", err)
 	}
 	return nil
 }
