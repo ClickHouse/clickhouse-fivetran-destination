@@ -86,9 +86,12 @@ func GetDatabaseRowMappingKey(row []interface{}, csvCols *types.CSVColumns) (str
 }
 
 // GetCSVRowMappingKey is similar to GetDatabaseRowMappingKey, but for CSV rows.
-func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns) (string, error) {
+func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns, isHistoryMode bool) (string, error) {
 	if csvCols == nil || len(csvCols.PrimaryKeys) == 0 {
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
+	}
+	if isHistoryMode {
+		removePrimaryKey(csvCols, constants.FivetranStart)
 	}
 	var key strings.Builder
 	for i, col := range csvCols.PrimaryKeys {
@@ -122,11 +125,12 @@ func MergeUpdatedRows(
 	csvCols *types.CSVColumns,
 	nullStr string,
 	unmodifiedStr string,
+	isHistoryMode bool,
 ) (insertRows [][]interface{}, skipIdx map[int]bool, err error) {
 	insertRows = make([][]interface{}, len(csv))
 	skipIdx = make(map[int]bool)
 	for j, csvRow := range csv {
-		mappingKey, err := GetCSVRowMappingKey(csvRow, csvCols)
+		mappingKey, err := GetCSVRowMappingKey(csvRow, csvCols, isHistoryMode)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -252,4 +256,14 @@ func ToSoftDeletedRow(
 	}
 	updatedRow[fivetranSyncedIdx] = fivetranSynced
 	return updatedRow, nil
+}
+
+func removePrimaryKey(csvCols *types.CSVColumns, name string) {
+	newKeys := make([]*types.CSVColumn, 0, len(csvCols.PrimaryKeys))
+	for _, col := range csvCols.PrimaryKeys {
+		if col.Name != name {
+			newKeys = append(newKeys, col)
+		}
+	}
+	csvCols.PrimaryKeys = newKeys
 }

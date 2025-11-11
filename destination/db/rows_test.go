@@ -29,7 +29,7 @@ func TestGetCSVRowMappingKey(t *testing.T) {
 	}
 	for i, arg := range singlePrimaryKeyArgs {
 		csvColumns := &types.CSVColumns{All: []*types.CSVColumn{arg.col}, PrimaryKeys: []*types.CSVColumn{arg.col}}
-		key, err := GetCSVRowMappingKey(row, csvColumns)
+		key, err := GetCSVRowMappingKey(row, csvColumns, true)
 		assert.NoError(t, err, "Expected no error for idx %d with key %s", i, arg.key)
 		assert.Equal(t, arg.key, key, "Expected key to be %s for idx %d", arg.key, i)
 	}
@@ -58,12 +58,12 @@ func TestGetCSVRowMappingKey(t *testing.T) {
 	}
 	for i, arg := range multiplePrimaryKeyArgs {
 		csvColumns := &types.CSVColumns{All: arg.csvCols, PrimaryKeys: arg.csvCols}
-		key, err := GetCSVRowMappingKey(row, csvColumns)
+		key, err := GetCSVRowMappingKey(row, csvColumns, true)
 		assert.NoError(t, err, "Expected no error for idx %d with key %s", i, arg.key)
 		assert.Equal(t, arg.key, key, "Expected key to be %s for idx %d", arg.key, i)
 	}
 
-	_, err := GetCSVRowMappingKey(row, nil)
+	_, err := GetCSVRowMappingKey(row, nil, true)
 	assert.ErrorContains(t, err, "expected non-empty list of primary keys columns")
 }
 
@@ -84,7 +84,7 @@ func TestGetCSVRowMappingKeyArbitraryUTCPrecision(t *testing.T) {
 	csvCol := &types.CSVColumn{Name: "dt_utc", Type: pb.DataType_UTC_DATETIME, Index: 1}
 	csvColumns := &types.CSVColumns{All: []*types.CSVColumn{csvCol}, PrimaryKeys: []*types.CSVColumn{csvCol}}
 	for i, arg := range args {
-		key, err := GetCSVRowMappingKey(arg.row, csvColumns)
+		key, err := GetCSVRowMappingKey(arg.row, csvColumns, true)
 		assert.NoError(t, err, "Expected no error for idx %d with key %s", i, arg.key)
 		assert.Equal(t, arg.key, key, "Expected key to be %s for idx %d", arg.key, i)
 	}

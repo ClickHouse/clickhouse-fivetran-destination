@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
+	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
+	pb "fivetran.com/fivetran_sdk/proto"
 )
 
 type QualifiedTableName string
@@ -233,6 +235,7 @@ func GetSelectByPrimaryKeysQuery(
 	csv [][]string,
 	csvColumns *types.CSVColumns,
 	qualifiedTableName QualifiedTableName,
+	isHistoryMode bool,
 ) (string, error) {
 	if qualifiedTableName == "" {
 		return "", fmt.Errorf("table name is empty")
@@ -247,6 +250,11 @@ func GetSelectByPrimaryKeysQuery(
 	orderByBuilder.WriteRune('(')
 	var clauseBuilder strings.Builder
 	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", qualifiedTableName))
+
+	if isHistoryMode {
+		removePrimaryKey(csvColumns, constants.FivetranStart)
+		orderByBuilder.WriteString(fmt.Sprintf("`%s`, ", constants.FivetranSynced))
+	}
 	for i, col := range csvColumns.PrimaryKeys {
 		clauseBuilder.WriteString(identifier(col.Name))
 		orderByBuilder.WriteString(identifier(col.Name))
@@ -333,6 +341,251 @@ func GetHardDeleteStatement(
 	}
 	clauseBuilder.WriteRune(')')
 	return clauseBuilder.String(), nil
+}
+
+// GetHardDeleteWithTimestampStatement generates statements such as:
+//
+//	DELETE FROM `foo`.`bar` WHERE
+//	    (`id` = 1 AND `_fivetran_start` >= '1646455512123456789')
+//	    OR (`id` = 2 AND `_fivetran_start` >= '1680784200234567890')
+//	    OR (`id` = 3 AND `_fivetran_start` >= '1680784300234567890')
+//
+// This function combines primary key equality checks with a timestamp comparison for each row,
+// matching the behavior of the Java writeDelete method which uses AND conditions between
+// primary keys and the timestamp filter.
+//
+// The timestampColumn parameter specifies which column to use for the timestamp comparison (e.g., "_fivetran_start").
+// The timestampIndex parameter specifies the index of the timestamp column in the CSV rows.
+//
+// See also: https://clickhouse.com/docs/en/guides/developer/lightweight-delete
+func GetHardDeleteWithTimestampStatement(
+	csv [][]string,
+	csvColumns *types.CSVColumns,
+	qualifiedTableName QualifiedTableName,
+	timestampColumn string,
+	timestampIndex uint,
+	timestampType pb.DataType,
+) (string, error) {
+	if qualifiedTableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if len(csv) == 0 {
+		return "", fmt.Errorf("expected non-empty CSV slice for table %s", qualifiedTableName)
+	}
+	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
+		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
+	}
+	if timestampColumn == "" {
+		return "", fmt.Errorf("timestamp column name is empty")
+	}
+
+	var clauseBuilder strings.Builder
+	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE ", qualifiedTableName))
+
+	for i, csvRow := range csv {
+		if timestampIndex >= uint(len(csvRow)) {
+			return "", fmt.Errorf("can't find matching value for timestamp column with index %d", timestampIndex)
+		}
+
+		// Start parentheses for each row's condition
+		clauseBuilder.WriteRune('(')
+
+		// Build primary key equality conditions with AND between them
+		for _, col := range csvColumns.PrimaryKeys {
+			if col.Index >= uint(len(csvRow)) {
+				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
+			}
+			value, err := values.Value(col.Type, csvRow[col.Index])
+			if err != nil {
+				return "", err
+			}
+			clauseBuilder.WriteString(fmt.Sprintf("%s = %s", identifier(col.Name), value))
+
+			// Add AND after each primary key condition (including the last one)
+			clauseBuilder.WriteString(" AND ")
+		}
+
+		// Add timestamp condition
+		timestampValue, err := values.Value(timestampType, csvRow[timestampIndex])
+		if err != nil {
+			return "", err
+		}
+		clauseBuilder.WriteString(fmt.Sprintf("%s >= %s", identifier(timestampColumn), timestampValue))
+
+		// Close parentheses for this row's condition
+		clauseBuilder.WriteRune(')')
+
+		// Add OR between row conditions (except after the last one)
+		if i < len(csv)-1 {
+			clauseBuilder.WriteString(" OR ")
+		}
+	}
+
+	statement := clauseBuilder.String()
+	log.Info(fmt.Sprintf("GetHardDeleteWithTimestampStatement %s", statement))
+	return statement, nil
+}
+
+// GetUpdateHistoryActiveStatement generates UPDATE statements such as:
+//
+//	ALTER TABLE `foo`.`bar`
+//	UPDATE
+//	    `_fivetran_active` = FALSE,
+//	    `_fivetran_end` = CASE
+//	        WHEN `id` = 1 THEN '1646455512123456788'
+//	        WHEN `id` = 2 THEN '1680784200234567889'
+//	        WHEN `id` = 3 THEN '1680786000345678900'
+//	    END
+//	WHERE `id` IN (1, 2, 3)
+//	    AND `_fivetran_active` = TRUE
+//
+// This function updates history records by setting _fivetran_active to FALSE and
+// _fivetran_end to the timestamp value from the CSV (typically _fivetran_start - 1).
+//
+// The endTimestampIndex parameter specifies the index of the column containing the end timestamp value.
+// For each row, the CASE statement maps primary key values to their corresponding end timestamps.
+//
+// See also: https://clickhouse.com/docs/en/sql-reference/statements/alter/update
+func GetUpdateHistoryActiveStatement(
+	csv [][]string,
+	csvColumns *types.CSVColumns,
+	qualifiedTableName QualifiedTableName,
+	endTimestampIndex uint,
+	endTimestampType pb.DataType,
+) (string, error) {
+	if qualifiedTableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if len(csv) == 0 {
+		return "", fmt.Errorf("expected non-empty CSV slice for table %s", qualifiedTableName)
+	}
+	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
+		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
+	}
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString(fmt.Sprintf("ALTER TABLE %s UPDATE ", qualifiedTableName))
+
+	// SET clause: _fivetran_active = FALSE
+	queryBuilder.WriteString(identifier(constants.FivetranActive))
+	queryBuilder.WriteString(" = FALSE, ")
+
+	// SET clause: _fivetran_end = CASE ... END
+	queryBuilder.WriteString(identifier(constants.FivetranEnd))
+	queryBuilder.WriteString(" = CASE")
+
+	// Build CASE WHEN statements for each row
+	for _, csvRow := range csv {
+		if endTimestampIndex >= uint(len(csvRow)) {
+			return "", fmt.Errorf("can't find matching value for end timestamp column with index %d", endTimestampIndex)
+		}
+
+		queryBuilder.WriteString(" WHEN ")
+
+		// Build condition for primary keys (excluding _fivetran_start)
+		pkConditionCount := 0
+		for _, col := range csvColumns.PrimaryKeys {
+			if col.Name == constants.FivetranStart {
+				continue
+			}
+			if col.Index >= uint(len(csvRow)) {
+				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
+			}
+			value, err := values.Value(col.Type, csvRow[col.Index])
+			if err != nil {
+				return "", err
+			}
+
+			if pkConditionCount > 0 {
+				queryBuilder.WriteString(" AND ")
+			}
+			queryBuilder.WriteString(fmt.Sprintf("%s = %s", identifier(col.Name), value))
+			pkConditionCount++
+		}
+
+		// THEN clause with end timestamp value
+		endTimestampValue, err := values.Value(endTimestampType, csvRow[endTimestampIndex])
+		if err != nil {
+			return "", err
+		}
+		queryBuilder.WriteString(fmt.Sprintf(" THEN %s", endTimestampValue))
+	}
+
+	queryBuilder.WriteString(" END ")
+
+	// WHERE clause: primary keys IN (...) AND _fivetran_active = TRUE
+	queryBuilder.WriteString("WHERE ")
+
+	// Filter out _fivetran_start from primary keys
+	var filteredPKs []*types.CSVColumn
+	for _, col := range csvColumns.PrimaryKeys {
+		if col.Name != constants.FivetranStart {
+			filteredPKs = append(filteredPKs, col)
+		}
+	}
+
+	// Handle single vs composite primary keys
+	if len(filteredPKs) == 1 {
+		// Single PK: id IN (1, 2, 3)
+		queryBuilder.WriteString(identifier(filteredPKs[0].Name))
+		queryBuilder.WriteString(" IN (")
+
+		for i, csvRow := range csv {
+			col := filteredPKs[0]
+			if col.Index >= uint(len(csvRow)) {
+				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
+			}
+			value, err := values.Value(col.Type, csvRow[col.Index])
+			if err != nil {
+				return "", err
+			}
+			queryBuilder.WriteString(value)
+			if i < len(csv)-1 {
+				queryBuilder.WriteString(", ")
+			}
+		}
+		queryBuilder.WriteString(")")
+	} else {
+		// Composite PK: (id, name) IN ((1, 'foo'), (2, 'bar'))
+		queryBuilder.WriteRune('(')
+		for i, col := range filteredPKs {
+			queryBuilder.WriteString(identifier(col.Name))
+			if i < len(filteredPKs)-1 {
+				queryBuilder.WriteString(", ")
+			}
+		}
+		queryBuilder.WriteString(") IN (")
+
+		for i, csvRow := range csv {
+			queryBuilder.WriteRune('(')
+			for j, col := range filteredPKs {
+				if col.Index >= uint(len(csvRow)) {
+					return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
+				}
+				value, err := values.Value(col.Type, csvRow[col.Index])
+				if err != nil {
+					return "", err
+				}
+				queryBuilder.WriteString(value)
+				if j < len(filteredPKs)-1 {
+					queryBuilder.WriteString(", ")
+				}
+			}
+			queryBuilder.WriteRune(')')
+			if i < len(csv)-1 {
+				queryBuilder.WriteString(", ")
+			}
+		}
+		queryBuilder.WriteString(")")
+	}
+
+	queryBuilder.WriteString(" AND ")
+	queryBuilder.WriteString(identifier(constants.FivetranActive))
+	queryBuilder.WriteString(" = TRUE")
+
+	statement := queryBuilder.String()
+	log.Info(fmt.Sprintf("GetUpdateHistoryActiveStatement %s", statement))
+	return statement, nil
 }
 
 // GetAllReplicasActiveQuery
@@ -430,4 +683,14 @@ func identifier(s string) string {
 
 func toUnixTimestamp64Milli(arg string) string {
 	return fmt.Sprintf("toUnixTimestamp64Milli(%s)", arg)
+}
+
+func removePrimaryKey(csvCols *types.CSVColumns, name string) {
+	newKeys := make([]*types.CSVColumn, 0, len(csvCols.PrimaryKeys))
+	for _, col := range csvCols.PrimaryKeys {
+		if col.Name != name {
+			newKeys = append(newKeys, col)
+		}
+	}
+	csvCols.PrimaryKeys = newKeys
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func TestMakeCSVColumnMappingEqual(t *testing.T) {
-	mapping, err := MakeCSVColumns([]string{"col1", "col2", "col3"}, dbCols, fivetranColumnsMap)
+	mapping, err := MakeCSVColumns([]string{"col1", "col2", "col3"}, dbCols, fivetranColumnsMap, true)
 	assert.NoError(t, err)
 	assert.Equal(t, &CSVColumns{
 		All: []*CSVColumn{
@@ -22,7 +22,7 @@ func TestMakeCSVColumnMappingEqual(t *testing.T) {
 }
 
 func TestMakeCSVColumnMappingDifferentOrder(t *testing.T) {
-	mapping, err := MakeCSVColumns([]string{"col2", "col1", "col3"}, dbCols, fivetranColumnsMap)
+	mapping, err := MakeCSVColumns([]string{"col2", "col1", "col3"}, dbCols, fivetranColumnsMap, true)
 	assert.NoError(t, err)
 	assert.Equal(t, &CSVColumns{
 		All: []*CSVColumn{
@@ -40,7 +40,8 @@ func TestMakeCSVColumnMappingSingleColumn(t *testing.T) {
 		&DriverColumns{
 			Mapping: map[string]*DriverColumn{"foo": {Name: "col1", DatabaseType: "String", ScanType: reflect.TypeOf(""), Index: 0}},
 			Columns: []*DriverColumn{{Name: "foo", DatabaseType: "String", ScanType: reflect.TypeOf(""), Index: 0}}},
-		map[string]*pb.Column{"foo": fivetranCol2})
+		map[string]*pb.Column{"foo": fivetranCol2},
+		true)
 	assert.NoError(t, err)
 	assert.Equal(t, &CSVColumns{
 		All:         []*CSVColumn{{Index: 0, TableIndex: 0, Name: "foo", Type: pb.DataType_STRING, IsPrimaryKey: true}},
@@ -49,16 +50,16 @@ func TestMakeCSVColumnMappingSingleColumn(t *testing.T) {
 }
 
 func TestMakeCSVColumnMappingEmptyHeader(t *testing.T) {
-	_, err := MakeCSVColumns([]string{}, dbCols, fivetranColumnsMap)
+	_, err := MakeCSVColumns([]string{}, dbCols, fivetranColumnsMap, true)
 	assert.ErrorContains(t, err, "input file header is empty")
-	_, err = MakeCSVColumns(nil, dbCols, fivetranColumnsMap)
+	_, err = MakeCSVColumns(nil, dbCols, fivetranColumnsMap, true)
 	assert.ErrorContains(t, err, "input file header is empty")
 }
 
 func TestMakeCSVColumnMappingCountMismatch(t *testing.T) {
-	_, err := MakeCSVColumns([]string{"col1"}, dbCols, fivetranColumnsMap)
+	_, err := MakeCSVColumns([]string{"col1"}, dbCols, fivetranColumnsMap, true)
 	assert.ErrorContains(t, err, "columns count in ClickHouse table (3) does not match the input file (1)")
-	_, err = MakeCSVColumns([]string{"col1", "col2"}, dbCols, fivetranColumnsMap)
+	_, err = MakeCSVColumns([]string{"col1", "col2"}, dbCols, fivetranColumnsMap, true)
 	assert.ErrorContains(t, err, "columns count in ClickHouse table (3) does not match the input file (2)")
 }
 

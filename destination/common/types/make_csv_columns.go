@@ -17,6 +17,7 @@ func MakeCSVColumns(
 	csvHeader []string,
 	driverColumns *DriverColumns,
 	fivetranColMap map[string]*pb.Column,
+	isColumnCountMatchingRequired bool,
 ) (*CSVColumns, error) {
 	if len(csvHeader) == 0 {
 		return nil, fmt.Errorf("input file header is empty")
@@ -24,13 +25,13 @@ func MakeCSVColumns(
 	if len(fivetranColMap) == 0 {
 		return nil, fmt.Errorf("table definition is empty")
 	}
-	if len(driverColumns.Columns) != len(csvHeader) {
+	if isColumnCountMatchingRequired && len(driverColumns.Columns) != len(csvHeader) {
 		return nil, fmt.Errorf(
 			"columns count in ClickHouse table (%d) does not match the input file (%d). Expected columns: %s, got: %s",
 			len(driverColumns.Columns), len(csvHeader), joinDriverColumns(driverColumns.Columns), strings.Join(csvHeader, ", "),
 		)
 	}
-	if len(fivetranColMap) != len(csvHeader) {
+	if isColumnCountMatchingRequired && len(fivetranColMap) != len(csvHeader) {
 		return nil, fmt.Errorf(
 			"columns count in the table definition (%d) does not match the input file (%d). Expected columns: %s, got: %s",
 			len(fivetranColMap), len(csvHeader), joinDriverColumns(driverColumns.Columns), strings.Join(csvHeader, ", "),

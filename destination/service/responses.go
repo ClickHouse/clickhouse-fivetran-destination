@@ -77,6 +77,15 @@ func FailedWriteBatchResponse(schemaName string, tableName string, err error) *p
 	}
 }
 
+func FailedWriteHistoryBatchResponse(schemaName string, tableName string, err error) *pb.WriteBatchResponse {
+	logError("WriteHistoryBatch", err)
+	return &pb.WriteBatchResponse{
+		Response: &pb.WriteBatchResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to write history batch into `%s`.`%s`, cause: %s", schemaName, tableName, err)),
+		},
+	}
+}
+
 func FailedDescribeTableResponse(schemaName string, tableName string, err error) *pb.DescribeTableResponse {
 	logError("DescribeTable", err)
 	return &pb.DescribeTableResponse{
