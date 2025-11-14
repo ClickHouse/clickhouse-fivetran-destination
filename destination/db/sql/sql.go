@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
-	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -252,7 +251,7 @@ func GetSelectByPrimaryKeysQuery(
 	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", qualifiedTableName))
 
 	if isHistoryMode {
-		removePrimaryKey(csvColumns, constants.FivetranStart)
+		csvColumns.RemovePrimaryKey(constants.FivetranStart)
 		orderByBuilder.WriteString(fmt.Sprintf("`%s`, ", constants.FivetranSynced))
 	}
 	for i, col := range csvColumns.PrimaryKeys {
@@ -422,7 +421,6 @@ func GetHardDeleteWithTimestampStatement(
 	}
 
 	statement := clauseBuilder.String()
-	log.Info(fmt.Sprintf("GetHardDeleteWithTimestampStatement %s", statement))
 	return statement, nil
 }
 
@@ -584,7 +582,6 @@ func GetUpdateHistoryActiveStatement(
 	queryBuilder.WriteString(" = TRUE")
 
 	statement := queryBuilder.String()
-	log.Info(fmt.Sprintf("GetUpdateHistoryActiveStatement %s", statement))
 	return statement, nil
 }
 
@@ -683,14 +680,4 @@ func identifier(s string) string {
 
 func toUnixTimestamp64Milli(arg string) string {
 	return fmt.Sprintf("toUnixTimestamp64Milli(%s)", arg)
-}
-
-func removePrimaryKey(csvCols *types.CSVColumns, name string) {
-	newKeys := make([]*types.CSVColumn, 0, len(csvCols.PrimaryKeys))
-	for _, col := range csvCols.PrimaryKeys {
-		if col.Name != name {
-			newKeys = append(newKeys, col)
-		}
-	}
-	csvCols.PrimaryKeys = newKeys
 }

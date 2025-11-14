@@ -186,22 +186,22 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 
 	metadata, err := GetFivetranTableMetadata(in.Table)
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetFivetranTableMetadata error ", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetFivetranTableMetadata error: %w", err)), nil
 	}
 
 	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error ", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error: %w", err)), nil
 	}
 	defer conn.Close()
 
 	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetColumnTypes error ", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetColumnTypes error: %w", err)), nil
 	}
 	driverColumns := types.MakeDriverColumns(columnTypes)
 
-	// Benchmark overall WriteBatchRequest and, separately, Replace/Update/Delete operations
+	// Benchmark overall WriteHistoryBatchRequest and, separately, EarliestStart/Replace/Update/Delete operations
 	err = benchmark.RunAndNotice(func() error {
 		err = s.processEarliestStartFilesForHistoryBatch(ctx, in, conn, compression, encryption, metadata, driverColumns)
 		if err != nil {
@@ -223,7 +223,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 		return nil
 	}, writeHistoryBatchTotalOp)
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("Operation error ", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("operation error: %w", err)), nil
 	}
 
 	return &pb.WriteBatchResponse{
@@ -594,12 +594,12 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
 				if err != nil {
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				err = conn.HardDelete(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
+				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranEnd)
 				if err != nil {
 					return err
 				}

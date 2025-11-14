@@ -91,7 +91,7 @@ func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns, isHistoryMo
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
 	}
 	if isHistoryMode {
-		removePrimaryKey(csvCols, constants.FivetranStart)
+		csvCols.RemovePrimaryKey(constants.FivetranStart)
 	}
 	var key strings.Builder
 	for i, col := range csvCols.PrimaryKeys {
@@ -256,14 +256,4 @@ func ToSoftDeletedRow(
 	}
 	updatedRow[fivetranSyncedIdx] = fivetranSynced
 	return updatedRow, nil
-}
-
-func removePrimaryKey(csvCols *types.CSVColumns, name string) {
-	newKeys := make([]*types.CSVColumn, 0, len(csvCols.PrimaryKeys))
-	for _, col := range csvCols.PrimaryKeys {
-		if col.Name != name {
-			newKeys = append(newKeys, col)
-		}
-	}
-	csvCols.PrimaryKeys = newKeys
 }
