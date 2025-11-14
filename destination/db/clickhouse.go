@@ -774,7 +774,7 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 			return err
 		}
 
-		// Find the _fivetran_start column index and type
+		// Find the end timestamp column index and type
 		fivetranStartColumnIndex, fivetranStartColumnType, err := findColumnInCSV(csvColumns, fivetranStartColumnName)
 		if err != nil {
 			return err

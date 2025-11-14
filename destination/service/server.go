@@ -186,22 +186,22 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 
 	metadata, err := GetFivetranTableMetadata(in.Table)
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetFivetranTableMetadata error: %w", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetFivetranTableMetadata error ", err)), nil
 	}
 
 	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error: %w", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error ", err)), nil
 	}
 	defer conn.Close()
 
 	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetColumnTypes error: %w", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetColumnTypes error ", err)), nil
 	}
 	driverColumns := types.MakeDriverColumns(columnTypes)
 
-	// Benchmark overall WriteHistoryBatchRequest and, separately, EarliestStart/Replace/Update/Delete operations
+	// Benchmark overall WriteBatchRequest and, separately, Replace/Update/Delete operations
 	err = benchmark.RunAndNotice(func() error {
 		err = s.processEarliestStartFilesForHistoryBatch(ctx, in, conn, compression, encryption, metadata, driverColumns)
 		if err != nil {
@@ -223,7 +223,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 		return nil
 	}, writeHistoryBatchTotalOp)
 	if err != nil {
-		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("Operation error: %w", err)), nil
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("Operation error ", err)), nil
 	}
 
 	return &pb.WriteBatchResponse{
