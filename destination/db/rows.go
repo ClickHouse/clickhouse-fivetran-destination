@@ -90,11 +90,22 @@ func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns, isHistoryMo
 	if csvCols == nil || len(csvCols.PrimaryKeys) == 0 {
 		return "", fmt.Errorf("expected non-empty list of primary keys columns")
 	}
+
+	// Create a filtered list of primary keys without mutating the input
+	primaryKeys := csvCols.PrimaryKeys
 	if isHistoryMode {
-		removePrimaryKey(csvCols, constants.FivetranStart)
+		// Filter out FivetranStart without mutating the original slice
+		filteredKeys := make([]*types.CSVColumn, 0, len(csvCols.PrimaryKeys))
+		for _, col := range csvCols.PrimaryKeys {
+			if col.Name != constants.FivetranStart {
+				filteredKeys = append(filteredKeys, col)
+			}
+		}
+		primaryKeys = filteredKeys
 	}
+
 	var key strings.Builder
-	for i, col := range csvCols.PrimaryKeys {
+	for i, col := range primaryKeys {
 		key.WriteString(col.Name)
 		key.WriteRune(':')
 		// reformat UTC datetime as nanos (due to possibly variable precision)
@@ -108,7 +119,7 @@ func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns, isHistoryMo
 		} else {
 			key.WriteString(csvRow[col.Index])
 		}
-		if i < len(csvCols.PrimaryKeys)-1 {
+		if i < len(primaryKeys)-1 {
 			key.WriteRune(',')
 		}
 	}

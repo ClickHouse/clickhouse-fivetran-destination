@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
-	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -246,19 +245,32 @@ func GetSelectByPrimaryKeysQuery(
 	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
 		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
 	}
+
+	// Create a filtered list of primary keys without mutating the input
+	primaryKeys := csvColumns.PrimaryKeys
+	if isHistoryMode {
+		// Filter out FivetranStart without mutating the original slice
+		filteredKeys := make([]*types.CSVColumn, 0, len(csvColumns.PrimaryKeys))
+		for _, col := range csvColumns.PrimaryKeys {
+			if col.Name != constants.FivetranStart {
+				filteredKeys = append(filteredKeys, col)
+			}
+		}
+		primaryKeys = filteredKeys
+	}
+
 	var orderByBuilder strings.Builder
 	orderByBuilder.WriteRune('(')
+	if isHistoryMode {
+		orderByBuilder.WriteString(fmt.Sprintf("`%s`, ", constants.FivetranSynced))
+	}
 	var clauseBuilder strings.Builder
 	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", qualifiedTableName))
 
-	if isHistoryMode {
-		removePrimaryKey(csvColumns, constants.FivetranStart)
-		orderByBuilder.WriteString(fmt.Sprintf("`%s`, ", constants.FivetranSynced))
-	}
-	for i, col := range csvColumns.PrimaryKeys {
+	for i, col := range primaryKeys {
 		clauseBuilder.WriteString(identifier(col.Name))
 		orderByBuilder.WriteString(identifier(col.Name))
-		if i < len(csvColumns.PrimaryKeys)-1 {
+		if i < len(primaryKeys)-1 {
 			clauseBuilder.WriteString(", ")
 			orderByBuilder.WriteString(", ")
 		}
@@ -267,7 +279,7 @@ func GetSelectByPrimaryKeysQuery(
 	clauseBuilder.WriteString(") IN (")
 	for i, csvRow := range csv {
 		clauseBuilder.WriteRune('(')
-		for j, col := range csvColumns.PrimaryKeys {
+		for j, col := range primaryKeys {
 			if col.Index > uint(len(csvRow)) {
 				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
 			}
@@ -276,7 +288,7 @@ func GetSelectByPrimaryKeysQuery(
 				return "", err
 			}
 			clauseBuilder.WriteString(value)
-			if j < len(csvColumns.PrimaryKeys)-1 {
+			if j < len(primaryKeys)-1 {
 				clauseBuilder.WriteString(", ")
 			}
 		}
@@ -422,7 +434,6 @@ func GetHardDeleteWithTimestampStatement(
 	}
 
 	statement := clauseBuilder.String()
-	log.Info(fmt.Sprintf("GetHardDeleteWithTimestampStatement %s", statement))
 	return statement, nil
 }
 
@@ -584,7 +595,6 @@ func GetUpdateHistoryActiveStatement(
 	queryBuilder.WriteString(" = TRUE")
 
 	statement := queryBuilder.String()
-	log.Info(fmt.Sprintf("GetUpdateHistoryActiveStatement %s", statement))
 	return statement, nil
 }
 
