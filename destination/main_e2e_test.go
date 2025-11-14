@@ -339,8 +339,8 @@ func TestHistoryMode(t *testing.T) {
 		{"status", "Nullable(String)", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
 		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_end", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_active", "Bool", ""}})
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""}})
 
 	// Verify that records were inserted with correct history mode tracking
 	// Query all columns including history tracking fields

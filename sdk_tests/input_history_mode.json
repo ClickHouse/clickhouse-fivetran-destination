@@ -27,7 +27,7 @@
     },
     {
       "update": {
-        "user": [
+        "users": [
           {"id":1, "name": "name 11", "status":"TODO", "op_time":"2025-11-11T20:57:00Z"},
           {"id":2, "name": "name 22", "status":"TODO", "op_time":"2025-11-11T20:57:00Z"}
         ]
