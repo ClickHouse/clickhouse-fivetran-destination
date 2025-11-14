@@ -327,6 +327,35 @@ func TestLargeInputFile(t *testing.T) {
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
 }
 
+func TestHistoryMode(t *testing.T) {
+	fileName := "input_history_mode.json"
+	tableName := "users"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	// Verify table columns include history mode columns
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"name", "Nullable(String)", ""},
+		{"status", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_active", "Bool", ""}})
+
+	// Verify that records were inserted with correct history mode tracking
+	// Query all columns including history tracking fields
+	query := fmt.Sprintf("SELECT id, name, status, _fivetran_start, _fivetran_end, _fivetran_active FROM tester.%s FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1", tableName)
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "name 1", "TODO", "2025-11-10 20:57:00.000000000", "2025-11-11 20:56:59.999000000", "false"},
+		{"1", "name 11", "TODO", "2025-11-11 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
+		{"2", "name 2", "TODO", "2025-11-10 20:57:00.000000000", "2025-11-11 20:56:59.999000000", "false"},
+		{"2", "name 22", "TODO", "2025-11-11 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
+		{"3", "name 3", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
+		{"4", "name 4", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
+		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
+}
+
 // fail on the first mismatch, to prevent long console output
 func assertDatabaseRecordsFailFast(t *testing.T, expectedRecords [][]string, dbRecordsCSVStr string) {
 	csvReader := csv.NewReader(strings.NewReader(dbRecordsCSVStr))
