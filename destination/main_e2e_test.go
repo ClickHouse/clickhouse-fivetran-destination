@@ -338,7 +338,7 @@ func TestHistoryMode(t *testing.T) {
 		{"name", "Nullable(String)", ""},
 		{"status", "Nullable(String)", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "Nullable(DateTime64(9, 'UTC'))", ""},
 		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
 		{"_fivetran_active", "Nullable(Bool)", ""}})
 
