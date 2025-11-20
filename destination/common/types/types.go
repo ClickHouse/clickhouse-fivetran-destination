@@ -106,3 +106,15 @@ type DriverColumns struct {
 	Mapping map[string]*DriverColumn
 	Columns []*DriverColumn
 }
+
+// RemovePrimaryKey removes a primary key column by name from the CSVColumns.PrimaryKeys slice.
+// If the column doesn't exist, this is a no-op.
+func (c *CSVColumns) RemovePrimaryKey(name string) {
+	newKeys := make([]*CSVColumn, 0, len(c.PrimaryKeys))
+	for _, col := range c.PrimaryKeys {
+		if col.Name != name {
+			newKeys = append(newKeys, col)
+		}
+	}
+	c.PrimaryKeys = newKeys
+}

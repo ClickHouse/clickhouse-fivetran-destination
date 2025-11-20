@@ -4,6 +4,9 @@ const (
 	FivetranID      = "_fivetran_id"
 	FivetranSynced  = "_fivetran_synced"
 	FivetranDeleted = "_fivetran_deleted"
+	FivetranActive  = "_fivetran_active"
+	FivetranStart   = "_fivetran_start"
+	FivetranEnd     = "_fivetran_end"
 )
 
 const (

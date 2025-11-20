@@ -231,25 +231,25 @@ func TestGetSelectByPrimaryKeysQueryValidation(t *testing.T) {
 	}
 	batch := [][]string{{"42", "foo", "2022-03-05T04:45:12.123456789Z"}}
 
-	_, err := GetSelectByPrimaryKeysQuery(batch, csvCols, "")
+	_, err := GetSelectByPrimaryKeysQuery(batch, csvCols, "", false)
 	assert.ErrorContains(t, err, "table name is empty")
 
-	_, err = GetSelectByPrimaryKeysQuery([][]string{}, csvCols, fullTableName)
+	_, err = GetSelectByPrimaryKeysQuery([][]string{}, csvCols, fullTableName, false)
 	assert.ErrorContains(t, err, "expected non-empty CSV slice")
-	_, err = GetSelectByPrimaryKeysQuery(nil, csvCols, fullTableName)
+	_, err = GetSelectByPrimaryKeysQuery(nil, csvCols, fullTableName, false)
 	assert.ErrorContains(t, err, "expected non-empty CSV slice")
 
-	_, err = GetSelectByPrimaryKeysQuery(batch, nil, fullTableName)
+	_, err = GetSelectByPrimaryKeysQuery(batch, nil, fullTableName, false)
 	assert.ErrorContains(t, err, "expected non-empty primary keys")
-	_, err = GetSelectByPrimaryKeysQuery(batch, csvCols, fullTableName)
+	_, err = GetSelectByPrimaryKeysQuery(batch, csvCols, fullTableName, false)
 	assert.ErrorContains(t, err, "expected non-empty primary keys")
 
-	withInvalidCol := []*types.CSVColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}}
+	withInvalidCol := []*types.CSVColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: false}}
 	invalidIndexCSVCols := &types.CSVColumns{
 		All:         withInvalidCol,
 		PrimaryKeys: withInvalidCol,
 	}
-	_, err = GetSelectByPrimaryKeysQuery([][]string{{"foo"}}, invalidIndexCSVCols, fullTableName)
+	_, err = GetSelectByPrimaryKeysQuery([][]string{{"foo"}}, invalidIndexCSVCols, fullTableName, false)
 	assert.ErrorContains(t, err, "can't find matching value for primary key with index 5")
 }
 
@@ -266,7 +266,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
 		PrimaryKeys: []*types.CSVColumn{
 			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}},
-	}, fullTableName)
+	}, fullTableName, false)
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`) IN ((42), (43)) ORDER BY (`id`) LIMIT 2", statement)
 
@@ -278,7 +278,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 		PrimaryKeys: []*types.CSVColumn{
 			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
 			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}},
-	}, fullTableName)
+	}, fullTableName, false)
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar')) ORDER BY (`id`, `name`) LIMIT 2", statement)
 
@@ -289,7 +289,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
 		PrimaryKeys: []*types.CSVColumn{
 			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
-	}, fullTableName)
+	}, fullTableName, false)
 	assert.NoError(t, err)
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
 	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890')) ORDER BY (`ts`) LIMIT 2", statement)

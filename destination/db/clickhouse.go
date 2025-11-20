@@ -12,6 +12,7 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/retry"
@@ -497,6 +498,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 	driverColumns *types.DriverColumns,
 	csvCols *types.CSVColumns,
 	csv [][]string,
+	isHistoryMode bool,
 ) (RowsByPrimaryKeyValue, error) {
 	return benchmark.RunAndNoticeWithData(func() (RowsByPrimaryKeyValue, error) {
 		scanRows := ColumnTypesToEmptyScanRows(driverColumns, uint(len(csv)))
@@ -513,7 +515,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 				s := slice
 				eg.Go(func() error {
 					batch := csv[s.Start:s.End]
-					query, err := sql.GetSelectByPrimaryKeysQuery(batch, csvCols, qualifiedTableName)
+					query, err := sql.GetSelectByPrimaryKeysQuery(batch, csvCols, qualifiedTableName, isHistoryMode)
 					if err != nil {
 						return err
 					}
@@ -620,6 +622,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	csv [][]string,
 	nullStr string,
 	unmodifiedStr string,
+	isHistoryMode bool,
 ) error {
 	return benchmark.RunAndNotice(func() error {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
@@ -633,11 +636,11 @@ func (conn *ClickHouseConnection) UpdateBatch(
 		for _, group := range groups {
 			for _, slice := range group {
 				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, driverColumns, csvColumns, batch)
+				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, driverColumns, csvColumns, batch, isHistoryMode)
 				if err != nil {
 					return err
 				}
-				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr)
+				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr, isHistoryMode)
 				if err != nil {
 					return err
 				}
@@ -685,6 +688,151 @@ func (conn *ClickHouseConnection) HardDelete(
 		}
 		return nil
 	}, string(insertBatchHardDelete))
+}
+
+// HardDeleteWithTimestamp is similar to HardDelete but includes a timestamp condition
+// for each row, combining primary key equality checks with a timestamp comparison.
+// This is useful for deleting records that match both the primary key and a timestamp threshold.
+// See also: sql.GetHardDeleteWithTimestampStatement
+func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	csv [][]string,
+	csvColumns *types.CSVColumns,
+) error {
+	return benchmark.RunAndNotice(func() error {
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+		if err != nil {
+			return err
+		}
+
+		// Find the _fivetran_start column index and type
+		fivetranStartIndex, fivetranStartType, err := findColumnInCSV(csvColumns, constants.FivetranStart)
+		if err != nil {
+			return err
+		}
+
+		groups, err := GroupSlices(uint(len(csv)), *flags.HardDeleteBatchSize, 1)
+		if err != nil {
+			return err
+		}
+		for _, group := range groups {
+			for _, slice := range group {
+				batch := csv[slice.Start:slice.End]
+				statement, err := sql.GetHardDeleteWithTimestampStatement(
+					batch,
+					csvColumns,
+					qualifiedTableName,
+					constants.FivetranStart,
+					fivetranStartIndex,
+					fivetranStartType,
+				)
+				if err != nil {
+					return err
+				}
+				err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}, string(insertBatchHardDelete))
+}
+
+// WriteHistoryBatch updates history records by setting _fivetran_active to FALSE and
+// _fivetran_end to the timestamp from the CSV (typically _fivetran_start - 1).
+// This is used for history mode tables to close out existing active records when new versions arrive.
+//
+// The CSV should contain:
+// - Primary key columns to identify which records to update
+// - An "end timestamp" column (typically calculated as _fivetran_start - 1 of the new record)
+//
+// Example UPDATE generated:
+//
+//	ALTER TABLE schema.table UPDATE
+//	  _fivetran_active = FALSE,
+//	  _fivetran_end = CASE
+//	    WHEN id = 1 THEN T1 - 1
+//	    WHEN id = 2 THEN T2 - 1
+//	  END
+//	WHERE id IN (1, 2) AND _fivetran_active = TRUE
+//
+// See also: sql.GetUpdateHistoryActiveStatement
+func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	csv [][]string,
+	csvColumns *types.CSVColumns,
+	fivetranStartColumnName string,
+) error {
+	return benchmark.RunAndNotice(func() error {
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+		if err != nil {
+			return err
+		}
+
+		// Find the _fivetran_start column index and type
+		fivetranStartColumnIndex, fivetranStartColumnType, err := findColumnInCSV(csvColumns, fivetranStartColumnName)
+		if err != nil {
+			return err
+		}
+
+		// Wait for all nodes to be available before running mutations
+		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
+		if err != nil {
+			return err
+		}
+
+		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
+		if err != nil {
+			return err
+		}
+
+		for _, group := range groups {
+			for _, slice := range group {
+				batch := csv[slice.Start:slice.End]
+				statement, err := sql.GetUpdateHistoryActiveStatement(
+					batch,
+					csvColumns,
+					qualifiedTableName,
+					fivetranStartColumnIndex,
+					fivetranStartColumnType,
+				)
+				if err != nil {
+					return err
+				}
+				err = conn.ExecStatement(ctx, statement, updateHistoryBatch, true)
+				if err != nil {
+					// Wait for mutations to complete if there's an error
+					waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
+					if waitErr != nil {
+						return waitErr
+					}
+					return nil
+				}
+			}
+		}
+		return nil
+	}, string(updateHistoryBatch))
+}
+
+// findColumnInCSV searches for a column by name in csvColumns and returns its index and type.
+// Returns an error if the column is not found.
+func findColumnInCSV(csvColumns *types.CSVColumns, columnName string) (uint, pb.DataType, error) {
+	if csvColumns == nil || csvColumns.All == nil {
+		return 0, pb.DataType_UNSPECIFIED, fmt.Errorf("csvColumns is nil or empty")
+	}
+
+	for _, col := range csvColumns.All {
+		if col.Name == columnName {
+			return col.Index, col.Type, nil
+		}
+	}
+
+	return 0, pb.DataType_UNSPECIFIED, fmt.Errorf("column %s not found in CSV columns", columnName)
 }
 
 // WaitAllNodesAvailable
@@ -917,6 +1065,7 @@ const (
 	insertBatchUpdateTask      connectionOpType = "InsertBatch(Update task)"
 	insertBatchHardDelete      connectionOpType = "InsertBatch(Hard delete)"
 	insertBatchHardDeleteTask  connectionOpType = "InsertBatch(Hard delete task)"
+	updateHistoryBatch         connectionOpType = "UpdateHistoryBatch"
 	getColumnTypesWithIndexMap connectionOpType = "GetColumnTypes"
 	selectByPrimaryKeys        connectionOpType = "SelectByPrimaryKeys"
 	getUserGrants              connectionOpType = "GetUserGrants"

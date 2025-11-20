@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
@@ -167,6 +168,71 @@ func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 	return SuccessfulTruncateTableResponse(), nil
 }
 
+func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatchRequest) (*pb.WriteBatchResponse, error) {
+	var compression pb.Compression
+	var encryption pb.Encryption
+	nullStr := ""
+	unmodifiedStr := ""
+	csvParams := in.GetFileParams()
+	if csvParams != nil {
+		compression = csvParams.Compression
+		encryption = csvParams.Encryption
+		nullStr = csvParams.NullString
+		unmodifiedStr = csvParams.UnmodifiedString
+	} else {
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name,
+			fmt.Errorf("cannot process a write history batch request without CSV params")), nil
+	}
+
+	metadata, err := GetFivetranTableMetadata(in.Table)
+	if err != nil {
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetFivetranTableMetadata error: %w", err)), nil
+	}
+
+	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	if err != nil {
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error: %w", err)), nil
+	}
+	defer conn.Close()
+
+	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
+	if err != nil {
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetColumnTypes error: %w", err)), nil
+	}
+	driverColumns := types.MakeDriverColumns(columnTypes)
+
+	// Benchmark overall WriteHistoryBatchRequest and, separately, EarliestStart/Replace/Update/Delete operations
+	err = benchmark.RunAndNotice(func() error {
+		err = s.processEarliestStartFilesForHistoryBatch(ctx, in, conn, compression, encryption, metadata, driverColumns)
+		if err != nil {
+			return err
+		}
+
+		err = s.processReplaceFilesForHistoryBatch(ctx, in, conn, compression, encryption, nullStr, metadata, driverColumns)
+		if err != nil {
+			return err
+		}
+		err = s.processUpdateFilesForHistoryBatch(ctx, in, conn, compression, encryption, nullStr, unmodifiedStr, metadata, driverColumns)
+		if err != nil {
+			return err
+		}
+		err = s.processDeleteFilesForHistoryBatch(ctx, in, conn, compression, encryption, metadata, driverColumns)
+		if err != nil {
+			return err
+		}
+		return nil
+	}, writeHistoryBatchTotalOp)
+	if err != nil {
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("operation error: %w", err)), nil
+	}
+
+	return &pb.WriteBatchResponse{
+		Response: &pb.WriteBatchResponse_Success{
+			Success: true,
+		},
+	}, nil
+}
+
 func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
 	var compression pb.Compression
 	var encryption pb.Encryption
@@ -253,7 +319,7 @@ func (s *Server) processReplaceFiles(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					return err
 				}
@@ -265,6 +331,101 @@ func (s *Server) processReplaceFiles(
 			}
 			return nil
 		}, writeBatchReplaceOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) processEarliestStartFilesForHistoryBatch(
+	ctx context.Context,
+	in *pb.WriteHistoryBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	metadata *types.FivetranTableMetadata,
+	driverColumns *types.DriverColumns,
+) (err error) {
+	if len(in.EarliestStartFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, earliestStartFile := range in.EarliestStartFiles {
+				csvData, err := ReadCSVFile(earliestStartFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeHistoryBatchEarliestStartOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   earliestStartFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
+				if err != nil {
+					return err
+				}
+				csvWithoutHeader := csvData[1:]
+				err = conn.HardDeleteForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
+				if err != nil {
+					return err
+				}
+
+				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranStart)
+				if err != nil {
+					return err
+				}
+
+			}
+			return nil
+		}, writeHistoryBatchEarliestStartOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) processReplaceFilesForHistoryBatch(
+	ctx context.Context,
+	in *pb.WriteHistoryBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	nullStr string,
+	metadata *types.FivetranTableMetadata,
+	driverColumns *types.DriverColumns,
+) (err error) {
+	if len(in.ReplaceFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, replaceFile := range in.ReplaceFiles {
+				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeHistoryBatchReplaceOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   replaceFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
+				if err != nil {
+					return err
+				}
+				csvWithoutHeader := csvData[1:]
+				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, nullStr)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}, writeHistoryBatchReplaceOp)
 		if err != nil {
 			return err
 		}
@@ -299,18 +460,64 @@ func (s *Server) processUpdateFiles(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr)
+				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr, false)
 				if err != nil {
 					return err
 				}
 			}
 			return nil
 		}, writeBatchUpdateOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) processUpdateFilesForHistoryBatch(
+	ctx context.Context,
+	in *pb.WriteHistoryBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	nullStr string,
+	unmodifiedStr string,
+	metadata *types.FivetranTableMetadata,
+	driverColumns *types.DriverColumns,
+) (err error) {
+	if len(in.UpdateFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, updateFile := range in.UpdateFiles {
+				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeHistoryBatchUpdateOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   updateFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
+				if err != nil {
+					return err
+				}
+				csvWithoutHeader := csvData[1:]
+				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr, true)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}, writeHistoryBatchUpdateOp)
 		if err != nil {
 			return err
 		}
@@ -343,7 +550,7 @@ func (s *Server) processDeleteFiles(
 					})
 					continue
 				}
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap)
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					return err
 				}
@@ -355,6 +562,50 @@ func (s *Server) processDeleteFiles(
 			}
 			return nil
 		}, writeBatchDeleteOp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) processDeleteFilesForHistoryBatch(
+	ctx context.Context,
+	in *pb.WriteHistoryBatchRequest,
+	conn *db.ClickHouseConnection,
+	compression pb.Compression,
+	encryption pb.Encryption,
+	metadata *types.FivetranTableMetadata,
+	driverColumns *types.DriverColumns,
+) (err error) {
+	if len(in.DeleteFiles) > 0 {
+		err = benchmark.RunAndNotice(func() error {
+			for _, deleteFile := range in.DeleteFiles {
+				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
+				if err != nil {
+					return err
+				}
+				if len(csvData) < 2 {
+					logEmptyCSV(&emptyCSVWarnParams{
+						operation:  writeHistoryBatchDeleteOp,
+						schemaName: in.SchemaName,
+						tableName:  in.Table.Name,
+						fileName:   deleteFile,
+					})
+					continue
+				}
+				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
+				if err != nil {
+					return err
+				}
+				csvWithoutHeader := csvData[1:]
+				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranEnd)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}, writeHistoryBatchDeleteOp)
 		if err != nil {
 			return err
 		}
@@ -377,8 +628,13 @@ func logEmptyCSV(params *emptyCSVWarnParams) {
 type writeBatchOpType = string
 
 const (
-	writeBatchReplaceOp writeBatchOpType = "WriteBatchRequest(Replace)"
-	writeBatchUpdateOp  writeBatchOpType = "WriteBatchRequest(Update)"
-	writeBatchDeleteOp  writeBatchOpType = "WriteBatchRequest(Delete)"
-	writeBatchTotalOp   writeBatchOpType = "WriteBatchRequest(Total)"
+	writeHistoryBatchEarliestStartOp writeBatchOpType = "WriteHistoryBatchRequest(EarliestStart)"
+	writeHistoryBatchUpdateOp        writeBatchOpType = "WriteHistoryBatchRequest(Update)"
+	writeHistoryBatchReplaceOp       writeBatchOpType = "WriteHistoryBatchRequest(Replace)"
+	writeHistoryBatchDeleteOp        writeBatchOpType = "WriteHistoryBatchRequest(Delete)"
+	writeHistoryBatchTotalOp         writeBatchOpType = "WriteHistoryBatchRequest(Total)"
+	writeBatchReplaceOp              writeBatchOpType = "WriteBatchRequest(Replace)"
+	writeBatchUpdateOp               writeBatchOpType = "WriteBatchRequest(Update)"
+	writeBatchDeleteOp               writeBatchOpType = "WriteBatchRequest(Delete)"
+	writeBatchTotalOp                writeBatchOpType = "WriteBatchRequest(Total)"
 )

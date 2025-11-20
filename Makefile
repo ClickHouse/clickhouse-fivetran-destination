@@ -1,8 +1,8 @@
 _:
 	@echo -e "Check Makefile for all available targets"
 
-fivetran_tag     = "466a61bddfc0e541bfec3cb0cc6a3cf3704d64be"
-fivetran_sdk_url = "https://raw.githubusercontent.com/fivetran/fivetran_sdk/$(fivetran_tag)"
+fivetran_tag     = "8b30d60b8eb2040f858c3f3c1ab819daed9fd84d"
+fivetran_sdk_url = "https://raw.githubusercontent.com/fivetran/fivetran_partner_sdk/$(fivetran_tag)"
 
 prepare-fivetran-sdk:
 	mkdir -p proto
@@ -10,8 +10,8 @@ prepare-fivetran-sdk:
 	curl -o proto/destination_sdk.proto "$(fivetran_sdk_url)/destination_sdk.proto"
 
 install-protoc-gen-go:
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 
 generate-proto:
 	rm -f proto/*.go
@@ -30,7 +30,7 @@ sdk-test:
 		-e WORKING_DIR=$$PWD/sdk_tests \
 		-e GRPC_HOSTNAME=172.17.0.1 \
 		--network=host \
-		us-docker.pkg.dev/build-286712/public-docker-us/sdktesters-v2/sdk-tester:2.25.0131.001 \
+		us-docker.pkg.dev/build-286712/public-docker-us/sdktesters-v2/sdk-tester:2.25.1118.001 \
 		--tester-type destination --port 50052 $$TEST_ARGS
 
 recreate-test-db:
