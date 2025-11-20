@@ -338,7 +338,7 @@ func TestHistoryMode(t *testing.T) {
 		{"name", "Nullable(String)", ""},
 		{"status", "Nullable(String)", ""},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_start", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
 		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
 		{"_fivetran_active", "Nullable(Bool)", ""}})
 
@@ -545,7 +545,8 @@ func runQuery(t *testing.T, query string) string {
 	out, err := command.Output()
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
-		t.Fatalf(string(exitError.Stderr))
+		t.Logf("%s", string(exitError.Stderr))
+		t.FailNow()
 	}
 	require.NoError(t, err)
 	return string(out)
