@@ -29,9 +29,11 @@ jobs:
       fail-fast: true
       matrix:
         go:
-          - "1.22"
+          - "1.25"
         clickhouse:
           - "latest"
+          - "head"
+
     steps:
       - uses: actions/checkout@v2
 
