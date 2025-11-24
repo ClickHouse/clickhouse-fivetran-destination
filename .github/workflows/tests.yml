@@ -22,14 +22,16 @@ on:
   schedule:
     - cron: '0 9 * * *'
 
+
+env:
+  GO_VERSION: "1.25"
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
       matrix:
-        go:
-          - "1.25"
         clickhouse:
           - "latest"
           - "head"
@@ -41,10 +43,10 @@ jobs:
         run: |
           make prepare-fivetran-sdk
 
-      - name: Install Go ${{ matrix.go }}
+      - name: Install Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v4
         with:
-          go-version: ${{ matrix.go }}
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
@@ -82,6 +84,61 @@ jobs:
       - name: Add ClickHouse to /etc/hosts
         run: |
           sudo echo "127.0.0.1 clickhouse" | sudo tee -a /etc/hosts
+
+      - name: Run Go tests
+        run: |
+          make test
+
+  test-cloud:
+#    needs: [ "test" ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Checkout SDK Repo
+        run: |
+          make prepare-fivetran-sdk
+
+      - name: Install Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+
+      - name: Install Protoc-Gen-Go
+        run: |
+          make install-protoc-gen-go
+
+      - name: Make proto dir
+        run: |
+          mkdir -p proto
+
+      - name: Generate proto files
+        run: |
+          make generate-proto
+
+      - name: Go mod tidy
+        run: |
+          go mod tidy
+
+      - name: Start ClickHouse in Docker (required to use clickhouse-client)
+        uses: isbang/compose-action@v1.5.1
+        env:
+          CLICKHOUSE_VERSION: latest
+        with:
+          compose-file: 'docker-compose.ci.yml'
+          down-flags: '--volumes'
+          services: 'clickhouse'
+
+      - name: Add ClickHouse to /etc/hosts
+        run: |
+          sudo echo "127.0.0.1 clickhouse" | sudo tee -a /etc/hosts
+
+      - name: Prepare ClickHouse Cloud JSON config
+        run: |
+          echo '{"host":"${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}","port":9440,"username":"default","password":"${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}","local":false}' > ./sdk_tests/configuration.json
 
       - name: Run Go tests
         run: |
