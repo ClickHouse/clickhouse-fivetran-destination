@@ -138,7 +138,7 @@ jobs:
 
       - name: Prepare ClickHouse Cloud JSON config
         run: |
-          echo '{"host":"${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}","port":9440,"username":"default","password":"${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}","local":false}' > ./sdk_tests/configuration.json
+          echo '{"host":"${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_HOST_SMT }}","port":"9440","username":"default","password":"${{ secrets.INTEGRATIONS_TEAM_TESTS_CLOUD_PASSWORD_SMT }}"}' > ./sdk_tests/configuration.json
 
       - name: Run Go tests
         run: |
