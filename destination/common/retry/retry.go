@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -133,7 +134,7 @@ func OnFalseWithFixedDelay(
 
 func IsNetError(err error) bool {
 	var netErr net.Error
-	return errors.As(err, &netErr)
+	return errors.As(err, &netErr) || err == io.EOF || err.Error() == "EOF"
 }
 
 func GetDelayConfig() (initial time.Duration, max time.Duration) {
