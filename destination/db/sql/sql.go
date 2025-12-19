@@ -187,8 +187,8 @@ func GetTruncateTableStatement(
 	}
 
 	truncateBeforeMilli := truncateBefore.UnixMilli()
-	if truncateBeforeMilli <= 0 {
-		return "", fmt.Errorf("truncate before time is zero")
+	if truncateBeforeMilli == 0 {
+		return "", fmt.Errorf("truncate before time is 0")
 	}
 
 	var query string
