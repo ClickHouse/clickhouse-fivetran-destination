@@ -197,6 +197,13 @@ func TestGetTruncateTableStatement(t *testing.T) {
 
 	_, err = GetTruncateTableStatement("foo", "bar", syncedColumn, time.Unix(0, 0), nil)
 	assert.ErrorContains(t, err, "truncate before time is zero")
+
+	truncateBeforeDate := time.Date(2000, 1, 15, 14, 35, 0, 0, time.UTC)
+	expectedStmtBeforeDate := "ALTER TABLE `foo`.`bar` DELETE WHERE toUnixTimestamp64Milli(`_fivetran_synced`) <= '947946900000'"
+
+	statement, err = GetTruncateTableStatement("foo", "bar", syncedColumn, truncateBeforeDate, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedStmtBeforeDate, statement)
 }
 
 func TestGetColumnTypesQuery(t *testing.T) {

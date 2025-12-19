@@ -185,11 +185,13 @@ func GetTruncateTableStatement(
 	if syncedColumn == "" {
 		return "", fmt.Errorf("synced column name is empty")
 	}
-	if truncateBefore.Second() == 0 && truncateBefore.Nanosecond() == 0 {
+
+	truncateBeforeMilli := truncateBefore.UnixMilli()
+	if truncateBeforeMilli <= 0 {
 		return "", fmt.Errorf("truncate before time is zero")
 	}
+
 	var query string
-	truncateBeforeMilli := truncateBefore.UnixMilli()
 	syncedColumnMilli := toUnixTimestamp64Milli(identifier(syncedColumn))
 	if softDeletedColumn != nil && *softDeletedColumn != "" {
 		query = fmt.Sprintf("ALTER TABLE %s UPDATE %s = 1 WHERE %s <= '%d'",
