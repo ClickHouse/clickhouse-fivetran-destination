@@ -1,17 +1,31 @@
 _:
 	@echo -e "Check Makefile for all available targets"
 
-fivetran_tag     = "8b30d60b8eb2040f858c3f3c1ab819daed9fd84d"
-fivetran_sdk_url = "https://raw.githubusercontent.com/fivetran/fivetran_partner_sdk/$(fivetran_tag)"
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    GRPC_HOSTNAME := host.docker.internal
+else
+    GRPC_HOSTNAME := 172.17.0.1
+endif
+
+FIVETRAN_TAG     = "8b30d60b8eb2040f858c3f3c1ab819daed9fd84d"
+FIVETRAN_SDK_URL = "https://raw.githubusercontent.com/fivetran/fivetran_partner_sdk/$(FIVETRAN_TAG)"
+
+SDK_TESTER_VERSION = "2.25.1118.001"
+SDK_TESTER_IMAGE   = "us-docker.pkg.dev/build-286712/public-docker-us/sdktesters-v2/sdk-tester:$(SDK_TESTER_VERSION)"
+
+PROTOC_GEN_GO_VERSION = "v1.36.10"
+PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
+GOLANG_CI_LINT_VERSION = "v2.7.2"
 
 prepare-fivetran-sdk:
 	mkdir -p proto
-	curl -o proto/common.proto          "$(fivetran_sdk_url)/common.proto"
-	curl -o proto/destination_sdk.proto "$(fivetran_sdk_url)/destination_sdk.proto"
+	curl -o proto/common.proto          "$(FIVETRAN_SDK_URL)/common.proto"
+	curl -o proto/destination_sdk.proto "$(FIVETRAN_SDK_URL)/destination_sdk.proto"
 
 install-protoc-gen-go:
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
 
 generate-proto:
 	rm -f proto/*.go
@@ -24,13 +38,16 @@ generate-proto:
         common.proto \
         destination_sdk.proto
 
+pull-sdk-tester:
+	docker pull $(SDK_TESTER_IMAGE)
+
 sdk-test:
 	docker run --mount type=bind,source=$$PWD/sdk_tests,target=/data \
 		-a STDIN -a STDOUT -a STDERR \
 		-e WORKING_DIR=$$PWD/sdk_tests \
-		-e GRPC_HOSTNAME=172.17.0.1 \
+		-e GRPC_HOSTNAME=$(GRPC_HOSTNAME) \
 		--network=host \
-		us-docker.pkg.dev/build-286712/public-docker-us/sdktesters-v2/sdk-tester:2.25.1118.001 \
+		$(SDK_TESTER_IMAGE) \
 		--tester-type destination --port 50052 $$TEST_ARGS
 
 recreate-test-db:
@@ -38,7 +55,7 @@ recreate-test-db:
 	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
 
 lint:
-	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:v2.6.2 golangci-lint run -v
+	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:$(GOLANG_CI_LINT_VERSION) golangci-lint run -v
 
 test:
 	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json sdk_tests/configuration.json
@@ -64,4 +81,4 @@ run:
 	make build
 	./out/clickhouse_destination
 
-.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run lint test go-test go-test-with-coverage build clickhouse-query-for-tests build-docker-ci
+.PHONY: _ prepare-fivetran-sdk generate-proto start-docker run lint test go-test go-test-with-coverage build clickhouse-query-for-tests build-docker-ci pull-sdk-tester
