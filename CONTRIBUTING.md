@@ -70,6 +70,12 @@ make build
 
 ## Running Go tests
 
+Add ClickHouse to your `/etc/hosts` file:
+
+```bash
+echo "127.0.0.1 clickhouse" | sudo tee -a /etc/hosts
+```
+
 Start ClickHouse server in Docker:
 
 ```bash
@@ -104,6 +110,12 @@ Start the destination app:
 
 ```bash
 make run
+```
+
+Pull the SDK tester image:
+
+```bash
+make pull-sdk-tester
 ```
 
 Run the SDK tester with a particular input file from [sdk_tests](./sdk_tests) directory,

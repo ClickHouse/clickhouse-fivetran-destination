@@ -480,25 +480,40 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 const dialTimeout = 10 * time.Millisecond
 const maxDialRetries = 300
 
+var projectRootDir atomic.Value
 var configMap atomic.Value
 var connConfig atomic.Value
 
 func startServer(t *testing.T) {
 	if isPortReady(t, *flags.Port) {
+		t.Log("ClickHouse destination is already running")
+
 		return
 	}
+
 	go cmd.StartServer()
+
+	t.Log("Waiting for the ClickHouse destination to be ready...")
 	waitPortIsReady(t, *flags.Port)
 }
 
 func getProjectRootDir(t *testing.T) string {
+	if projectRootDir.Load() != nil {
+		return projectRootDir.Load().(string)
+	}
+
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
+
 	var result string
 	// CLI vs IDE test run
 	if strings.HasSuffix(cwd, "/destination") {
 		result = cwd[:len(cwd)-12]
 	}
+
+	t.Logf("Project root dir: %s", result)
+
+	projectRootDir.Store(result)
 	return result
 }
 
@@ -529,6 +544,8 @@ func readConfig(t *testing.T) *config.Config {
 }
 
 func runQuery(t *testing.T, query string) string {
+	t.Logf("Running ClickHouse query: %s", query)
+
 	conf := readConfig(t)
 	cmdArgs := []string{
 		"exec", "fivetran-destination-clickhouse-server",
@@ -567,6 +584,8 @@ func waitPortIsReady(t *testing.T, port uint) {
 	count := 0
 	for count < maxDialRetries {
 		count++
+
+		t.Logf("Checking if port %d is ready (attempt %d/%d)...", port, count, maxDialRetries)
 		if isPortReady(t, port) {
 			return
 		}
@@ -580,11 +599,15 @@ func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool
 		runQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
 	}
 	projectRootDir := getProjectRootDir(t)
+
 	command := exec.Command("make", "sdk-test")
 	command.Dir = projectRootDir
 	command.Env = os.Environ()
 	command.Env = append(command.Env, fmt.Sprintf("TEST_ARGS=--input-file=%s", inputFileName))
+
+	t.Logf("Running SDK tester command %s", command.String())
 	_, err := command.Output()
+
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
 		t.Error(string(exitError.Stderr))
