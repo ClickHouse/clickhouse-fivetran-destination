@@ -6,16 +6,33 @@
 
 ## Install Protoc and Go plugin
 
+### Mac OS
+
+Install via HomeBrew:
+
+```bash
+brew install protobuf
+```
+
+### Linux
+
 Download the protocol buffer compiler suitable for your platform from
-the [releases page](https://github.com/protocolbuffers/protobuf/releases/tag/v25.2) and install it to `$HOME/.local`.
+the [releases page](https://github.com/protocolbuffers/protobuf/releases/latest) and install it to `$HOME/.local`.
 
 For example (Linux x86_64):
 
 ```bash
-unzip protoc-25.2-linux-x86_64.zip -d $HOME/.local
+unzip protoc-*.zip -d $HOME/.local
 ```
 
-Make sure that you have `export PATH="$HOME/.local/bin:$PATH"` in your `.bashrc`/`.zshrc`.
+Make sure that you have 
+
+```bash
+# Golang, protoc-gen-go, gopls
+export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
+```
+
+in your `.bashrc`/`.zshrc`.
 
 (macOS only): try to run `protoc` from the terminal. If `protoc` cannot be executed due to the OS security policy, 
 go to Settings -> Privacy & Security, find "protoc" there, and click "Allow anyway". 
@@ -45,7 +62,19 @@ Then, generate the Go code:
 make generate-proto
 ```
 
+Verify that the application can be built:
+
+```bash
+make build
+```
+
 ## Running Go tests
+
+Add ClickHouse to your `/etc/hosts` file:
+
+```bash
+echo "127.0.0.1 clickhouse" | sudo tee -a /etc/hosts
+```
 
 Start ClickHouse server in Docker:
 
@@ -81,6 +110,12 @@ Start the destination app:
 
 ```bash
 make run
+```
+
+Pull the SDK tester image:
+
+```bash
+make pull-sdk-tester
 ```
 
 Run the SDK tester with a particular input file from [sdk_tests](./sdk_tests) directory,
