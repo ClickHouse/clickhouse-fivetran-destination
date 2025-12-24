@@ -476,7 +476,7 @@ func (conn *ClickHouseConnection) TruncateTable(
 	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		log.Warn(fmt.Sprintf("Warning: it seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
+		log.Warn(fmt.Sprintf("Warning: it seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 	}
 	err = conn.ExecStatement(ctx, statement, op, true)
 	if err != nil {
