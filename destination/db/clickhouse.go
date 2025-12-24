@@ -25,10 +25,38 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	maxQueryLengthForLogging = 200
+)
+
 type ClickHouseConnection struct {
 	driver.Conn
-	username string
-	isLocal  bool
+	username      string
+	isLocal       bool
+	connectTime   time.Time
+	lastUsed      time.Time
+	queryCount    int64
+	errorCount    int64
+	totalDuration time.Duration
+}
+
+func (conn *ClickHouseConnection) logConnectionStats() {
+	log.Info(fmt.Sprintf("Connection stats - Queries: %d, Errors: %d, Avg Duration: %v",
+		conn.queryCount,
+		conn.errorCount,
+		conn.totalDuration/time.Duration(conn.queryCount+1)))
+}
+
+func (conn *ClickHouseConnection) recordQuery(duration time.Duration, success bool) {
+	conn.queryCount++
+	conn.totalDuration += duration
+	if !success {
+		conn.errorCount++
+	}
+	// Log stats every 100 queries
+	if conn.queryCount%100 == 0 {
+		conn.logConnectionStats()
+	}
 }
 
 func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
@@ -36,6 +64,10 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
 	}
+
+	log.Info(fmt.Sprintf("Initializing ClickHouse connection to %s:%s",
+		configuration[config.HostKey], configuration[config.PortKey]))
+
 	settings := clickhouse.Settings{
 		// support ISO DateTime formats from CSV
 		// https://clickhouse.com/docs/en/operations/settings/formats#date_time_input_format
@@ -88,6 +120,7 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 		log.Error(err)
 		return nil, err
 	}
+	log.Info("ClickHouse connection established successfully")
 	return &ClickHouseConnection{Conn: conn, username: connConfig.Username, isLocal: connConfig.Local}, nil
 }
 
@@ -97,14 +130,23 @@ func (conn *ClickHouseConnection) ExecStatement(
 	op connectionOpType,
 	benchmark bool,
 ) error {
+	startTime := time.Now()
+	logQuery := statement
+	if len(logQuery) > maxQueryLengthForLogging {
+		logQuery = statement[:maxQueryLengthForLogging] + "..."
+	}
+
+	log.Info(fmt.Sprintf("Executing %s: %s", op, logQuery))
 	err := retry.OnNetError(func() error {
 		return conn.Exec(ctx, statement)
 	}, ctx, string(op), benchmark)
+	conn.recordQuery(time.Since(startTime), err == nil)
 	if err != nil {
 		err = fmt.Errorf("error while executing %s: %w", statement, err)
 		log.Error(err)
 		return err
 	}
+	log.Info(fmt.Sprintf("Successfully executed %s in %v", op, time.Since(startTime)))
 	return nil
 }
 
@@ -114,14 +156,23 @@ func (conn *ClickHouseConnection) ExecQuery(
 	op connectionOpType,
 	benchmark bool,
 ) (driver.Rows, error) {
+	startTime := time.Now()
+	logQuery := query
+	if len(logQuery) > maxQueryLengthForLogging {
+		logQuery = query[:maxQueryLengthForLogging] + "..."
+	}
+
+	log.Info(fmt.Sprintf("Executing query %s: %s", op, logQuery))
 	rows, err := retry.OnNetErrorWithData(func() (driver.Rows, error) {
 		return conn.Query(ctx, query)
 	}, ctx, string(op), benchmark)
+	conn.recordQuery(time.Since(startTime), err == nil)
 	if err != nil {
 		err = fmt.Errorf("error while executing %s: %w", query, err)
 		log.Error(err)
 		return nil, err
 	}
+	log.Info(fmt.Sprintf("Query %s completed in %v", op, time.Since(startTime)))
 	return rows, nil
 }
 
