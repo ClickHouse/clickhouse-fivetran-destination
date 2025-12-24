@@ -404,8 +404,21 @@ func TestGetHardDeleteStatement(t *testing.T) {
 func TestGetAllReplicasActiveQuery(t *testing.T) {
 	query, err := GetAllReplicasActiveQuery("foo", "bar")
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active) = 0) AS all_replicas_active FROM system.replicas WHERE database = 'foo' AND table = 'bar' AND is_readonly != 1 LIMIT 1", query)
-
+	expected := `SELECT toBool(mapExists((k, v) -> (v = 0 AND k IN (
+           SELECT replica_host FROM (
+               SELECT hostName() as replica_host, value 
+               FROM clusterAllReplicas(default, system, server_settings) 
+               WHERE name = 'disable_insertion_and_mutation' AND value = '0'
+               UNION ALL
+               SELECT hostName() as replica_host, value 
+               FROM clusterAllReplicas(all_groups.default, system, server_settings) 
+               WHERE name = 'disable_insertion_and_mutation' AND value = '0'
+           )
+       )), replica_is_active) = 0) AS all_replicas_active 
+       FROM system.replicas 
+       WHERE database = 'foo' AND table = 'bar' 
+       LIMIT 1`
+	assert.Equal(t, expected, query)
 	_, err = GetAllReplicasActiveQuery("", "bar")
 	assert.ErrorContains(t, err, "schema name for table bar is empty")
 
