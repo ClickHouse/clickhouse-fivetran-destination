@@ -514,7 +514,11 @@ func (conn *ClickHouseConnection) InsertBatch(
 	return retry.OnNetError(func() error {
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
-			err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+			} else {
+				err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
+			}
 			log.Error(err)
 			return err
 		}
@@ -524,14 +528,22 @@ func (conn *ClickHouseConnection) InsertBatch(
 			}
 			err = batch.Append(row...)
 			if err != nil {
-				err = fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					err = fmt.Errorf("error appending row to a batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+				} else {
+					err = fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
+				}
 				log.Error(err)
 				return err
 			}
 		}
 		err = batch.Send()
 		if err != nil {
-			err = fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("error while sending batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+			} else {
+				err = fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
+			}
 			log.Error(err)
 			return err
 		}
