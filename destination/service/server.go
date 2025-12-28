@@ -221,7 +221,7 @@ func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 }
 
 func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatchRequest) (*pb.WriteBatchResponse, error) {
-	log.Info(fmt.Sprintf("[WriteHistoryBatch] Starting for %s.%s with earliest_start_files=%d, replace_files=%d, update_files=%d, delete_files=%d",
+	log.Notice(fmt.Sprintf("[WriteHistoryBatch] Starting for %s.%s with earliest_start_files=%d, replace_files=%d, update_files=%d, delete_files=%d",
 		in.SchemaName, in.Table.Name, len(in.EarliestStartFiles), len(in.ReplaceFiles), len(in.UpdateFiles), len(in.DeleteFiles)))
 
 	var compression pb.Compression
@@ -240,7 +240,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	log.Info(fmt.Sprintf("[WriteHistoryBatch] Compression=%s for %s.%s", compression.String(), in.SchemaName, in.Table.Name))
+	log.Notice(fmt.Sprintf("[WriteHistoryBatch] Compression=%s for %s.%s", compression.String(), in.SchemaName, in.Table.Name))
 	metadata, err := GetFivetranTableMetadata(in.Table)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteHistoryBatch] GetFivetranTableMetadata error for %s.%s: %w", in.SchemaName, in.Table.Name, err))
@@ -254,7 +254,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 	}
 	defer conn.Close()
 
-	log.Info(fmt.Sprintf("[WriteHistoryBatch] Getting column types for %s.%s", in.SchemaName, in.Table.Name))
+	log.Notice(fmt.Sprintf("[WriteHistoryBatch] Getting column types for %s.%s", in.SchemaName, in.Table.Name))
 	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteHistoryBatch] GetColumnTypes error for %s.%s: %w", in.SchemaName, in.Table.Name, err))
@@ -288,7 +288,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("operation error: %w", err)), nil
 	}
 
-	log.Info(fmt.Sprintf("[WriteHistoryBatch] Completed successfully for %s.%s", in.SchemaName, in.Table.Name))
+	log.Notice(fmt.Sprintf("[WriteHistoryBatch] Completed successfully for %s.%s", in.SchemaName, in.Table.Name))
 	return &pb.WriteBatchResponse{
 		Response: &pb.WriteBatchResponse_Success{
 			Success: true,
@@ -297,7 +297,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 }
 
 func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.WriteBatchResponse, error) {
-	log.Info(fmt.Sprintf("[WriteBatch] Starting for %s.%s with replace_files=%d, update_files=%d, delete_files=%d",
+	log.Notice(fmt.Sprintf("[WriteBatch] Starting for %s.%s with replace_files=%d, update_files=%d, delete_files=%d",
 		in.SchemaName, in.Table.Name, len(in.ReplaceFiles), len(in.UpdateFiles), len(in.DeleteFiles)))
 
 	var compression pb.Compression
@@ -316,7 +316,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	log.Info(fmt.Sprintf("[WriteBatch] Compression=%s for %s.%s", compression.String(), in.SchemaName, in.Table.Name))
+	log.Notice(fmt.Sprintf("[WriteBatch] Compression=%s for %s.%s", compression.String(), in.SchemaName, in.Table.Name))
 
 	metadata, err := GetFivetranTableMetadata(in.Table)
 	if err != nil {
@@ -331,7 +331,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 	}
 	defer conn.Close()
 
-	log.Info(fmt.Sprintf("[WriteBatch] Getting column types for %s.%s", in.SchemaName, in.Table.Name))
+	log.Notice(fmt.Sprintf("[WriteBatch] Getting column types for %s.%s", in.SchemaName, in.Table.Name))
 	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteBatch] Failed to get column types for %s.%s: %w", in.SchemaName, in.Table.Name, err))
@@ -360,7 +360,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	log.Info(fmt.Sprintf("[WriteBatch] Completed successfully for %s.%s", in.SchemaName, in.Table.Name))
+	log.Notice(fmt.Sprintf("[WriteBatch] Completed successfully for %s.%s", in.SchemaName, in.Table.Name))
 	return &pb.WriteBatchResponse{
 		Response: &pb.WriteBatchResponse_Success{
 			Success: true,
@@ -379,10 +379,10 @@ func (s *Server) processReplaceFiles(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.ReplaceFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d replace files for %s.%s", writeBatchReplaceOp, len(in.ReplaceFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d replace files for %s.%s", writeBatchReplaceOp, len(in.ReplaceFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, replaceFile := range in.ReplaceFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchReplaceOp, fileIdx+1, len(in.ReplaceFiles), replaceFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchReplaceOp, fileIdx+1, len(in.ReplaceFiles), replaceFile))
 				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeBatchReplaceOp, replaceFile, err))
@@ -397,14 +397,14 @@ func (s *Server) processReplaceFiles(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchReplaceOp, replaceFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchReplaceOp, replaceFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchReplaceOp, replaceFile, err))
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				log.Info(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s with %d rows", writeBatchReplaceOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s with %d rows", writeBatchReplaceOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, nullStr)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] ReplaceBatch failed for %s.%s: %w", writeBatchReplaceOp, in.SchemaName, in.Table.Name, err))
@@ -416,7 +416,7 @@ func (s *Server) processReplaceFiles(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all replace files for %s.%s", writeBatchReplaceOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all replace files for %s.%s", writeBatchReplaceOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
@@ -431,10 +431,10 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.EarliestStartFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d earliest start files for %s.%s", writeHistoryBatchEarliestStartOp, len(in.EarliestStartFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d earliest start files for %s.%s", writeHistoryBatchEarliestStartOp, len(in.EarliestStartFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, earliestStartFile := range in.EarliestStartFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchEarliestStartOp, fileIdx+1, len(in.EarliestStartFiles), earliestStartFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchEarliestStartOp, fileIdx+1, len(in.EarliestStartFiles), earliestStartFile))
 				csvData, err := ReadCSVFile(earliestStartFile, in.Keys, compression, encryption)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
@@ -449,7 +449,7 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchEarliestStartOp, earliestStartFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchEarliestStartOp, earliestStartFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
@@ -457,14 +457,14 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 				}
 				csvWithoutHeader := csvData[1:]
 
-				log.Info(fmt.Sprintf("[%s] Executing HardDeleteForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing HardDeleteForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.HardDeleteForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] HardDeleteForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err))
 					return err
 				}
 
-				log.Info(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranStart)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err))
@@ -477,7 +477,7 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all earliest start files for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all earliest start files for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
@@ -493,10 +493,10 @@ func (s *Server) processReplaceFilesForHistoryBatch(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.ReplaceFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d replace files for %s.%s", writeHistoryBatchReplaceOp, len(in.ReplaceFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d replace files for %s.%s", writeHistoryBatchReplaceOp, len(in.ReplaceFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, replaceFile := range in.ReplaceFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchReplaceOp, fileIdx+1, len(in.ReplaceFiles), replaceFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchReplaceOp, fileIdx+1, len(in.ReplaceFiles), replaceFile))
 				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchReplaceOp, replaceFile, err))
@@ -511,14 +511,14 @@ func (s *Server) processReplaceFilesForHistoryBatch(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchReplaceOp, replaceFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchReplaceOp, replaceFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchReplaceOp, replaceFile, err))
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				log.Info(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s with %d rows", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s with %d rows", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, nullStr)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] ReplaceBatch failed for %s.%s: %w", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name, err))
@@ -530,7 +530,7 @@ func (s *Server) processReplaceFilesForHistoryBatch(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all replace files for %s.%s", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all replace files for %s.%s", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
@@ -547,10 +547,10 @@ func (s *Server) processUpdateFiles(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.UpdateFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d update files for %s.%s", writeBatchUpdateOp, len(in.UpdateFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d update files for %s.%s", writeBatchUpdateOp, len(in.UpdateFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, updateFile := range in.UpdateFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchUpdateOp, fileIdx+1, len(in.UpdateFiles), updateFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchUpdateOp, fileIdx+1, len(in.UpdateFiles), updateFile))
 
 				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
 				if err != nil {
@@ -566,14 +566,14 @@ func (s *Server) processUpdateFiles(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchUpdateOp, updateFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchUpdateOp, updateFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchUpdateOp, updateFile, err))
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				log.Info(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s with %d rows", writeBatchUpdateOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s with %d rows", writeBatchUpdateOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr, false)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] UpdateBatch failed for %s.%s: %w", writeBatchUpdateOp, in.SchemaName, in.Table.Name, err))
@@ -585,7 +585,7 @@ func (s *Server) processUpdateFiles(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all update files for %s.%s", writeBatchUpdateOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all update files for %s.%s", writeBatchUpdateOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
@@ -602,10 +602,10 @@ func (s *Server) processUpdateFilesForHistoryBatch(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.UpdateFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d update files for %s.%s", writeHistoryBatchUpdateOp, len(in.UpdateFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d update files for %s.%s", writeHistoryBatchUpdateOp, len(in.UpdateFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, updateFile := range in.UpdateFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchUpdateOp, fileIdx+1, len(in.UpdateFiles), updateFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchUpdateOp, fileIdx+1, len(in.UpdateFiles), updateFile))
 				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchUpdateOp, updateFile, err))
@@ -620,14 +620,14 @@ func (s *Server) processUpdateFilesForHistoryBatch(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchUpdateOp, updateFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchUpdateOp, updateFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchUpdateOp, updateFile, err))
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				log.Info(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s with %d rows", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s with %d rows", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr, true)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] UpdateBatch failed for %s.%s: %w", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name, err))
@@ -639,7 +639,7 @@ func (s *Server) processUpdateFilesForHistoryBatch(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all update files for %s.%s", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all update files for %s.%s", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
@@ -654,10 +654,10 @@ func (s *Server) processDeleteFiles(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.DeleteFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d delete files for %s.%s", writeBatchDeleteOp, len(in.DeleteFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d delete files for %s.%s", writeBatchDeleteOp, len(in.DeleteFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, deleteFile := range in.DeleteFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchDeleteOp, fileIdx+1, len(in.DeleteFiles), deleteFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchDeleteOp, fileIdx+1, len(in.DeleteFiles), deleteFile))
 				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeBatchDeleteOp, deleteFile, err))
@@ -672,14 +672,14 @@ func (s *Server) processDeleteFiles(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchDeleteOp, deleteFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchDeleteOp, deleteFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchDeleteOp, deleteFile, err))
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				log.Info(fmt.Sprintf("[%s] Executing HardDelete for %s.%s with %d rows", writeBatchDeleteOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing HardDelete for %s.%s with %d rows", writeBatchDeleteOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.HardDelete(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] HardDelete failed for %s.%s: %w", writeBatchDeleteOp, in.SchemaName, in.Table.Name, err))
@@ -691,7 +691,7 @@ func (s *Server) processDeleteFiles(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all delete files for %s.%s", writeBatchDeleteOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all delete files for %s.%s", writeBatchDeleteOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
@@ -706,10 +706,10 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 	driverColumns *types.DriverColumns,
 ) (err error) {
 	if len(in.DeleteFiles) > 0 {
-		log.Info(fmt.Sprintf("[%s] Processing %d delete files for %s.%s", writeHistoryBatchDeleteOp, len(in.DeleteFiles), in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Processing %d delete files for %s.%s", writeHistoryBatchDeleteOp, len(in.DeleteFiles), in.SchemaName, in.Table.Name))
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, deleteFile := range in.DeleteFiles {
-				log.Info(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchDeleteOp, fileIdx+1, len(in.DeleteFiles), deleteFile))
+				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchDeleteOp, fileIdx+1, len(in.DeleteFiles), deleteFile))
 				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err))
@@ -724,14 +724,14 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 					})
 					continue
 				}
-				log.Info(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchDeleteOp, deleteFile, len(csvData)-1))
+				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchDeleteOp, deleteFile, len(csvData)-1))
 				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err))
 					return err
 				}
 				csvWithoutHeader := csvData[1:]
-				log.Info(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
+				log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
 				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranEnd)
 				if err != nil {
 					log.Error(fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, err))
@@ -743,7 +743,7 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 		if err != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("[%s] Completed processing all delete files for %s.%s", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name))
+		log.Notice(fmt.Sprintf("[%s] Completed processing all delete files for %s.%s", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
 }
