@@ -22,6 +22,7 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -132,23 +133,31 @@ func (conn *ClickHouseConnection) ExecStatement(
 	op connectionOpType,
 	benchmark bool,
 ) error {
+	// Generate unique query ID
+	queryID := uuid.New().String()
+
+	ctx = clickhouse.Context(ctx, clickhouse.WithQueryID(queryID))
+
+	// Add as comment for visibility in query text
+	statementWithComment := fmt.Sprintf("-- query_id: %s, operation: %s\n%s", queryID, op, statement)
+
 	startTime := time.Now()
 	logQuery := statement
 	if len(logQuery) > maxQueryLengthForLogging {
 		logQuery = statement[:maxQueryLengthForLogging] + "..."
 	}
 
-	log.Info(fmt.Sprintf("Executing %s: %s", op, logQuery))
+	log.Info(fmt.Sprintf("Executing %s [query_id=%s]: %s", op, queryID, logQuery))
 	err := retry.OnNetError(func() error {
-		return conn.Exec(ctx, statement)
+		return conn.Exec(ctx, statementWithComment)
 	}, ctx, string(op), benchmark)
 	conn.recordQuery(time.Since(startTime), err == nil)
 	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", statement, err)
+		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", statement, queryID, err)
 		log.Error(err)
 		return err
 	}
-	log.Info(fmt.Sprintf("Successfully executed %s in %v", op, time.Since(startTime)))
+	log.Info(fmt.Sprintf("Successfully executed %s [query_id=%s] in %v", op, queryID, time.Since(startTime)))
 	return nil
 }
 
@@ -158,23 +167,32 @@ func (conn *ClickHouseConnection) ExecQuery(
 	op connectionOpType,
 	benchmark bool,
 ) (driver.Rows, error) {
+	// Generate unique query ID
+	queryID := uuid.New().String()
+
+	ctx = clickhouse.Context(ctx, clickhouse.WithQueryID(queryID))
+
+	// Add query ID as SQL comment at the beginning of the query
+	queryWithID := fmt.Sprintf("-- query_id: %s\n%s", queryID, query)
+
 	startTime := time.Now()
 	logQuery := query
 	if len(logQuery) > maxQueryLengthForLogging {
 		logQuery = query[:maxQueryLengthForLogging] + "..."
 	}
 
-	log.Info(fmt.Sprintf("Executing query %s: %s", op, logQuery))
+	log.Info(fmt.Sprintf("Executing query %s [query_id=%s]: %s", op, queryID, logQuery))
 	rows, err := retry.OnNetErrorWithData(func() (driver.Rows, error) {
-		return conn.Query(ctx, query)
+		return conn.Query(ctx, queryWithID)
 	}, ctx, string(op), benchmark)
+
 	conn.recordQuery(time.Since(startTime), err == nil)
 	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", query, err)
+		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", query, queryID, err)
 		log.Error(err)
 		return nil, err
 	}
-	log.Info(fmt.Sprintf("Query %s completed in %v", op, time.Since(startTime)))
+	log.Info(fmt.Sprintf("Query %s [query_id=%s] completed in %v", op, queryID, time.Since(startTime)))
 	return rows, nil
 }
 
