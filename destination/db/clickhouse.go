@@ -378,7 +378,7 @@ func (conn *ClickHouseConnection) AlterTable(
 	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		log.Warn(fmt.Sprintf("Warning: it seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
+		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
 	}
 	if hasChangedPK {
 		unixMilli := time.Now().UnixMilli()
@@ -476,7 +476,7 @@ func (conn *ClickHouseConnection) TruncateTable(
 	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		log.Warn(fmt.Sprintf("Warning: it seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
+		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
 	}
 	err = conn.ExecStatement(ctx, statement, op, true)
 	if err != nil {
@@ -845,7 +845,7 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 		// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
 		if err != nil {
-			log.Warn(fmt.Sprintf("Warning: it seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
+			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
 		}
 
 		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
@@ -954,7 +954,7 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err := conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		log.Warn(fmt.Sprintf("Warning: it seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
+		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid incosistency between replicas", err))
 	}
 
 	query, err := sql.GetAllMutationsCompletedQuery(schemaName, tableName)
