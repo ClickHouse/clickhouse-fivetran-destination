@@ -533,7 +533,7 @@ func (conn *ClickHouseConnection) InsertBatch(
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				err = fmt.Errorf("error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+				err = fmt.Errorf("Error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
 			} else {
 				err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
 			}
