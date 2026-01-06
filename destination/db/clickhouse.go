@@ -58,6 +58,9 @@ func (conn *ClickHouseConnection) recordQuery(duration time.Duration, success bo
 	conn.totalDuration += duration
 	if !success {
 		conn.errorCount++
+	} else {
+		conn.queryCount++
+		conn.totalDuration += duration
 	}
 	// Log stats every 100 queries
 	if conn.queryCount%100 == 0 {
