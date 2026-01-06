@@ -50,7 +50,7 @@ func (conn *ClickHouseConnection) logConnectionStats() {
 	log.Info(fmt.Sprintf("Connection stats - Queries: %d, Errors: %d, Avg Duration: %v",
 		conn.queryCount,
 		conn.errorCount,
-		conn.totalDuration/time.Duration(conn.queryCount+1)))
+		avgDuration))
 }
 
 func (conn *ClickHouseConnection) recordQuery(duration time.Duration, success bool) {
@@ -156,13 +156,17 @@ func (conn *ClickHouseConnection) ExecStatement(
 	err := retry.OnNetError(func() error {
 		return conn.Exec(ctx, statementWithComment)
 	}, ctx, string(op), benchmark)
-	conn.recordQuery(time.Since(startTime), err == nil)
+
+	// Calculate duration once for consistent reporting
+	duration := time.Since(startTime)
+	conn.recordQuery(duration, err == nil)
+
 	if err != nil {
 		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", statement, queryID, err)
 		log.Error(err)
 		return err
 	}
-	log.Info(fmt.Sprintf("Successfully executed %s [query_id=%s] in %v", op, queryID, time.Since(startTime)))
+	log.Info(fmt.Sprintf("Successfully executed %s [query_id=%s] in %v", op, queryID, duration))
 	return nil
 }
 
@@ -191,13 +195,16 @@ func (conn *ClickHouseConnection) ExecQuery(
 		return conn.Query(ctx, queryWithID)
 	}, ctx, string(op), benchmark)
 
-	conn.recordQuery(time.Since(startTime), err == nil)
+	// Calculate duration once for consistent reporting
+	duration := time.Since(startTime)
+	conn.recordQuery(duration, err == nil)
+
 	if err != nil {
 		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", query, queryID, err)
 		log.Error(err)
 		return nil, err
 	}
-	log.Info(fmt.Sprintf("Query %s [query_id=%s] completed in %v", op, queryID, time.Since(startTime)))
+	log.Info(fmt.Sprintf("Query %s [query_id=%s] completed in %v", op, queryID, duration))
 	return rows, nil
 }
 
