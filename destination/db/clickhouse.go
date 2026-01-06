@@ -535,7 +535,7 @@ func (conn *ClickHouseConnection) InsertBatch(
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				err = fmt.Errorf("Error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
 			} else {
-				err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
+				err = fmt.Errorf("Error while preparing batch for %s: %w", qualifiedTableName, err)
 			}
 			log.Error(err)
 			return err
