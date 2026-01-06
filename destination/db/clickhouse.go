@@ -153,7 +153,7 @@ func (conn *ClickHouseConnection) ExecStatement(
 	}, ctx, string(op), benchmark)
 	conn.recordQuery(time.Since(startTime), err == nil)
 	if err != nil {
-		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", statement, queryID, err)
+		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", statement, queryID, err)
 		log.Error(err)
 		return err
 	}
