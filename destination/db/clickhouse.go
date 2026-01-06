@@ -42,6 +42,11 @@ type ClickHouseConnection struct {
 }
 
 func (conn *ClickHouseConnection) logConnectionStats() {
+	avgDuration := time.Duration(0)
+	if conn.queryCount > 0 {
+		avgDuration = conn.totalDuration / time.Duration(conn.queryCount)
+	}
+
 	log.Info(fmt.Sprintf("Connection stats - Queries: %d, Errors: %d, Avg Duration: %v",
 		conn.queryCount,
 		conn.errorCount,
