@@ -593,6 +593,7 @@ func GetUpdateHistoryActiveStatement(
 
 // GetAllReplicasActiveQuery
 // generates a query to check if there are no inactive replicas.
+// Excludes Hydra Read Only instances which have disable_insertion_and_mutation = '1'
 func GetAllReplicasActiveQuery(
 	schemaName string,
 	tableName string,
@@ -604,7 +605,20 @@ func GetAllReplicasActiveQuery(
 		return "", fmt.Errorf("schema name for table %s is empty", tableName)
 	}
 	return fmt.Sprintf(
-		"SELECT toBool(mapExists((k, v) -> (v = 0), replica_is_active) = 0) AS all_replicas_active FROM system.replicas WHERE database = '%s' AND table = '%s' AND is_readonly != 1 LIMIT 1",
+		`SELECT toBool(mapExists((k, v) -> (v = 0 AND k IN (
+           SELECT replica_host FROM (
+               SELECT hostName() as replica_host, value 
+               FROM clusterAllReplicas(default, system, server_settings) 
+               WHERE name = 'disable_insertion_and_mutation' AND value = '0'
+               UNION ALL
+               SELECT hostName() as replica_host, value 
+               FROM clusterAllReplicas(all_groups.default, system, server_settings) 
+               WHERE name = 'disable_insertion_and_mutation' AND value = '0'
+           )
+       )), replica_is_active) = 0) AS all_replicas_active 
+       FROM system.replicas 
+       WHERE database = '%s' AND table = '%s' 
+       LIMIT 1`,
 		schemaName, tableName,
 	), nil
 }

@@ -22,10 +22,14 @@ func Init() error {
 	default:
 		return fmt.Errorf("invalid log level: %s, allowed values: notice, info, warning, severe", *flags.LogLevel)
 	}
-	if *flags.LogPretty {
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	}
+
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMicro
+	if *flags.LogPretty {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
+	} else {
+		log.Logger = log.With().Caller().Logger()
+	}
+
 	return nil
 }
 

@@ -22,13 +22,50 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
+)
+
+const (
+	maxQueryLengthForLogging = 200
 )
 
 type ClickHouseConnection struct {
 	driver.Conn
-	username string
-	isLocal  bool
+	username      string
+	isLocal       bool
+	connectTime   time.Time
+	lastUsed      time.Time
+	queryCount    int64
+	errorCount    int64
+	totalDuration time.Duration
+}
+
+func (conn *ClickHouseConnection) logConnectionStats() {
+	avgDuration := time.Duration(0)
+	if conn.queryCount > 0 {
+		avgDuration = conn.totalDuration / time.Duration(conn.queryCount)
+	}
+
+	log.Info(fmt.Sprintf("Connection stats - Queries: %d, Errors: %d, Avg Duration: %v",
+		conn.queryCount,
+		conn.errorCount,
+		avgDuration))
+}
+
+func (conn *ClickHouseConnection) recordQuery(duration time.Duration, success bool) {
+	conn.queryCount++
+	conn.totalDuration += duration
+	if !success {
+		conn.errorCount++
+	} else {
+		conn.queryCount++
+		conn.totalDuration += duration
+	}
+	// Log stats every 100 queries
+	if conn.queryCount%100 == 0 {
+		conn.logConnectionStats()
+	}
 }
 
 func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
@@ -36,6 +73,10 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing configuration: %w", err)
 	}
+
+	log.Info(fmt.Sprintf("Initializing ClickHouse connection to %s:%s",
+		configuration[config.HostKey], configuration[config.PortKey]))
+
 	settings := clickhouse.Settings{
 		// support ISO DateTime formats from CSV
 		// https://clickhouse.com/docs/en/operations/settings/formats#date_time_input_format
@@ -45,9 +86,11 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 	if !connConfig.Local {
 		tlsConfig = &tls.Config{InsecureSkipVerify: false}
 		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
-		settings["alter_sync"] = 2
+		// https://github.com/ClickHouse/clickhouse-private/pull/12617
+		settings["alter_sync"] = 3
 		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
-		settings["mutations_sync"] = 2
+		// https://github.com/ClickHouse/clickhouse-private/pull/12617
+		settings["mutations_sync"] = 3
 		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
 		settings["select_sequential_consistency"] = 1
 	}
@@ -88,6 +131,7 @@ func GetClickHouseConnection(ctx context.Context, configuration map[string]strin
 		log.Error(err)
 		return nil, err
 	}
+	log.Info("ClickHouse connection established successfully")
 	return &ClickHouseConnection{Conn: conn, username: connConfig.Username, isLocal: connConfig.Local}, nil
 }
 
@@ -97,14 +141,35 @@ func (conn *ClickHouseConnection) ExecStatement(
 	op connectionOpType,
 	benchmark bool,
 ) error {
+	// Generate unique query ID
+	queryID := uuid.New().String()
+
+	ctx = clickhouse.Context(ctx, clickhouse.WithQueryID(queryID))
+
+	// Add as comment for visibility in query text
+	statementWithComment := fmt.Sprintf("-- query_id: %s, operation: %s\n%s", queryID, op, statement)
+
+	startTime := time.Now()
+	logQuery := statement
+	if len(logQuery) > maxQueryLengthForLogging {
+		logQuery = statement[:maxQueryLengthForLogging] + "..."
+	}
+
+	log.Info(fmt.Sprintf("Executing %s [query_id=%s]: %s", op, queryID, logQuery))
 	err := retry.OnNetError(func() error {
-		return conn.Exec(ctx, statement)
+		return conn.Exec(ctx, statementWithComment)
 	}, ctx, string(op), benchmark)
+
+	// Calculate duration once for consistent reporting
+	duration := time.Since(startTime)
+	conn.recordQuery(duration, err == nil)
+
 	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", statement, err)
+		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", statement, queryID, err)
 		log.Error(err)
 		return err
 	}
+	log.Info(fmt.Sprintf("Successfully executed %s [query_id=%s] in %v", op, queryID, duration))
 	return nil
 }
 
@@ -114,14 +179,35 @@ func (conn *ClickHouseConnection) ExecQuery(
 	op connectionOpType,
 	benchmark bool,
 ) (driver.Rows, error) {
+	// Generate unique query ID
+	queryID := uuid.New().String()
+
+	ctx = clickhouse.Context(ctx, clickhouse.WithQueryID(queryID))
+
+	// Add query ID as SQL comment at the beginning of the query
+	queryWithID := fmt.Sprintf("-- query_id: %s\n%s", queryID, query)
+
+	startTime := time.Now()
+	logQuery := query
+	if len(logQuery) > maxQueryLengthForLogging {
+		logQuery = query[:maxQueryLengthForLogging] + "..."
+	}
+
+	log.Info(fmt.Sprintf("Executing query %s [query_id=%s]: %s", op, queryID, logQuery))
 	rows, err := retry.OnNetErrorWithData(func() (driver.Rows, error) {
-		return conn.Query(ctx, query)
+		return conn.Query(ctx, queryWithID)
 	}, ctx, string(op), benchmark)
+
+	// Calculate duration once for consistent reporting
+	duration := time.Since(startTime)
+	conn.recordQuery(duration, err == nil)
+
 	if err != nil {
-		err = fmt.Errorf("error while executing %s: %w", query, err)
+		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", query, queryID, err)
 		log.Error(err)
 		return nil, err
 	}
+	log.Info(fmt.Sprintf("Query %s [query_id=%s] completed in %v", op, queryID, duration))
 	return rows, nil
 }
 
@@ -322,9 +408,10 @@ func (conn *ClickHouseConnection) AlterTable(
 	if err != nil {
 		return false, err
 	}
+	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		return false, err
+		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 	}
 	if hasChangedPK {
 		unixMilli := time.Now().UnixMilli()
@@ -419,9 +506,10 @@ func (conn *ClickHouseConnection) TruncateTable(
 	} else {
 		op = softTruncateTable
 	}
+	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		return err
+		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 	}
 	err = conn.ExecStatement(ctx, statement, op, true)
 	if err != nil {
@@ -459,7 +547,11 @@ func (conn *ClickHouseConnection) InsertBatch(
 	return retry.OnNetError(func() error {
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
-			err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("Error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+			} else {
+				err = fmt.Errorf("Error while preparing batch for %s: %w", qualifiedTableName, err)
+			}
 			log.Error(err)
 			return err
 		}
@@ -469,14 +561,22 @@ func (conn *ClickHouseConnection) InsertBatch(
 			}
 			err = batch.Append(row...)
 			if err != nil {
-				err = fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					err = fmt.Errorf("error appending row to a batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+				} else {
+					err = fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
+				}
 				log.Error(err)
 				return err
 			}
 		}
 		err = batch.Send()
 		if err != nil {
-			err = fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("error while sending batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+			} else {
+				err = fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
+			}
 			log.Error(err)
 			return err
 		}
@@ -775,10 +875,10 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 			return err
 		}
 
-		// Wait for all nodes to be available before running mutations
+		// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
 		if err != nil {
-			return err
+			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 		}
 
 		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
@@ -831,13 +931,12 @@ func findColumnInCSV(csvColumns *types.CSVColumns, columnName string) (uint, pb.
 }
 
 // WaitAllNodesAvailable
-// using the query generated by sql.GetAllReplicasActiveQuery, and retrying it until all the replicas are active,
-// we can make sure that the ALTER TABLE statements are executed at a right time, when all the nodes are available,
-// so we don't get an exception due to alter_sync=2 and mutations_sync=2 settings usage.
+// Before alter/mutation_sync=3 were introduced, we used to check and wait for all replicas to be active, in order to avoid errors like: using the query generated by sql.GetAllReplicasActiveQuery, and retrying it until all the replicas are active,
 //
-// A sample exception that could occur without this check:
+//code: 341, message: Mutation is not finished because some replicas are inactive right now
 //
-//	code: 341, message: Mutation is not finished because some replicas are inactive right now
+// We keep this check for monitoring reasons.
+
 func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 	ctx context.Context,
 	schemaName string,
@@ -871,7 +970,7 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 }
 
 // WaitAllMutationsCompleted
-// if a call to WaitAllNodesAvailable prior to ALTER TABLE statement execution was not enough,
+// if mutation_sync=3 and alter_sync=3 was not enough,
 // and one of the nodes went down exactly at the time of the ALTER TABLE statement execution,
 // we will still get the error code 341, which indicates that the mutations will still be completed asynchronously;
 // wait until all the nodes are available again, and all mutations are completed before sending the response.
@@ -885,11 +984,10 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	if conn.isLocal || !isIncompleteMutationErr(mutationError) {
 		return mutationError
 	}
-
-	// a mutation won't be finished on all replicas until all of them are back
+	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 	err := conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
 	if err != nil {
-		return fmt.Errorf("error while waiting for all nodes to be available: %w; initial cause: %w", err, mutationError)
+		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 	}
 
 	query, err := sql.GetAllMutationsCompletedQuery(schemaName, tableName)
