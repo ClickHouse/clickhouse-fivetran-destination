@@ -41,6 +41,7 @@ func Init() error {
 func Notice(msg string) {
 	if zerolog.GlobalLevel() == zerolog.TraceLevel {
 		log.Log().
+			CallerSkipFrame(1).
 			Str("message-origin", "sdk_destination").
 			Str("level", "NOTICE").
 			Msg(msg)
@@ -50,6 +51,7 @@ func Notice(msg string) {
 func Info(msg string) {
 	if zerolog.GlobalLevel() <= zerolog.InfoLevel {
 		log.Log().
+			CallerSkipFrame(1).
 			Str("message-origin", "sdk_destination").
 			Str("level", "INFO").
 			Msg(msg)
@@ -59,6 +61,7 @@ func Info(msg string) {
 func Warn(msg string) {
 	if zerolog.GlobalLevel() <= zerolog.WarnLevel {
 		log.Log().
+			CallerSkipFrame(1).
 			Str("message-origin", "sdk_destination").
 			Str("level", "WARNING").
 			Msg(msg)
@@ -68,6 +71,7 @@ func Warn(msg string) {
 func Error(err error) {
 	if zerolog.GlobalLevel() <= zerolog.ErrorLevel {
 		log.Log().
+			CallerSkipFrame(1).
 			Str("message-origin", "sdk_destination").
 			Str("level", "SEVERE").
 			Str("message", fmt.Sprintf("%+v", err)).
