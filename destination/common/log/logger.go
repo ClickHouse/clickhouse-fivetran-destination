@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"github.com/rs/zerolog"
@@ -24,6 +25,10 @@ func Init() error {
 	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMicro
+	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
+		return fmt.Sprintf("%s:%d", filepath.Base(file), line)
+	}
+
 	if *flags.LogPretty {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
 	} else {
