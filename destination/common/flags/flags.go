@@ -14,11 +14,13 @@ var LogPretty = flag.Bool("log-pretty", false,
 	"Pretty logging instead of JSON")
 
 var WriteBatchSize = flag.Uint("write-batch-size", 100_000,
-	"Batch size for all write operations")
+	"Batch size for INSERT operations (uses native protocol)")
 var SelectBatchSize = flag.Uint("select-batch-size", 1_500,
 	"Batch size for SELECT operations")
+var MutationBatchSize = flag.Uint("mutation-batch-size", 1_200,
+	"Batch size for ALTER TABLE UPDATE mutations (builds SQL strings, keep low to avoid large queries)")
 var HardDeleteBatchSize = flag.Uint("hard-delete-batch-size", 1_500,
-	"Batch size for hard delete operations")
+	"Batch size for DELETE mutations (builds SQL strings, keep low to avoid large queries)")
 var MaxParallelSelects = flag.Uint("max-parallel-selects", 10,
 	"Max number of parallel SELECT queries")
 

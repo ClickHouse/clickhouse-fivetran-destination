@@ -881,7 +881,9 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 		}
 
-		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
+		// Use MutationBatchSize for ALTER TABLE UPDATE mutations to avoid generating
+		// extremely large SQL statements that can cause ClickHouse OOM during AST parsing
+		groups, err := GroupSlices(uint(len(csv)), *flags.MutationBatchSize, 1)
 		if err != nil {
 			return err
 		}
