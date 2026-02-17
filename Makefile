@@ -16,7 +16,7 @@ SDK_TESTER_IMAGE   = "us-docker.pkg.dev/build-286712/public-docker-us/sdktesters
 
 PROTOC_GEN_GO_VERSION = "v1.36.10"
 PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
-GOLANG_CI_LINT_VERSION = "v2.7.2"
+GOLANG_CI_LINT_VERSION = $(shell cat .golangci-lint-version)
 
 prepare-fivetran-sdk:
 	mkdir -p proto
@@ -55,7 +55,7 @@ recreate-test-db:
 	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
 
 lint:
-	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:$(GOLANG_CI_LINT_VERSION) golangci-lint run -v
+	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:$(GOLANG_CI_LINT_VERSION) golangci-lint run -v --max-same-issues=1000
 
 test:
 	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json sdk_tests/configuration.json
