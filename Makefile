@@ -55,7 +55,7 @@ recreate-test-db:
 	curl --data-binary "CREATE DATABASE tester" http://localhost:8123
 
 lint:
-	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:$(GOLANG_CI_LINT_VERSION) golangci-lint run -v --max-same-issues=1000
+	docker run --rm -v $$PWD:/destination -w /destination golangci/golangci-lint:$(GOLANG_CI_LINT_VERSION) golangci-lint run -v
 
 test:
 	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json sdk_tests/configuration.json

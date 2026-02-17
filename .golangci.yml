@@ -11,3 +11,11 @@ linters:
     rules:
       - path: destination/common/data_types/
         text: "ST1003" # should not use underscores in package names (staticcheck)
+      
+       # QF1012: Usefmt.Fprintf instead of WriteString(fmt.Sprintf(...)) (staticcheck)
+      - path: destination/cmd/start\.go
+        text: "QF1012"
+      - path: destination/db/rows\.go
+        text: "QF1012"
+      - path: destination/db/sql/sql\.go
+        text: "QF1012"
