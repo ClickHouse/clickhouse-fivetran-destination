@@ -25,7 +25,7 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 			"local":    "true",
 		})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	tableName := fmt.Sprintf("test_empty_rows_gen_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 	err = conn.Exec(context.Background(), fmt.Sprintf(`
@@ -57,7 +57,7 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 
 	rows, err := conn.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE false", tableName))
 	assert.NoError(t, err)
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	driverColumns := types.MakeDriverColumns(rows.ColumnTypes())
 	emptyRows := ColumnTypesToEmptyScanRows(driverColumns, 10)
@@ -134,7 +134,7 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 			"local":    "true",
 		})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	// Create a table with all possible destination types and a single record
 	tableName := fmt.Sprintf("test_get_db_row_key_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
@@ -186,7 +186,7 @@ func TestGetDatabaseRowMappingKey(t *testing.T) {
 
 	driverColumns := types.MakeDriverColumns(rows.ColumnTypes())
 	dbRow := ColumnTypesToEmptyScanRows(driverColumns, 1)[0]
-	rows.Close()
+	rows.Close() //nolint:errcheck
 
 	// Scan into that "proto" row
 	rows, err = conn.Query(context.Background(), fmt.Sprintf("SELECT * FROM %s LIMIT 1", tableName))

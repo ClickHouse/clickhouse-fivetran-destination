@@ -16,7 +16,7 @@ SDK_TESTER_IMAGE   = "us-docker.pkg.dev/build-286712/public-docker-us/sdktesters
 
 PROTOC_GEN_GO_VERSION = "v1.36.10"
 PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
-GOLANG_CI_LINT_VERSION = "v2.7.2"
+GOLANG_CI_LINT_VERSION = $(shell cat .golangci-lint-version)
 
 prepare-fivetran-sdk:
 	mkdir -p proto

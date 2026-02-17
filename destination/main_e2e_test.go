@@ -30,7 +30,7 @@ func TestAllDataTypes(t *testing.T) {
 	tableName := "all_data_types"
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
-	assertTableRowsWithFivetranId(t, tableName, [][]string{
+	assertTableRowsWithFivetranID(t, tableName, [][]string{
 		{"true", "42", "144", "100500", "100.5", "200.5", "42.42",
 			"2024-05-07", "2024-04-05 15:33:14", "2024-02-03 12:44:22.123456789",
 			"foo", "{\"a\": 1,\"b\": 2}", "<a>1</a>", "FFFA", "15:00", "abc-123-xyz"},
@@ -383,7 +383,7 @@ func assertTableRowsWithPKColumns(t *testing.T, tableName string, expectedOutput
 	assertDatabaseRecords(t, expectedOutput, dbRecordsCSVStr)
 }
 
-func assertTableRowsWithFivetranId(t *testing.T, tableName string, expectedOutput [][]string) {
+func assertTableRowsWithFivetranID(t *testing.T, tableName string, expectedOutput [][]string) {
 	query := fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY _fivetran_id FORMAT CSV SETTINGS select_sequential_consistency=1", tableName)
 	dbRecordsCSVStr := runQuery(t, query)
 	assertDatabaseRecords(t, expectedOutput, dbRecordsCSVStr)
@@ -396,7 +396,7 @@ func assertTableColumns(t *testing.T, tableName string, expectedOutput [][]strin
 }
 
 type TableDefinitionColumns struct {
-	Id        string `json:"id"`
+	ID        string `json:"id"`
 	Data      string `json:"data,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 }
@@ -407,7 +407,7 @@ type TableDefinition struct {
 }
 
 type Row struct {
-	Id              uint    `json:"id"`
+	ID              uint    `json:"id"`
 	Data            *string `json:"data,omitempty"`
 	CreatedAt       *string `json:"created_at,omitempty"`
 	FivetranDeleted *bool   `json:"_fivetran_deleted,omitempty"`
@@ -435,23 +435,23 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 		rowCreatedAt := createdAt.Add(time.Duration(i) * time.Second)
 		createdAtStr := rowCreatedAt.Format("2006-01-02T15:04:05")
 		data := fmt.Sprintf("original for %d", i)
-		row := Row{Id: i, Data: &data, CreatedAt: &createdAtStr}
+		row := Row{ID: i, Data: &data, CreatedAt: &createdAtStr}
 		rows[i] = row
 		// id, data, created_at, _fivetran_deleted
 		assertRows[i] = make([]string, 4)
-		assertRows[i][0] = fmt.Sprintf("%d", row.Id)
+		assertRows[i][0] = fmt.Sprintf("%d", row.ID)
 		assertRows[i][1] = *row.Data
 		assertRows[i][2] = rowCreatedAt.Format("2006-01-02 15:04:05") // ClickHouse "simple" format (no T)
 		assertRows[i][3] = "false"
 		if i%20 == 0 {
 			j := i / 20
 			updatedData := fmt.Sprintf("updated for %d", i)
-			updateRows[j] = Row{Id: row.Id, Data: &updatedData}
+			updateRows[j] = Row{ID: row.ID, Data: &updatedData}
 			assertRows[i][1] = updatedData
 		}
 		if i%50 == 0 {
 			j := i / 50
-			deleteRows[j] = Row{Id: row.Id}
+			deleteRows[j] = Row{ID: row.ID}
 			assertRows[i][3] = "true"
 		}
 	}
@@ -459,7 +459,7 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 	inputFile := InputFile{
 		CreateTable: map[string]TableDefinition{
 			tableName: {
-				Columns:    TableDefinitionColumns{Id: "LONG", Data: "STRING", CreatedAt: "NAIVE_DATETIME"},
+				Columns:    TableDefinitionColumns{ID: "LONG", Data: "STRING", CreatedAt: "NAIVE_DATETIME"},
 				PrimaryKey: []string{"id"},
 			},
 		},

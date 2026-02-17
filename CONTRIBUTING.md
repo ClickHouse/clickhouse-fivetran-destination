@@ -4,7 +4,7 @@
 * Make (see [Makefile](./Makefile) for all available commands)
 * Go 1.22+
 
-## Install Protoc and Go plugin
+## Install Protoc
 
 ### Mac OS
 
@@ -25,11 +25,12 @@ For example (Linux x86_64):
 unzip protoc-*.zip -d $HOME/.local
 ```
 
+## Install Go plugins
 Make sure that you have 
 
 ```bash
-# Golang, protoc-gen-go, gopls
-export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
+# protoc-gen-go or gopls are installed this bin directory
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 in your `.bashrc`/`.zshrc`.

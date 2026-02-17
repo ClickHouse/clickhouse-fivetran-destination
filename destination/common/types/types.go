@@ -15,7 +15,7 @@ type ColumnDefinition struct {
 	DecimalParams *pb.DecimalParams // only for Decimal types, nil otherwise
 }
 
-// TableDescription
+// TableDescription is a description of a ClickHouse table.
 // Mapping is ColumnDefinition.Name -> ColumnDefinition (unordered)
 // Columns are the same as in Mapping, but ordered, used to preserve column order for CREATE TABLE statement generation
 // PrimaryKeys is a convenience list of ColumnDefinition.Name that are primary keys
@@ -32,7 +32,7 @@ type PrimaryKeyColumn struct {
 	Type  pb.DataType
 }
 
-// FivetranTableMetadata
+// FivetranTableMetadata contains metadata about a Fivetran table.
 // ColumnsMap extracted from fivetran_sdk.Table.
 // FivetranSyncedIdx index of the _fivetran_synced column in fivetran_sdk.Table.
 type FivetranTableMetadata struct {
@@ -99,7 +99,7 @@ type DriverColumn struct {
 	DatabaseType string
 }
 
-// DriverColumns
+// DriverColumns is a mapping of driver column names to driver columns.
 // Mapping is DriverColumn.Name -> DriverColumn (unordered)
 // Columns are the same as in Mapping, but ordered.
 type DriverColumns struct {
