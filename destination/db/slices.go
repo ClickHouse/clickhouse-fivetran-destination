@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-// Slice
+// Slice is a slice of a file.
 // Num of the slice in the group (required for ClickHouseConnection.SelectByPrimaryKeys)
 // Start index in the file
 // End index in the file
@@ -14,7 +14,7 @@ type Slice struct {
 	End   uint
 }
 
-// GroupSlices
+// GroupSlices splits a range of indices into batches and parallel groups.
 // For example, if `fileLen` = 40, `batchSize` = 10, and `maxParallelOperations` = 2,
 // the result will be:
 //

@@ -7,9 +7,8 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-// MakeCSVColumns
+// MakeCSVColumns builds column metadata from a CSV header and validates that scan types match the expected database types.
 // See CSVColumns for more details.
-// Additionally, will perform the validation that scan types of the CSV columns are matching the expected database types.
 // `dbColIndexMap` contains a mapping of ClickHouse column name to its index in table, exactly how it is in the database.
 // `csvHeader` is the first line of the CSV file.
 // `table` is taken from the Fivetran request.

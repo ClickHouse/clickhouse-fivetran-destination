@@ -26,7 +26,7 @@ func ReadCSVFile(
 	if err != nil {
 		return nil, fmt.Errorf("file %s does not exist", fileName)
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	var decryptedReader io.Reader
 	if encryption == pb.Encryption_AES {
@@ -54,7 +54,7 @@ func ReadCSVFile(
 		if err != nil {
 			return nil, fmt.Errorf("failed to decompress file %s with GZIP, cause: %w", fileName, err)
 		}
-		defer gzipReader.Close()
+		defer gzipReader.Close() //nolint:errcheck
 		decompressedReader = gzipReader
 	case pb.Compression_OFF:
 		decompressedReader = decryptedReader

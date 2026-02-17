@@ -17,7 +17,7 @@ var expectedFileName = "../../../tests/resources/campaign.csv.zst"
 func TestAES256ReaderReadAll(t *testing.T) {
 	file, err := os.Open(fileName)
 	assert.NoError(t, err)
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 	expected, err := os.ReadFile(expectedFileName)
 	assert.NoError(t, err)
 
@@ -54,7 +54,7 @@ func TestAES256ReaderVariousBufferSizes(t *testing.T) {
 		assert.Equal(t, len(expected), len(result), "Buffer size: %d", bufferSize)
 		assert.Equal(t, expected, result, "Buffer size: %d", bufferSize)
 		reader.Close()
-		file.Close()
+		file.Close() //nolint:errcheck
 	}
 }
 
@@ -64,14 +64,14 @@ func TestAES256ReaderInvalidOpenFile(t *testing.T) {
 
 	file, err := os.Open(fileName)
 	assert.NoError(t, err)
-	file.Close()
+	file.Close() //nolint:errcheck
 
 	_, err = NewReader(file, key)
 	assert.Error(t, err)
 
 	file2, err := os.Open(fileName)
 	assert.NoError(t, err)
-	defer file2.Close()
+	defer file2.Close() //nolint:errcheck
 	_, err = io.ReadAll(file2)
 	assert.NoError(t, err)
 	_, err = NewReader(file2, key)

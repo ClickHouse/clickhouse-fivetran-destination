@@ -185,13 +185,13 @@ func TestToInsertRow(t *testing.T) {
 }
 
 func TestToInsertRowNullStr(t *testing.T) {
-	colId := &types.CSVColumn{Name: "id", Type: pb.DataType_LONG, Index: 0, TableIndex: 0}
+	colID := &types.CSVColumn{Name: "id", Type: pb.DataType_LONG, Index: 0, TableIndex: 0}
 	colName := &types.CSVColumn{Name: "name", Type: pb.DataType_STRING, Index: 1, TableIndex: 1}
 	colIsDeleted := &types.CSVColumn{Name: "is_deleted", Type: pb.DataType_BOOLEAN, Index: 2, TableIndex: 2}
 	colSomeJSONField := &types.CSVColumn{Name: "some_json_field", Type: pb.DataType_JSON, Index: 3, TableIndex: 3}
 	csvCols := &types.CSVColumns{
-		All:         []*types.CSVColumn{colId, colName, colIsDeleted, colSomeJSONField},
-		PrimaryKeys: []*types.CSVColumn{colId},
+		All:         []*types.CSVColumn{colID, colName, colIsDeleted, colSomeJSONField},
+		PrimaryKeys: []*types.CSVColumn{colID},
 	}
 
 	row, err := ToInsertRow([]string{
@@ -221,11 +221,11 @@ func TestToUpdatedRowValidation(t *testing.T) {
 	_, err = ToUpdatedRow(nil, nil, nil, "foo", "bar")
 	assert.ErrorContains(t, err, "CSV columns can't be empty")
 
-	colId := &types.CSVColumn{Name: "id", Type: pb.DataType_LONG, Index: 0, TableIndex: 0}
+	colID := &types.CSVColumn{Name: "id", Type: pb.DataType_LONG, Index: 0, TableIndex: 0}
 	colName := &types.CSVColumn{Name: "name", Type: pb.DataType_STRING, Index: 1, TableIndex: 1}
 	csvCols := &types.CSVColumns{
-		All:         []*types.CSVColumn{colId, colName},
-		PrimaryKeys: []*types.CSVColumn{colId},
+		All:         []*types.CSVColumn{colID, colName},
+		PrimaryKeys: []*types.CSVColumn{colID},
 	}
 
 	_, err = ToUpdatedRow(nil, nil, csvCols, "foo", "bar")
@@ -240,8 +240,8 @@ func TestToUpdatedRowValidation(t *testing.T) {
 	assert.ErrorContains(t, err, "expected CSV, table definition and ClickHouse row to contain the same number of columns, but got 2, 2 and 1")
 	// Table definition columns count mismatch
 	_, err = ToUpdatedRow([]string{"42", "bar"}, []any{int64(42), "foo"}, &types.CSVColumns{
-		All:         []*types.CSVColumn{colId},
-		PrimaryKeys: []*types.CSVColumn{colId},
+		All:         []*types.CSVColumn{colID},
+		PrimaryKeys: []*types.CSVColumn{colID},
 	}, "foo", "bar")
 	assert.ErrorContains(t, err, "expected CSV, table definition and ClickHouse row to contain the same number of columns, but got 2, 1 and 2")
 	_, err = ToUpdatedRow([]string{"qaz", "qux"}, []any{int64(42), "foo"}, csvCols, "foo", "bar")
@@ -249,13 +249,13 @@ func TestToUpdatedRowValidation(t *testing.T) {
 }
 
 func TestToUpdatedRow(t *testing.T) {
-	colId := &types.CSVColumn{Name: "id", Type: pb.DataType_LONG, Index: 0, TableIndex: 0}
+	colID := &types.CSVColumn{Name: "id", Type: pb.DataType_LONG, Index: 0, TableIndex: 0}
 	colName := &types.CSVColumn{Name: "name", Type: pb.DataType_STRING, Index: 1, TableIndex: 1}
 	colFivetranSynced := &types.CSVColumn{Name: "_fivetran_synced", Type: pb.DataType_UTC_DATETIME, Index: 2, TableIndex: 2}
 	colFivetranDeleted := &types.CSVColumn{Name: "_fivetran_deleted", Type: pb.DataType_BOOLEAN, Index: 3, TableIndex: 3}
 	csvCols := &types.CSVColumns{
-		All:         []*types.CSVColumn{colId, colName, colFivetranSynced, colFivetranDeleted},
-		PrimaryKeys: []*types.CSVColumn{colId},
+		All:         []*types.CSVColumn{colID, colName, colFivetranSynced, colFivetranDeleted},
+		PrimaryKeys: []*types.CSVColumn{colID},
 	}
 
 	dbRow := []any{int64(42), "foo", time.Date(2023, 5, 6, 2, 12, 15, 234567890, time.UTC), false}
