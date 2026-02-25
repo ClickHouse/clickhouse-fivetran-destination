@@ -378,6 +378,7 @@ func (conn *ClickHouseConnection) CreateTable(
 	schemaName string,
 	tableName string,
 	tableDescription *types.TableDescription,
+	tableSettings *config.TableSettings,
 ) error {
 	databaseExists, err := conn.CheckDatabaseExists(ctx, schemaName)
 	if err != nil {
@@ -389,7 +390,7 @@ func (conn *ClickHouseConnection) CreateTable(
 			return err
 		}
 	}
-	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription)
+	statement, err := sql.GetCreateTableStatement(schemaName, tableName, tableDescription, tableSettings)
 	if err != nil {
 		return err
 	}
@@ -403,6 +404,7 @@ func (conn *ClickHouseConnection) AlterTable(
 	tableName string,
 	from *types.TableDescription,
 	to *types.TableDescription,
+	tableSettings *config.TableSettings,
 ) (wasExecuted bool, err error) {
 	ops, hasChangedPK, unchangedColNames, err := GetAlterTableOps(from, to)
 	if err != nil {
@@ -419,7 +421,7 @@ func (conn *ClickHouseConnection) AlterTable(
 		backupTableName := fmt.Sprintf("%s_backup_%d", tableName, unixMilli)
 		log.Info(fmt.Sprintf("AlterTable with PK change detected; backup table name: %s, new table name: %s",
 			backupTableName, newTableName))
-		createTableStmt, err := sql.GetCreateTableStatement(schemaName, newTableName, to)
+		createTableStmt, err := sql.GetCreateTableStatement(schemaName, newTableName, to, tableSettings)
 		if err != nil {
 			return false, err
 		}

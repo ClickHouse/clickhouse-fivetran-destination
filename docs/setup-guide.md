@@ -90,3 +90,178 @@ monitor your connections, track your usage, and audit changes. The Fivetran Plat
 level.
 
 > IMPORTANT: If you are an Account Administrator, you can manually add the Fivetran Platform Connector on an account level so that it syncs all the metadata and logs for all the destinations in your account to a single destination. If an account-level Fivetran Platform Connector is already configured in a destination in your Fivetran account, then we don't add destination-level Fivetran Platform Connectors to the new destinations you create.
+
+
+## Advanced Configuration
+
+The ClickHouse Cloud destination supports an optional JSON configuration file for advanced use cases.
+This file allows you to fine-tune destination behavior, override ClickHouse query-level settings,
+and configure individual tables with custom sorting keys or table-level settings.
+
+> NOTE: This configuration is entirely optional. If no file is uploaded, the destination uses
+> sensible defaults that work well for most use cases.
+
+---
+
+### Uploading the configuration file
+
+During [destination setup](/docs/destinations/clickhouse/setup-guide), you can upload a `.json` file
+in the **Advanced Configuration** field. The file must be valid JSON and conform to the schema described below.
+
+If you need to modify the configuration after the initial setup, you can edit the destination settings
+in the Fivetran dashboard and upload an updated file.
+
+---
+
+### Configuration file schema
+
+The configuration file has three top-level sections, all of which are optional:
+
+```json
+{
+  "destination_settings": { ... },
+  "clickhouse_query_settings": { ... },
+  "tables": { ... }
+}
+```
+
+#### `destination_settings`
+
+Controls the internal behavior of the ClickHouse destination connector itself.
+These settings affect how the connector processes data before sending it to ClickHouse.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `write_batch_size` | integer | `100000` | Number of rows per batch for insert, update, and replace operations. |
+| `select_batch_size` | integer | `1500` | Number of rows per batch for SELECT queries used during updates. |
+| `hard_delete_batch_size` | integer | `1500` | Number of rows per batch for hard delete operations. |
+| `max_parallel_selects` | integer | `10` | Maximum number of concurrent SELECT queries during batch processing. |
+| `max_idle_connections` | integer | `5` | Maximum number of idle connections in the ClickHouse connection pool. |
+| `max_open_connections` | integer | `10` | Maximum number of open connections in the ClickHouse connection pool. |
+| `request_timeout_seconds` | integer | `300` | Timeout in seconds for individual ClickHouse requests. |
+
+Example:
+
+```json
+{
+  "destination_settings": {
+    "write_batch_size": 500000,
+    "max_parallel_selects": 20
+  }
+}
+```
+
+#### `clickhouse_query_settings`
+
+A free-form map of [ClickHouse session-level settings](https://clickhouse.com/docs/en/operations/settings/settings)
+that are applied to every query the destination executes. Keys must be valid ClickHouse setting names.
+Values must be strings, integers, or booleans, matching the types expected by ClickHouse.
+
+These settings override the destination's built-in defaults. The following settings are applied by default
+and can be overridden:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `date_time_input_format` | `"best_effort"` | Parsing mode for DateTime values from CSV batch files. |
+| `alter_sync` | `3` | Synchronization mode for ALTER queries across replicas (ClickHouse Cloud only). |
+| `mutations_sync` | `3` | Synchronization mode for mutations across replicas (ClickHouse Cloud only). |
+| `select_sequential_consistency` | `1` | Ensures sequential consistency for SELECT queries (ClickHouse Cloud only). |
+
+> WARNING: Changing these defaults may cause data inconsistency or sync failures.
+> Only override them if you understand the implications for your ClickHouse Cloud deployment.
+
+Example:
+
+```json
+{
+  "clickhouse_query_settings": {
+    "max_insert_threads": 4,
+    "insert_quorum": 2
+  }
+}
+```
+
+#### `tables`
+
+Per-table configuration for ClickHouse `CREATE TABLE` statements. Each key is a fully qualified table name
+in the format `schema_name.table_name`, matching the schema and table names as they appear in Fivetran.
+
+Any table not listed here uses the default settings. Table-specific settings override the defaults
+only for that particular table.
+
+All tables use the `ReplacingMergeTree(_fivetran_synced)` engine. The engine cannot be overridden.
+
+Each table entry supports the following settings:
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `order_by` | array of strings | *(primary keys from source)* | Column names for the `ORDER BY` clause. |
+| `settings` | object | *(none)* | Key-value map of [ClickHouse table-level SETTINGS](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings). Keys must be valid setting names; values can be strings, integers, or booleans. |
+
+##### ORDER BY behavior
+
+- If `order_by` is **not specified**, the primary key columns from the Fivetran source table are used.
+  This is the recommended default, as Fivetran determines the correct primary keys for each source table.
+- If `order_by` **is specified**, the listed columns are used instead. All listed columns must exist
+  in the table. If a column does not exist, the `CREATE TABLE` operation will fail.
+
+##### Example
+
+```json
+{
+  "tables": {
+    "salesforce.accounts": {
+      "order_by": ["created_at", "account_id"],
+      "settings": { "index_granularity": 2048 }
+    },
+    "salesforce.events": {
+      "order_by": ["event_timestamp", "event_id"],
+      "settings": { "index_granularity": 1024, "storage_policy": "hot_cold" }
+    }
+  }
+}
+```
+
+In this example:
+
+- `salesforce.accounts` uses a custom sorting key and index granularity.
+- `salesforce.events` uses a custom sorting key and storage policy.
+- All other tables use the default Fivetran-provided primary keys as the sorting key.
+
+---
+
+### Full example
+
+```json
+{
+  "destination_settings": {
+    "write_batch_size": 200000,
+    "max_parallel_selects": 5,
+    "request_timeout_seconds": 600
+  },
+  "clickhouse_query_settings": {
+    "max_insert_threads": 4
+  },
+  "tables": {
+    "my_schema.large_events": {
+      "order_by": ["event_date", "event_id"],
+      "settings": { "index_granularity": 2048 }
+    },
+    "my_schema.users": {
+      "settings": { "index_granularity": 512 }
+    }
+  }
+}
+```
+
+---
+
+### Limitations
+
+- The configuration file applies to all syncs for the destination. It cannot vary per sync or per connector.
+- Table names in the `tables` section must exactly match the `schema_name.table_name`
+  as they appear in Fivetran (case-sensitive).
+- If a table listed in `tables` is not synced by any connector, its configuration is ignored.
+- ClickHouse query settings in `clickhouse_query_settings` are not validated by the destination;
+  invalid setting names or values will cause query failures reported during sync.
+- The maximum file size allowed for the configuration file is 1 MB.

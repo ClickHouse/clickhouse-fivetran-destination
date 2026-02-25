@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -143,4 +144,101 @@ func TestConfigHostValidation(t *testing.T) {
 
 	_, err = Parse(map[string]string{"host": "tcp://my.host"})
 	assert.ErrorContains(t, err, "host tcp://my.host should not contain protocol or port")
+}
+
+func encodeJSON(json string) string {
+	return base64.StdEncoding.EncodeToString([]byte(json))
+}
+
+func TestParseAdvancedConfigEmpty(t *testing.T) {
+	cfg, err := ParseAdvancedConfig(map[string]string{})
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.Nil(t, cfg.Tables)
+	assert.Nil(t, cfg.DestinationSettings)
+	assert.Nil(t, cfg.ClickHouseQuerySettings)
+}
+
+func TestParseAdvancedConfigFullJSON(t *testing.T) {
+	json := `{
+		"destination_settings": {
+			"write_batch_size": 500000,
+			"max_parallel_selects": 20
+		},
+		"clickhouse_query_settings": {
+			"max_insert_threads": 4
+		},
+		"tables": {
+			"mydb.users": {
+				"order_by": ["created_at", "user_id"],
+				"settings": {"index_granularity": 2048}
+			},
+			"mydb.events": {
+				"order_by": ["event_ts"]
+			}
+		}
+	}`
+	cfg, err := ParseAdvancedConfig(map[string]string{
+		AdvancedConfigKey: encodeJSON(json),
+	})
+	assert.NoError(t, err)
+
+	assert.NotNil(t, cfg.DestinationSettings)
+	assert.Equal(t, uint(500000), *cfg.DestinationSettings.WriteBatchSize)
+	assert.Equal(t, uint(20), *cfg.DestinationSettings.MaxParallelSelects)
+
+	assert.Equal(t, float64(4), cfg.ClickHouseQuerySettings["max_insert_threads"])
+
+	assert.Len(t, cfg.Tables, 2)
+	assert.Equal(t, []string{"created_at", "user_id"}, cfg.Tables["mydb.users"].OrderBy)
+	assert.Equal(t, map[string]any{"index_granularity": float64(2048)}, cfg.Tables["mydb.users"].Settings)
+	assert.Equal(t, []string{"event_ts"}, cfg.Tables["mydb.events"].OrderBy)
+}
+
+func TestParseAdvancedConfigInvalidBase64(t *testing.T) {
+	_, err := ParseAdvancedConfig(map[string]string{
+		AdvancedConfigKey: "not-valid-base64!!!",
+	})
+	assert.ErrorContains(t, err, "failed to decode advanced config")
+}
+
+func TestParseAdvancedConfigInvalidJSON(t *testing.T) {
+	_, err := ParseAdvancedConfig(map[string]string{
+		AdvancedConfigKey: encodeJSON("{invalid json}"),
+	})
+	assert.ErrorContains(t, err, "failed to parse advanced config JSON")
+}
+
+func TestResolveTableSettingsWithMatch(t *testing.T) {
+	cfg := &AdvancedConfig{
+		Tables: map[string]*TableSettings{
+			"mydb.users": {
+				OrderBy: []string{"id", "ts"},
+			},
+		},
+	}
+	ts := cfg.ResolveTableSettings("mydb", "users")
+	assert.Equal(t, []string{"id", "ts"}, ts.OrderBy)
+}
+
+func TestResolveTableSettingsNoMatch(t *testing.T) {
+	cfg := &AdvancedConfig{
+		Tables: map[string]*TableSettings{
+			"mydb.users": {OrderBy: []string{"id"}},
+		},
+	}
+	ts := cfg.ResolveTableSettings("mydb", "other_table")
+	assert.Nil(t, ts.OrderBy)
+}
+
+func TestResolveTableSettingsNilConfig(t *testing.T) {
+	var cfg *AdvancedConfig
+	ts := cfg.ResolveTableSettings("mydb", "users")
+	assert.Nil(t, ts.OrderBy)
+}
+
+func TestResolveTableSettingsEmptyTables(t *testing.T) {
+	cfg := &AdvancedConfig{}
+	ts := cfg.ResolveTableSettings("mydb", "users")
+	assert.Nil(t, ts.OrderBy)
 }

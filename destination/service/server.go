@@ -10,6 +10,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
+	"fivetran.com/fivetran_sdk/destination/db/config"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
@@ -114,6 +115,13 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 	}
 	defer conn.Close()
 
+	advancedCfg, err := config.ParseAdvancedConfig(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[CreateTable] Failed to parse advanced config for %s.%s: %w", in.SchemaName, in.Table.Name, err))
+		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	tableSettings := advancedCfg.ResolveTableSettings(in.SchemaName, in.Table.Name)
+
 	log.Info(fmt.Sprintf("[CreateTable] Converting columns for %s.%s", in.SchemaName, in.Table.Name))
 	cols, err := ToClickHouse(in.Table)
 	if err != nil {
@@ -122,7 +130,7 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 	}
 
 	log.Info(fmt.Sprintf("[CreateTable] Executing CREATE TABLE for %s.%s", in.SchemaName, in.Table.Name))
-	err = conn.CreateTable(ctx, in.SchemaName, in.Table.Name, cols)
+	err = conn.CreateTable(ctx, in.SchemaName, in.Table.Name, cols, tableSettings)
 	if err != nil {
 		log.Error(fmt.Errorf("[CreateTable] Failed to create table %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
@@ -146,6 +154,13 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 	}
 	defer conn.Close()
 
+	advancedCfg, err := config.ParseAdvancedConfig(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[AlterTable] Failed to parse advanced config for %s.%s: %w", in.SchemaName, in.Table.Name, err))
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	tableSettings := advancedCfg.ResolveTableSettings(in.SchemaName, in.Table.Name)
+
 	log.Info(fmt.Sprintf("[AlterTable] Describing current table %s.%s", in.SchemaName, in.Table.Name))
 	currentTableDescription, err := conn.DescribeTable(ctx, in.SchemaName, in.Table.Name)
 	if err != nil {
@@ -161,7 +176,7 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 	}
 
 	log.Info(fmt.Sprintf("[AlterTable] Executing ALTER TABLE for %s.%s", in.SchemaName, in.Table.Name))
-	_, err = conn.AlterTable(ctx, in.SchemaName, in.Table.Name, currentTableDescription, alterTableDescription)
+	_, err = conn.AlterTable(ctx, in.SchemaName, in.Table.Name, currentTableDescription, alterTableDescription, tableSettings)
 	if err != nil {
 		log.Error(fmt.Errorf("[AlterTable] Failed to alter table %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
