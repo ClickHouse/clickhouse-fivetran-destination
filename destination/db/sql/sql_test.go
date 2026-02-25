@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/types"
+	"fivetran.com/fivetran_sdk/destination/db/config"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/stretchr/testify/assert"
 )
@@ -109,7 +110,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "qux", Type: "String", IsPrimaryKey: true},
 			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
 			{Name: "_fivetran_deleted", Type: "Boolean"},
-		}))
+		}), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32, `qux` String, `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qux`)", statement)
 
@@ -119,7 +120,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "qux", Type: "String", IsPrimaryKey: true},
 			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
 			{Name: "_fivetran_deleted", Type: "Boolean"},
-		}))
+		}), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32, `qux` String, `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qaz`, `qux`)", statement)
 
@@ -130,7 +131,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "bin", Type: "String", IsPrimaryKey: false, Comment: "BINARY"},
 			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
 			{Name: "_fivetran_deleted", Type: "Boolean"},
-		}))
+		}), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32, `x` String COMMENT 'XML', `bin` String COMMENT 'BINARY', `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
@@ -140,29 +141,74 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "i", Type: "Int32", IsPrimaryKey: true},
 			{Name: "x", Type: "String", IsPrimaryKey: false},
 			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
-		}))
+		}), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32, `x` String, `_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
-	_, err = GetCreateTableStatement("foo", "", nil)
+	_, err = GetCreateTableStatement("foo", "", nil, nil)
 	assert.ErrorContains(t, err, "table name is empty")
 
-	_, err = GetCreateTableStatement("", "bar", nil)
+	_, err = GetCreateTableStatement("", "bar", nil, nil)
 	assert.ErrorContains(t, err, "schema name for table bar is empty")
 
-	_, err = GetCreateTableStatement("foo", "bar", nil)
+	_, err = GetCreateTableStatement("foo", "bar", nil, nil)
 	assert.ErrorContains(t, err, "no columns to create table `foo`.`bar`")
 
-	_, err = GetCreateTableStatement("foo", "bar", &types.TableDescription{})
+	_, err = GetCreateTableStatement("foo", "bar", &types.TableDescription{}, nil)
 	assert.ErrorContains(t, err, "no columns to create table `foo`.`bar`")
 
 	_, err = GetCreateTableStatement("foo", "bar",
-		types.MakeTableDescription([]*types.ColumnDefinition{{Name: "qaz", Type: "Int32"}}))
+		types.MakeTableDescription([]*types.ColumnDefinition{{Name: "qaz", Type: "Int32"}}), nil)
 	assert.ErrorContains(t, err, "no primary keys for table `foo`.`bar`")
 
 	_, err = GetCreateTableStatement("foo", "bar",
-		types.MakeTableDescription([]*types.ColumnDefinition{{Name: "qaz", Type: "Int32", IsPrimaryKey: true}}))
+		types.MakeTableDescription([]*types.ColumnDefinition{{Name: "qaz", Type: "Int32", IsPrimaryKey: true}}), nil)
 	assert.ErrorContains(t, err, "no _fivetran_synced column")
+}
+
+func TestGetCreateTableStatementWithCustomOrderBy(t *testing.T) {
+	settings := &config.TableSettings{
+		OrderBy: []string{"col_a", "col_b"},
+	}
+	statement, err := GetCreateTableStatement("foo", "bar",
+		types.MakeTableDescription([]*types.ColumnDefinition{
+			{Name: "id", Type: "Int64", IsPrimaryKey: true},
+			{Name: "col_a", Type: "String"},
+			{Name: "col_b", Type: "Int32"},
+			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
+		}), settings)
+	assert.NoError(t, err)
+	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`id` Int64, `col_a` String, `col_b` Int32, `_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`col_a`, `col_b`)", statement)
+}
+
+func TestGetCreateTableStatementWithTableSettings(t *testing.T) {
+	settings := &config.TableSettings{
+		Settings: map[string]any{"index_granularity": 1024},
+	}
+	statement, err := GetCreateTableStatement("foo", "bar",
+		types.MakeTableDescription([]*types.ColumnDefinition{
+			{Name: "id", Type: "Int64", IsPrimaryKey: true},
+			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
+		}), settings)
+	assert.NoError(t, err)
+	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`id` Int64, `_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`id`) SETTINGS index_granularity=1024", statement)
+}
+
+func TestGetCreateTableStatementWithAllCustomSettings(t *testing.T) {
+	settings := &config.TableSettings{
+		OrderBy:  []string{"ts", "id"},
+		Settings: map[string]any{"index_granularity": 2048, "storage_policy": "my_policy"},
+	}
+	statement, err := GetCreateTableStatement("foo", "bar",
+		types.MakeTableDescription([]*types.ColumnDefinition{
+			{Name: "id", Type: "Int64", IsPrimaryKey: true},
+			{Name: "ts", Type: "DateTime64(9, 'UTC')"},
+			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
+		}), settings)
+	assert.NoError(t, err)
+	assert.Contains(t, statement, "ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`ts`, `id`) SETTINGS ")
+	assert.Contains(t, statement, "index_granularity=2048")
+	assert.Contains(t, statement, "storage_policy='my_policy'")
 }
 
 func TestGetTruncateTableStatement(t *testing.T) {

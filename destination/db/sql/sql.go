@@ -7,6 +7,7 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
+	"fivetran.com/fivetran_sdk/destination/db/config"
 	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
@@ -109,10 +110,19 @@ func GetSelectFromSystemGrantsQuery(username string) (string, error) {
 //	(`id` Int64, `c2` Nullable(String), `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Bool)
 //	ENGINE = ReplacingMergeTree(`_fivetran_synced`)
 //	ORDER BY (`id`)
+//
+// With custom ORDER BY and SETTINGS:
+//
+//	CREATE TABLE `foo`.`bar`
+//	(...columns...)
+//	ENGINE = ReplacingMergeTree(`_fivetran_synced`)
+//	ORDER BY (`col_a`, `col_b`)
+//	SETTINGS index_granularity=1024
 func GetCreateTableStatement(
 	schemaName string,
 	tableName string,
 	tableDescription *types.TableDescription,
+	tableSettings *config.TableSettings,
 ) (string, error) {
 	fullName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
@@ -127,7 +137,12 @@ func GetCreateTableStatement(
 	if tableDescription.Mapping[constants.FivetranSynced] == nil {
 		return "", fmt.Errorf("no %s column for table %s", constants.FivetranSynced, fullName)
 	}
-	var orderByCols []string
+
+	if tableSettings == nil {
+		tableSettings = &config.TableSettings{}
+	}
+
+	var pkCols []string
 	var columnsBuilder strings.Builder
 	count := 0
 	for _, col := range tableDescription.Columns {
@@ -136,7 +151,7 @@ func GetCreateTableStatement(
 			columnsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", col.Comment))
 		}
 		if col.IsPrimaryKey {
-			orderByCols = append(orderByCols, identifier(col.Name))
+			pkCols = append(pkCols, identifier(col.Name))
 		}
 		if count < len(tableDescription.Columns)-1 {
 			columnsBuilder.WriteString(", ")
@@ -145,9 +160,24 @@ func GetCreateTableStatement(
 	}
 	columns := columnsBuilder.String()
 
+	engineClause := fmt.Sprintf("ReplacingMergeTree(%s)", identifier(constants.FivetranSynced))
+
+	orderByCols := pkCols
+	if len(tableSettings.OrderBy) > 0 {
+		orderByCols = make([]string, len(tableSettings.OrderBy))
+		for i, col := range tableSettings.OrderBy {
+			orderByCols[i] = identifier(col)
+		}
+	}
+
 	query := fmt.Sprintf(
-		"CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
-		fullName, columns, identifier(constants.FivetranSynced), strings.Join(orderByCols, ", "))
+		"CREATE TABLE %s (%s) ENGINE = %s ORDER BY (%s)",
+		fullName, columns, engineClause, strings.Join(orderByCols, ", "))
+
+	if settingsClause := tableSettings.SettingsClause(); settingsClause != "" {
+		query += fmt.Sprintf(" SETTINGS %s", settingsClause)
+	}
+
 	return query, nil
 }
 

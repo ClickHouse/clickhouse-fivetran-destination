@@ -10,12 +10,14 @@ import (
 
 var hostDescription = "ClickHouse Cloud service host without protocol or port. For example, my.service.clickhouse.cloud"
 var portDescription = "ClickHouse Cloud service native protocol SSL/TLS port. Default is 9440"
+var advancedConfigDescription = "Optional JSON configuration file for fine-tuning destination behavior, ClickHouse query settings, and per-table options such as ORDER BY columns, and table-level SETTINGS. See the documentation for the file schema"
 
 func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 	isHostRequired := true
 	isPortRequired := false
 	isUserNameRequired := true
 	isPasswordRequired := true
+	isNotRequired := false
 	return &pb.ConfigurationFormResponse{
 		SchemaSelectionSupported: true,
 		TableSelectionSupported:  true,
@@ -52,6 +54,18 @@ func GetConfigurationFormResponse() *pb.ConfigurationFormResponse {
 				Required: &isPasswordRequired,
 				Type: &pb.FormField_TextField{
 					TextField: pb.TextField_Password,
+				},
+			},
+			{
+				Name:        config.AdvancedConfigKey,
+				Label:       "Advanced Configuration",
+				Description: &advancedConfigDescription,
+				Required:    &isNotRequired,
+				Type: &pb.FormField_UploadField{
+					UploadField: &pb.UploadField{
+						AllowedFileType:  []string{".json"},
+						MaxFileSizeBytes: 5_242_880, // 5 MiB
+					},
 				},
 			},
 		},

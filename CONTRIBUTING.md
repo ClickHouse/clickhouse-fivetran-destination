@@ -132,7 +132,7 @@ make recreate-test-db && make sdk-test
 ```
 
 See also: Fivetran SDK
-tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester).
+tester [documentation](https://github.com/fivetran/fivetran_partner_sdk/blob/main/tools/destination-connector-tester).
 
 ## Lint
 
