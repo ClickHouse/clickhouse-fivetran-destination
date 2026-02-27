@@ -12,23 +12,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestColumnTypesToEmptyRows(t *testing.T) {
-	conn, err := GetClickHouseConnection(
-		context.Background(),
-		map[string]string{
-			"host":     "localhost",
-			"port":     "9000",
-			"username": "default",
-			"local":    "true",
-		})
-	require.NoError(t, err)
+	conn := getTestConnection(t, context.Background(), map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
 	defer conn.Close()
 
 	tableName := fmt.Sprintf("test_empty_rows_gen_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
-	err = conn.Exec(context.Background(), fmt.Sprintf(`
+	err := conn.Exec(context.Background(), fmt.Sprintf(`
 		CREATE OR REPLACE TABLE %s (
 			b     Bool,
 			nb    Nullable(Bool),
@@ -125,21 +121,18 @@ func TestColumnTypesToEmptyRows(t *testing.T) {
 }
 
 func TestGetDatabaseRowMappingKey(t *testing.T) {
-	conn, err := GetClickHouseConnection(
-		context.Background(),
-		map[string]string{
-			"host":     "localhost",
-			"port":     "9000",
-			"username": "default",
-			"local":    "true",
-		})
-	require.NoError(t, err)
+	conn := getTestConnection(t, context.Background(), map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
 	defer conn.Close()
 
 	// Create a table with all possible destination types and a single record
 	tableName := fmt.Sprintf("test_get_db_row_key_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 	// dt64_nanos/micros/millis does not refer to the precision of the type itself, but to the contents
-	err = conn.Exec(context.Background(), fmt.Sprintf(`
+	err := conn.Exec(context.Background(), fmt.Sprintf(`
 		CREATE OR REPLACE TABLE %s (
 			b           Bool,
 			i16         Int16,
