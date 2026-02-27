@@ -105,18 +105,18 @@ The ClickHouse Cloud destination supports an optional JSON configuration file fo
 
 The file must be valid JSON and conform to the schema described below.
 
-If you need to modify the configuration after the initial setup, you can edit the destination settings in the Fivetran dashboard and upload an updated file.
+If you need to modify the configuration after the initial setup, you can edit the destination configurations in the Fivetran dashboard and upload an updated file.
 
 The configuration file has a top-level section:
 
 ```json
 {
-  "destination_settings": { ... }
+  "destination_configurations": { ... }
 }
 ```
 
-Inside of it you can specify the following settings that control the internal behavior of the ClickHouse destination connector itself.
-These settings affect how the connector processes data before sending it to ClickHouse.
+Inside of it you can specify the following configurations that control the internal behavior of the ClickHouse destination connector itself.
+These configurations affect how the connector processes data before sending it to ClickHouse.
 
 | Setting | Type | Default | Allowed Range | Description |
 |---------|------|---------|---------------|-------------|
@@ -131,7 +131,7 @@ Example:
 
 ```json
 {
-  "destination_settings": {
+  "destination_configurations": {
     "write_batch_size": 500000,
     "select_batch_size": 3000
   }

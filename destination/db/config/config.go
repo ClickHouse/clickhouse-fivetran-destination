@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
+	"fivetran.com/fivetran_sdk/destination/common/log"
 )
 
 const (
@@ -77,18 +78,18 @@ func validatePort(port string) (uint, error) {
 }
 
 // ParseAll parses both the connection config and the optional advanced config
-// from the Fivetran configuration map. If destination settings are present,
+// from the Fivetran configuration map. If destination configurations are present,
 // they are validated and applied to the global flags.
 func ParseAll(configuration map[string]string) (*Config, error) {
 	advancedCfg, err := ParseAdvancedConfig(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse advanced config: %w", err)
 	}
-	if advancedCfg.DestinationSettings != nil {
-		if err := ValidateAndOverwriteFlags(advancedCfg.DestinationSettings); err != nil {
-			return nil, fmt.Errorf("invalid destination settings: %w", err)
-		}
+	if err := ValidateAndOverwriteFlags(advancedCfg.DestinationConfigurations); err != nil {
+		return nil, fmt.Errorf("invalid destination configurations: %w", err)
 	}
+	jsonBytes, _ := json.Marshal(advancedCfg)
+	log.Info(fmt.Sprintf("Destination configurations applied: %s", string(jsonBytes)))
 	return Parse(configuration)
 }
 
@@ -99,11 +100,11 @@ const AdvancedConfigKey = "advanced_config"
 // AdvancedConfig is the top-level structure of the optional JSON configuration file
 // uploaded via the Fivetran setup form.
 type AdvancedConfig struct {
-	DestinationSettings *DestinationSettings `json:"destination_settings,omitempty"`
+	DestinationConfigurations *DestinationConfigurations `json:"destination_configurations,omitempty"`
 }
 
-// DestinationSettings controls the internal behavior of the destination connector.
-type DestinationSettings struct {
+// DestinationConfigurations controls the internal behavior of the destination connector.
+type DestinationConfigurations struct {
 	WriteBatchSize      *uint `json:"write_batch_size,omitempty"`
 	SelectBatchSize     *uint `json:"select_batch_size,omitempty"`
 	HardDeleteBatchSize *uint `json:"hard_delete_batch_size,omitempty"`
@@ -132,9 +133,9 @@ func ParseAdvancedConfig(configuration map[string]string) (*AdvancedConfig, erro
 }
 
 // ValidateAndOverwriteFlags overrides the global flag values with values from the
-// parsed DestinationSettings. Nil fields are left at their flag defaults.
+// parsed DestinationConfigurations. Nil fields are left at their flag defaults.
 // Returns an error if any value is outside its allowed range.
-func ValidateAndOverwriteFlags(ds *DestinationSettings) error {
+func ValidateAndOverwriteFlags(ds *DestinationConfigurations) error {
 	if ds == nil {
 		return nil
 	}
@@ -150,7 +151,7 @@ func ValidateAndOverwriteFlags(ds *DestinationSettings) error {
 	return nil
 }
 
-func applySetting(setting *flags.SettingDefinition, val *uint) error {
+func applySetting(setting *flags.ConfigDefinition, val *uint) error {
 	if val == nil {
 		*setting.Flag = setting.DefaultValue
 		return nil

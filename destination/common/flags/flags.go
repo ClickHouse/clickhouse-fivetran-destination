@@ -14,31 +14,31 @@ var LogLevel = flag.String("log-level", "notice",
 var LogPretty = flag.Bool("log-pretty", false,
 	"Pretty logging instead of JSON")
 
-type SettingDefinition struct {
+type ConfigDefinition struct {
 	Name         string
 	DefaultValue uint
 	MinValue     uint
 	MaxValue     uint
-	description  string
+	Description  string
 	Flag         *uint
 }
 
-func (s *SettingDefinition) RegisterFlag() *uint {
-	s.Flag = flag.Uint(strings.ReplaceAll(s.Name, "_", "-"), s.DefaultValue, s.description)
+func (s *ConfigDefinition) RegisterFlag() *uint {
+	s.Flag = flag.Uint(strings.ReplaceAll(s.Name, "_", "-"), s.DefaultValue, s.Description)
 	return s.Flag
 }
 
-var WriteBatchSizeSetting = SettingDefinition{
+var WriteBatchSizeSetting = ConfigDefinition{
 	Name: "write_batch_size", DefaultValue: 100_000, MinValue: 5_000, MaxValue: 100_000,
-	description: "Batch size for all write operations"}
+	Description: "Batch size for all write operations"}
 var WriteBatchSize = WriteBatchSizeSetting.RegisterFlag()
-var SelectBatchSizeSetting = SettingDefinition{
+var SelectBatchSizeSetting = ConfigDefinition{
 	Name: "select_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
-	description: "Batch size for SELECT operations"}
+	Description: "Batch size for SELECT operations"}
 var SelectBatchSize = SelectBatchSizeSetting.RegisterFlag()
-var HardDeleteBatchSizeSetting = SettingDefinition{
+var HardDeleteBatchSizeSetting = ConfigDefinition{
 	Name: "hard_delete_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
-	description: "Batch size for hard delete operations"}
+	Description: "Batch size for hard delete operations"}
 var HardDeleteBatchSize = HardDeleteBatchSizeSetting.RegisterFlag()
 var MaxParallelSelects = flag.Uint("max-parallel-selects", 10,
 	"Max number of parallel SELECT queries")
