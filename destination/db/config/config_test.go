@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/base64"
 	"testing"
 
+	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -143,4 +145,178 @@ func TestConfigHostValidation(t *testing.T) {
 
 	_, err = Parse(map[string]string{"host": "tcp://my.host"})
 	assert.ErrorContains(t, err, "host tcp://my.host should not contain protocol or port")
+}
+
+func encodeJSON(json string) string {
+	return base64.StdEncoding.EncodeToString([]byte(json))
+}
+
+func parseAdvancedConfigFromRawJson(json string, shouldEncode ...bool) (*AdvancedConfig, error) {
+	shouldEncodeFlag := len(shouldEncode) == 0 || shouldEncode[0]
+	if shouldEncodeFlag {
+		json = encodeJSON(json)
+	}
+	return ParseAdvancedConfig(map[string]string{
+		AdvancedConfigKey: json,
+	})
+}
+
+func TestParseAdvancedConfigEmpty(t *testing.T) {
+	cfg, err := ParseAdvancedConfig(map[string]string{})
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.Nil(t, cfg.DestinationSettings)
+}
+
+func TestParseAdvancedConfigInvalidBase64(t *testing.T) {
+	_, err := parseAdvancedConfigFromRawJson("not-valid-base64!!!", false)
+	assert.ErrorContains(t, err, "failed to decode advanced config")
+}
+
+func TestParseAdvancedConfigInvalidJSON(t *testing.T) {
+	_, err := parseAdvancedConfigFromRawJson("{invalid json}")
+	assert.ErrorContains(t, err, "failed to parse advanced config JSON")
+}
+
+func TestParseAdvancedConfigUnknownFieldsIgnored(t *testing.T) {
+	cfg, err := parseAdvancedConfigFromRawJson(`{
+		"destination_settings": { "write_batch_size": 100 },
+		"some_future_field": "ignored"
+	}`)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg.DestinationSettings)
+	assert.Equal(t, uint(100), *cfg.DestinationSettings.WriteBatchSize)
+}
+
+func TestParseAdvancedConfigWithDestinationSettings(t *testing.T) {
+	cfg, err := parseAdvancedConfigFromRawJson(`{
+		"destination_settings": {
+			"write_batch_size": 500000,
+			"select_batch_size": 3000,
+			"hard_delete_batch_size": 2000
+		}
+	}`)
+	assert.NoError(t, err)
+
+	assert.NotNil(t, cfg.DestinationSettings)
+	assert.Equal(t, uint(500000), *cfg.DestinationSettings.WriteBatchSize)
+	assert.Equal(t, uint(3000), *cfg.DestinationSettings.SelectBatchSize)
+	assert.Equal(t, uint(2000), *cfg.DestinationSettings.HardDeleteBatchSize)
+}
+
+func TestParseAdvancedConfigPartialSettings(t *testing.T) {
+	cfg, err := parseAdvancedConfigFromRawJson(`{
+		"destination_settings": {
+			"write_batch_size": 200000
+		}
+	}`)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg.DestinationSettings)
+	assert.Equal(t, uint(200000), *cfg.DestinationSettings.WriteBatchSize)
+	assert.Nil(t, cfg.DestinationSettings.SelectBatchSize)
+	assert.Nil(t, cfg.DestinationSettings.HardDeleteBatchSize)
+}
+
+func TestValidateAndOverwriteFlagsNilLeftsFlagsUnchanged(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	assert.NoError(t, ValidateAndOverwriteFlags(nil))
+	assert.Equal(t, originalWriteBatch, *flags.WriteBatchSize)
+}
+
+func TestValidateAndOverwriteFlagsOverridesFlags(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	originalSelectBatch := *flags.SelectBatchSize
+	originalHardDeleteBatch := *flags.HardDeleteBatchSize
+	defer func() {
+		*flags.WriteBatchSize = originalWriteBatch
+		*flags.SelectBatchSize = originalSelectBatch
+		*flags.HardDeleteBatchSize = originalHardDeleteBatch
+	}()
+
+	writeBatch := flags.WriteBatchSizeSetting.MinValue + 1
+	selectBatch := flags.SelectBatchSizeSetting.MinValue + 1
+	hardDelete := flags.HardDeleteBatchSizeSetting.MinValue + 1
+
+	ds := &DestinationSettings{
+		WriteBatchSize:      &writeBatch,
+		SelectBatchSize:     &selectBatch,
+		HardDeleteBatchSize: &hardDelete,
+	}
+	assert.NoError(t, ValidateAndOverwriteFlags(ds))
+
+	assert.Equal(t, writeBatch, *flags.WriteBatchSize)
+	assert.Equal(t, selectBatch, *flags.SelectBatchSize)
+	assert.Equal(t, hardDelete, *flags.HardDeleteBatchSize)
+}
+
+func TestValidateAndOverwriteFlagsPartialOverride(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	originalSelectBatch := *flags.SelectBatchSize
+	defer func() {
+		*flags.WriteBatchSize = originalWriteBatch
+		*flags.SelectBatchSize = originalSelectBatch
+	}()
+
+	writeBatch := flags.WriteBatchSizeSetting.MinValue + 1
+	ds := &DestinationSettings{
+		WriteBatchSize: &writeBatch,
+	}
+	assert.NoError(t, ValidateAndOverwriteFlags(ds))
+
+	assert.Equal(t, writeBatch, *flags.WriteBatchSize)
+	assert.Equal(t, flags.SelectBatchSizeSetting.DefaultValue, *flags.SelectBatchSize)
+}
+
+func uintPtr(v uint) *uint { return &v }
+
+func TestValidateAndOverwriteFlagsRejectsOutOfRange(t *testing.T) {
+	belowMin := flags.WriteBatchSizeSetting.MinValue - 1
+	err := ValidateAndOverwriteFlags(&DestinationSettings{WriteBatchSize: &belowMin})
+	assert.ErrorContains(t, err, "out of allowed range")
+
+	aboveMax := flags.WriteBatchSizeSetting.MaxValue + 1
+	err = ValidateAndOverwriteFlags(&DestinationSettings{WriteBatchSize: &aboveMax})
+	assert.ErrorContains(t, err, "out of allowed range")
+}
+
+func TestValidateAndOverwriteFlagsAcceptsBoundaryValues(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	originalSelectBatch := *flags.SelectBatchSize
+	originalHardDeleteBatch := *flags.HardDeleteBatchSize
+	defer func() {
+		*flags.WriteBatchSize = originalWriteBatch
+		*flags.SelectBatchSize = originalSelectBatch
+		*flags.HardDeleteBatchSize = originalHardDeleteBatch
+	}()
+
+	ds := &DestinationSettings{
+		WriteBatchSize:      uintPtr(flags.WriteBatchSizeSetting.MinValue),
+		SelectBatchSize:     uintPtr(flags.SelectBatchSizeSetting.MaxValue),
+		HardDeleteBatchSize: uintPtr(flags.HardDeleteBatchSizeSetting.MaxValue),
+	}
+	assert.NoError(t, ValidateAndOverwriteFlags(ds))
+	assert.Equal(t, flags.WriteBatchSizeSetting.MinValue, *flags.WriteBatchSize)
+	assert.Equal(t, flags.SelectBatchSizeSetting.MaxValue, *flags.SelectBatchSize)
+	assert.Equal(t, flags.HardDeleteBatchSizeSetting.MaxValue, *flags.HardDeleteBatchSize)
+}
+
+func TestValidateAndOverwriteFlagsDoesNotModifyFlagsOnError(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	originalSelectBatch := *flags.SelectBatchSize
+	defer func() {
+		*flags.WriteBatchSize = originalWriteBatch
+		*flags.SelectBatchSize = originalSelectBatch
+	}()
+
+	validWrite := flags.WriteBatchSizeSetting.MinValue + 1
+	invalidSelect := flags.SelectBatchSizeSetting.MaxValue + 1
+	ds := &DestinationSettings{
+		WriteBatchSize:  &validWrite,
+		SelectBatchSize: &invalidSelect,
+	}
+	err := ValidateAndOverwriteFlags(ds)
+	assert.Error(t, err)
+
+	assert.Equal(t, validWrite, *flags.WriteBatchSize)
+	assert.Equal(t, originalSelectBatch, *flags.SelectBatchSize)
 }
