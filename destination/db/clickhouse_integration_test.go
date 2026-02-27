@@ -8,6 +8,7 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/types"
+	"fivetran.com/fivetran_sdk/destination/db/config"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -25,50 +26,55 @@ func TestGetConnectionFailureAfterMaxRetries(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	conn, err := GetClickHouseConnection(ctx, map[string]string{
+	connConfig, err := config.Parse(map[string]string{
 		"host":     "localhost",
 		"port":     "9999",
 		"username": "default",
 		"local":    "true",
 	})
+	require.NoError(t, err)
+	conn, err := GetClickHouseConnection(ctx, connConfig)
 	assert.ErrorContains(t, err, "ClickHouse connection error: ping failed after 3 attempts: dial tcp [::1]:9999: connect: connection refused")
 	assert.Nil(t, conn)
 }
 
 func TestGetConnectionInvalidUsername(t *testing.T) {
 	ctx := context.Background()
-	conn, err := GetClickHouseConnection(ctx, map[string]string{
+	connConfig, err := config.Parse(map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": "invalid-user",
 		"local":    "true",
 	})
+	require.NoError(t, err)
+	conn, err := GetClickHouseConnection(ctx, connConfig)
 	assert.ErrorContains(t, err, "ClickHouse connection error: code: 516, message: invalid-user: Authentication failed")
 	assert.Nil(t, conn)
 
-	conn, err = GetClickHouseConnection(ctx, map[string]string{
+	connConfig, err = config.Parse(map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": "default",
 		"password": "invalid-password",
 		"local":    "true",
 	})
+	require.NoError(t, err)
+	conn, err = GetClickHouseConnection(ctx, connConfig)
 	assert.ErrorContains(t, err, "ClickHouse connection error")
 	assert.Nil(t, conn)
 }
 
 func TestConnection(t *testing.T) {
 	ctx := context.Background()
-	conn, err := GetClickHouseConnection(ctx, map[string]string{
+	conn := getTestConnection(t, ctx, map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": "default",
 		"local":    "true",
 	})
-	require.NoError(t, err)
 	defer conn.Close()
 
-	err = conn.ConnectionTest(ctx)
+	err := conn.ConnectionTest(ctx)
 	require.NoError(t, err)
 }
 
@@ -77,14 +83,14 @@ func TestGrants(t *testing.T) {
 		return strings.ReplaceAll(uuid.New().String(), "-", "")
 	}
 
+	var err error
 	ctx := context.Background()
-	defaultConn, err := GetClickHouseConnection(ctx, map[string]string{
+	defaultConn := getTestConnection(t, ctx, map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": "default",
 		"local":    "true",
 	})
-	require.NoError(t, err)
 
 	username := fmt.Sprintf("test_grants_user_%s", guid())
 	password := fmt.Sprintf("secret_%s", guid())
@@ -100,14 +106,13 @@ func TestGrants(t *testing.T) {
 	err = defaultConn.ExecStatement(ctx, createUserStatement, "[TestGrants] CreateUser", false)
 	require.NoError(t, err)
 
-	conn, err := GetClickHouseConnection(ctx, map[string]string{
+	conn := getTestConnection(t, ctx, map[string]string{
 		"host":     "localhost",
 		"port":     "9000",
 		"username": username,
 		"password": password,
 		"local":    "true",
 	})
-	require.NoError(t, err)
 	defer conn.Close()
 
 	addGrant := func(grant string) {
@@ -150,21 +155,18 @@ func TestGrants(t *testing.T) {
 }
 
 func TestDescribeTable(t *testing.T) {
-	conn, err := GetClickHouseConnection(
-		context.Background(),
-		map[string]string{
-			"host":     "localhost",
-			"port":     "9000",
-			"username": "default",
-			"local":    "true",
-		})
-	require.NoError(t, err)
+	conn := getTestConnection(t, context.Background(), map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
 	defer conn.Close()
 
 	dbName := "fivetran_test"
 	tableName := fmt.Sprintf("test_describe_table_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 
-	err = conn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
+	err := conn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
 	require.NoError(t, err)
 
 	err = conn.Exec(context.Background(), fmt.Sprintf(`

@@ -165,3 +165,46 @@ make build
 ```
 
 Check the [flags.go](./destination/common/flags/flags.go) file for more details.
+
+## testing the advanced configuration
+
+You can test the advanced configuration by adding the json file encoded as base64 to the `advanced_config` field in the [configuration.json](./sdk_tests/configuration.json) file.
+
+For example, given the following JSON file:
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000
+  }
+}
+```
+
+Base64-encode it:
+```bash
+echo -n '{"destination_configurations":{"write_batch_size":50000}}' | base64
+```
+Add it to sdk_tests/configuration.json:
+```json
+{  
+    "host": "clickhouse",
+    "port": "9000",
+    "password": "",
+    "username": "default",
+    "local": "true",
+    "advanced_config": "eyJkZXN0aW5hdGlvbl9jb25maWd1cmF0aW9ucyI6eyJ3cml0ZV9iYXRjaF9zaXplIjo1MDAwMH19"
+}
+```
+And then execute the tests:
+```bash
+
+# Terminal 1: ClickHouse
+docker compose up -d
+
+# Terminal 2: destination service
+make run
+
+# Terminal 3: SDK tester
+make recreate-test-db
+make sdk-test
+```
+The destination service will log all flag values at startup

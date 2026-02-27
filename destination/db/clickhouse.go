@@ -68,14 +68,9 @@ func (conn *ClickHouseConnection) recordQuery(duration time.Duration, success bo
 	}
 }
 
-func GetClickHouseConnection(ctx context.Context, configuration map[string]string) (*ClickHouseConnection, error) {
-	connConfig, err := config.Parse(configuration)
-	if err != nil {
-		return nil, fmt.Errorf("error while parsing configuration: %w", err)
-	}
-
-	log.Info(fmt.Sprintf("Initializing ClickHouse connection to %s:%s",
-		configuration[config.HostKey], configuration[config.PortKey]))
+func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*ClickHouseConnection, error) {
+	log.Info(fmt.Sprintf("Initializing ClickHouse connection to %s:%d",
+		connConfig.Host, connConfig.Port))
 
 	settings := clickhouse.Settings{
 		// support ISO DateTime formats from CSV

@@ -13,19 +13,16 @@ import (
 )
 
 func TestCheckScanTypes(t *testing.T) {
-	conn, err := GetClickHouseConnection(
-		context.Background(),
-		map[string]string{
-			"host":     "localhost",
-			"port":     "9000",
-			"username": "default",
-			"local":    "true",
-		})
-	require.NoError(t, err)
+	conn := getTestConnection(t, context.Background(), map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
 	defer conn.Close()
 
 	tableName := fmt.Sprintf("test_check_scan_types_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
-	err = conn.Exec(context.Background(), fmt.Sprintf(`
+	err := conn.Exec(context.Background(), fmt.Sprintf(`
 		CREATE OR REPLACE TABLE default.%s (
 			nb    Nullable(Bool),
 			ni16  Nullable(Int16),
