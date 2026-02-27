@@ -165,7 +165,7 @@ func TestParseAdvancedConfigEmpty(t *testing.T) {
 	cfg, err := ParseAdvancedConfig(map[string]string{})
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
-	assert.Nil(t, cfg.DestinationSettings)
+	assert.Nil(t, cfg.DestinationConfigurations)
 }
 
 func TestParseAdvancedConfigInvalidBase64(t *testing.T) {
@@ -180,17 +180,17 @@ func TestParseAdvancedConfigInvalidJSON(t *testing.T) {
 
 func TestParseAdvancedConfigUnknownFieldsIgnored(t *testing.T) {
 	cfg, err := parseAdvancedConfigFromRawJson(`{
-		"destination_settings": { "write_batch_size": 100 },
+		"destination_configurations": { "write_batch_size": 100 },
 		"some_future_field": "ignored"
 	}`)
 	assert.NoError(t, err)
-	assert.NotNil(t, cfg.DestinationSettings)
-	assert.Equal(t, uint(100), *cfg.DestinationSettings.WriteBatchSize)
+	assert.NotNil(t, cfg.DestinationConfigurations)
+	assert.Equal(t, uint(100), *cfg.DestinationConfigurations.WriteBatchSize)
 }
 
-func TestParseAdvancedConfigWithDestinationSettings(t *testing.T) {
+func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
 	cfg, err := parseAdvancedConfigFromRawJson(`{
-		"destination_settings": {
+		"destination_configurations": {
 			"write_batch_size": 500000,
 			"select_batch_size": 3000,
 			"hard_delete_batch_size": 2000
@@ -198,23 +198,23 @@ func TestParseAdvancedConfigWithDestinationSettings(t *testing.T) {
 	}`)
 	assert.NoError(t, err)
 
-	assert.NotNil(t, cfg.DestinationSettings)
-	assert.Equal(t, uint(500000), *cfg.DestinationSettings.WriteBatchSize)
-	assert.Equal(t, uint(3000), *cfg.DestinationSettings.SelectBatchSize)
-	assert.Equal(t, uint(2000), *cfg.DestinationSettings.HardDeleteBatchSize)
+	assert.NotNil(t, cfg.DestinationConfigurations)
+	assert.Equal(t, uint(500000), *cfg.DestinationConfigurations.WriteBatchSize)
+	assert.Equal(t, uint(3000), *cfg.DestinationConfigurations.SelectBatchSize)
+	assert.Equal(t, uint(2000), *cfg.DestinationConfigurations.HardDeleteBatchSize)
 }
 
-func TestParseAdvancedConfigPartialSettings(t *testing.T) {
+func TestParseAdvancedConfigPartialConfigs(t *testing.T) {
 	cfg, err := parseAdvancedConfigFromRawJson(`{
-		"destination_settings": {
+		"destination_configurations": {
 			"write_batch_size": 200000
 		}
 	}`)
 	assert.NoError(t, err)
-	assert.NotNil(t, cfg.DestinationSettings)
-	assert.Equal(t, uint(200000), *cfg.DestinationSettings.WriteBatchSize)
-	assert.Nil(t, cfg.DestinationSettings.SelectBatchSize)
-	assert.Nil(t, cfg.DestinationSettings.HardDeleteBatchSize)
+	assert.NotNil(t, cfg.DestinationConfigurations)
+	assert.Equal(t, uint(200000), *cfg.DestinationConfigurations.WriteBatchSize)
+	assert.Nil(t, cfg.DestinationConfigurations.SelectBatchSize)
+	assert.Nil(t, cfg.DestinationConfigurations.HardDeleteBatchSize)
 }
 
 func TestValidateAndOverwriteFlagsNilLeftsFlagsUnchanged(t *testing.T) {
@@ -237,7 +237,7 @@ func TestValidateAndOverwriteFlagsOverridesFlags(t *testing.T) {
 	selectBatch := flags.SelectBatchSizeSetting.MinValue + 1
 	hardDelete := flags.HardDeleteBatchSizeSetting.MinValue + 1
 
-	ds := &DestinationSettings{
+	ds := &DestinationConfigurations{
 		WriteBatchSize:      &writeBatch,
 		SelectBatchSize:     &selectBatch,
 		HardDeleteBatchSize: &hardDelete,
@@ -258,7 +258,7 @@ func TestValidateAndOverwriteFlagsPartialOverride(t *testing.T) {
 	}()
 
 	writeBatch := flags.WriteBatchSizeSetting.MinValue + 1
-	ds := &DestinationSettings{
+	ds := &DestinationConfigurations{
 		WriteBatchSize: &writeBatch,
 	}
 	assert.NoError(t, ValidateAndOverwriteFlags(ds))
@@ -271,11 +271,11 @@ func uintPtr(v uint) *uint { return &v }
 
 func TestValidateAndOverwriteFlagsRejectsOutOfRange(t *testing.T) {
 	belowMin := flags.WriteBatchSizeSetting.MinValue - 1
-	err := ValidateAndOverwriteFlags(&DestinationSettings{WriteBatchSize: &belowMin})
+	err := ValidateAndOverwriteFlags(&DestinationConfigurations{WriteBatchSize: &belowMin})
 	assert.ErrorContains(t, err, "out of allowed range")
 
 	aboveMax := flags.WriteBatchSizeSetting.MaxValue + 1
-	err = ValidateAndOverwriteFlags(&DestinationSettings{WriteBatchSize: &aboveMax})
+	err = ValidateAndOverwriteFlags(&DestinationConfigurations{WriteBatchSize: &aboveMax})
 	assert.ErrorContains(t, err, "out of allowed range")
 }
 
@@ -289,7 +289,7 @@ func TestValidateAndOverwriteFlagsAcceptsBoundaryValues(t *testing.T) {
 		*flags.HardDeleteBatchSize = originalHardDeleteBatch
 	}()
 
-	ds := &DestinationSettings{
+	ds := &DestinationConfigurations{
 		WriteBatchSize:      uintPtr(flags.WriteBatchSizeSetting.MinValue),
 		SelectBatchSize:     uintPtr(flags.SelectBatchSizeSetting.MaxValue),
 		HardDeleteBatchSize: uintPtr(flags.HardDeleteBatchSizeSetting.MaxValue),
@@ -310,7 +310,7 @@ func TestValidateAndOverwriteFlagsDoesNotModifyFlagsOnError(t *testing.T) {
 
 	validWrite := flags.WriteBatchSizeSetting.MinValue + 1
 	invalidSelect := flags.SelectBatchSizeSetting.MaxValue + 1
-	ds := &DestinationSettings{
+	ds := &DestinationConfigurations{
 		WriteBatchSize:  &validWrite,
 		SelectBatchSize: &invalidSelect,
 	}
