@@ -65,7 +65,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", identifier(op.Column)))
 		}
 		if count < len(ops)-1 {
-			statementsBuilder.WriteString(", ")
+			statementsBuilder.WriteString(",")
 		}
 		count++
 	}
@@ -139,7 +139,7 @@ func GetCreateTableStatement(
 			orderByCols = append(orderByCols, identifier(col.Name))
 		}
 		if count < len(tableDescription.Columns)-1 {
-			columnsBuilder.WriteString(", ")
+			columnsBuilder.WriteString(",")
 		}
 		count++
 	}
@@ -147,7 +147,7 @@ func GetCreateTableStatement(
 
 	query := fmt.Sprintf(
 		"CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
-		fullName, columns, identifier(constants.FivetranSynced), strings.Join(orderByCols, ", "))
+		fullName, columns, identifier(constants.FivetranSynced), strings.Join(orderByCols, ","))
 	return query, nil
 }
 
@@ -252,22 +252,22 @@ func GetSelectByPrimaryKeysQuery(
 	var orderByBuilder strings.Builder
 	orderByBuilder.WriteRune('(')
 	var clauseBuilder strings.Builder
-	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE (", qualifiedTableName))
+	clauseBuilder.WriteString(fmt.Sprintf("SELECT * FROM %s FINAL WHERE(", qualifiedTableName))
 
 	if isHistoryMode {
 		csvColumns.RemovePrimaryKey(constants.FivetranStart)
-		orderByBuilder.WriteString(fmt.Sprintf("`%s`, ", constants.FivetranSynced))
+		orderByBuilder.WriteString(fmt.Sprintf("`%s`,", constants.FivetranSynced))
 	}
 	for i, col := range csvColumns.PrimaryKeys {
 		clauseBuilder.WriteString(identifier(col.Name))
 		orderByBuilder.WriteString(identifier(col.Name))
 		if i < len(csvColumns.PrimaryKeys)-1 {
-			clauseBuilder.WriteString(", ")
-			orderByBuilder.WriteString(", ")
+			clauseBuilder.WriteString(",")
+			orderByBuilder.WriteString(",")
 		}
 	}
 	orderByBuilder.WriteRune(')')
-	clauseBuilder.WriteString(") IN (")
+	clauseBuilder.WriteString(")IN(")
 	for i, csvRow := range csv {
 		clauseBuilder.WriteRune('(')
 		for j, col := range csvColumns.PrimaryKeys {
@@ -280,17 +280,17 @@ func GetSelectByPrimaryKeysQuery(
 			}
 			clauseBuilder.WriteString(value)
 			if j < len(csvColumns.PrimaryKeys)-1 {
-				clauseBuilder.WriteString(", ")
+				clauseBuilder.WriteString(",")
 			}
 		}
 		clauseBuilder.WriteRune(')')
 		if i < len(csv)-1 {
-			clauseBuilder.WriteString(", ")
+			clauseBuilder.WriteString(",")
 		}
 	}
-	clauseBuilder.WriteString(") ORDER BY ")
+	clauseBuilder.WriteString(")ORDER BY")
 	clauseBuilder.WriteString(orderByBuilder.String())
-	clauseBuilder.WriteString(fmt.Sprintf(" LIMIT %d", len(csv)))
+	clauseBuilder.WriteString(fmt.Sprintf("LIMIT %d", len(csv)))
 	return clauseBuilder.String(), nil
 }
 
@@ -314,14 +314,14 @@ func GetHardDeleteStatement(
 		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
 	}
 	var clauseBuilder strings.Builder
-	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE (", qualifiedTableName))
+	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE(", qualifiedTableName))
 	for i, col := range csvColumns.PrimaryKeys {
 		clauseBuilder.WriteString(identifier(col.Name))
 		if i < len(csvColumns.PrimaryKeys)-1 {
-			clauseBuilder.WriteString(", ")
+			clauseBuilder.WriteString(",")
 		}
 	}
-	clauseBuilder.WriteString(") IN (")
+	clauseBuilder.WriteString(")IN(")
 	for i, csvRow := range csv {
 		clauseBuilder.WriteRune('(')
 		for j, col := range csvColumns.PrimaryKeys {
@@ -334,12 +334,12 @@ func GetHardDeleteStatement(
 			}
 			clauseBuilder.WriteString(value)
 			if j < len(csvColumns.PrimaryKeys)-1 {
-				clauseBuilder.WriteString(", ")
+				clauseBuilder.WriteString(",")
 			}
 		}
 		clauseBuilder.WriteRune(')')
 		if i < len(csv)-1 {
-			clauseBuilder.WriteString(", ")
+			clauseBuilder.WriteString(",")
 		}
 	}
 	clauseBuilder.WriteRune(')')
@@ -383,7 +383,7 @@ func GetHardDeleteWithTimestampStatement(
 	}
 
 	var clauseBuilder strings.Builder
-	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE ", qualifiedTableName))
+	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE", qualifiedTableName))
 
 	for i, csvRow := range csv {
 		if timestampIndex >= uint(len(csvRow)) {
@@ -402,10 +402,10 @@ func GetHardDeleteWithTimestampStatement(
 			if err != nil {
 				return "", err
 			}
-			clauseBuilder.WriteString(fmt.Sprintf("%s = %s", identifier(col.Name), value))
+			clauseBuilder.WriteString(fmt.Sprintf("%s=%s", identifier(col.Name), value))
 
 			// Add AND after each primary key condition (including the last one)
-			clauseBuilder.WriteString(" AND ")
+			clauseBuilder.WriteString(" AND")
 		}
 
 		// Add timestamp condition
@@ -413,14 +413,14 @@ func GetHardDeleteWithTimestampStatement(
 		if err != nil {
 			return "", err
 		}
-		clauseBuilder.WriteString(fmt.Sprintf("%s >= %s", identifier(timestampColumn), timestampValue))
+		clauseBuilder.WriteString(fmt.Sprintf("%s>=%s", identifier(timestampColumn), timestampValue))
 
 		// Close parentheses for this row's condition
 		clauseBuilder.WriteRune(')')
 
 		// Add OR between row conditions (except after the last one)
 		if i < len(csv)-1 {
-			clauseBuilder.WriteString(" OR ")
+			clauseBuilder.WriteString("OR")
 		}
 	}
 
@@ -470,11 +470,11 @@ func GetUpdateHistoryActiveStatement(
 
 	// SET clause: _fivetran_active = FALSE
 	queryBuilder.WriteString(identifier(constants.FivetranActive))
-	queryBuilder.WriteString(" = FALSE, ")
+	queryBuilder.WriteString("=FALSE,")
 
 	// SET clause: _fivetran_end = CASE ... END
 	queryBuilder.WriteString(identifier(constants.FivetranEnd))
-	queryBuilder.WriteString(" = CASE")
+	queryBuilder.WriteString("=CASE")
 
 	// Build CASE WHEN statements for each row
 	for _, csvRow := range csv {
@@ -482,7 +482,7 @@ func GetUpdateHistoryActiveStatement(
 			return "", fmt.Errorf("can't find matching value for end timestamp column with index %d", endTimestampIndex)
 		}
 
-		queryBuilder.WriteString(" WHEN ")
+		queryBuilder.WriteString(" WHEN")
 
 		// Build condition for primary keys (excluding _fivetran_start)
 		pkConditionCount := 0
@@ -499,9 +499,9 @@ func GetUpdateHistoryActiveStatement(
 			}
 
 			if pkConditionCount > 0 {
-				queryBuilder.WriteString(" AND ")
+				queryBuilder.WriteString(" AND")
 			}
-			queryBuilder.WriteString(fmt.Sprintf("%s = %s", identifier(col.Name), value))
+			queryBuilder.WriteString(fmt.Sprintf("%s=%s", identifier(col.Name), value))
 			pkConditionCount++
 		}
 
@@ -513,10 +513,10 @@ func GetUpdateHistoryActiveStatement(
 		queryBuilder.WriteString(fmt.Sprintf(" THEN %s", endTimestampValue))
 	}
 
-	queryBuilder.WriteString(" END ")
+	queryBuilder.WriteString("END ")
 
 	// WHERE clause: primary keys IN (...) AND _fivetran_active = TRUE
-	queryBuilder.WriteString("WHERE ")
+	queryBuilder.WriteString("WHERE")
 
 	// Filter out _fivetran_start from primary keys
 	var filteredPKs []*types.CSVColumn
@@ -530,7 +530,7 @@ func GetUpdateHistoryActiveStatement(
 	if len(filteredPKs) == 1 {
 		// Single PK: id IN (1, 2, 3)
 		queryBuilder.WriteString(identifier(filteredPKs[0].Name))
-		queryBuilder.WriteString(" IN (")
+		queryBuilder.WriteString("IN(")
 
 		for i, csvRow := range csv {
 			col := filteredPKs[0]
@@ -543,7 +543,7 @@ func GetUpdateHistoryActiveStatement(
 			}
 			queryBuilder.WriteString(value)
 			if i < len(csv)-1 {
-				queryBuilder.WriteString(", ")
+				queryBuilder.WriteString(",")
 			}
 		}
 		queryBuilder.WriteString(")")
@@ -553,10 +553,10 @@ func GetUpdateHistoryActiveStatement(
 		for i, col := range filteredPKs {
 			queryBuilder.WriteString(identifier(col.Name))
 			if i < len(filteredPKs)-1 {
-				queryBuilder.WriteString(", ")
+				queryBuilder.WriteString(",")
 			}
 		}
-		queryBuilder.WriteString(") IN (")
+		queryBuilder.WriteString(")IN(")
 
 		for i, csvRow := range csv {
 			queryBuilder.WriteRune('(')
@@ -570,20 +570,20 @@ func GetUpdateHistoryActiveStatement(
 				}
 				queryBuilder.WriteString(value)
 				if j < len(filteredPKs)-1 {
-					queryBuilder.WriteString(", ")
+					queryBuilder.WriteString(",")
 				}
 			}
 			queryBuilder.WriteRune(')')
 			if i < len(csv)-1 {
-				queryBuilder.WriteString(", ")
+				queryBuilder.WriteString(",")
 			}
 		}
 		queryBuilder.WriteString(")")
 	}
 
-	queryBuilder.WriteString(" AND ")
+	queryBuilder.WriteString("AND")
 	queryBuilder.WriteString(identifier(constants.FivetranActive))
-	queryBuilder.WriteString(" = TRUE")
+	queryBuilder.WriteString("=TRUE")
 
 	statement := queryBuilder.String()
 	return statement, nil
@@ -659,7 +659,7 @@ func GetInsertFromSelectStatement(
 	for i, colName := range colNames {
 		b.WriteString(identifier(colName))
 		if i < len(colNames)-1 {
-			b.WriteString(", ")
+			b.WriteString(",")
 		}
 	}
 	joinedColNames := b.String()

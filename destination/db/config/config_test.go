@@ -206,6 +206,7 @@ func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
 		"destination_configurations": {
 			"write_batch_size": 500000,
 			"select_batch_size": 3000,
+			"mutation_batch_size": 1000,
 			"hard_delete_batch_size": 2000
 		}
 	}`)
@@ -214,6 +215,7 @@ func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
 	assert.NotNil(t, cfg.DestinationConfigurations)
 	assert.Equal(t, uint(500000), *cfg.DestinationConfigurations.WriteBatchSize)
 	assert.Equal(t, uint(3000), *cfg.DestinationConfigurations.SelectBatchSize)
+	assert.Equal(t, uint(1000), *cfg.DestinationConfigurations.MutationBatchSize)
 	assert.Equal(t, uint(2000), *cfg.DestinationConfigurations.HardDeleteBatchSize)
 }
 
@@ -266,26 +268,31 @@ func TestValidateAndOverwriteFlagsNilLeftsFlagsUnchanged(t *testing.T) {
 func TestValidateAndOverwriteFlagsOverridesFlags(t *testing.T) {
 	originalWriteBatch := *flags.WriteBatchSize
 	originalSelectBatch := *flags.SelectBatchSize
+	originalMutationBatch := *flags.MutationBatchSize
 	originalHardDeleteBatch := *flags.HardDeleteBatchSize
 	defer func() {
 		*flags.WriteBatchSize = originalWriteBatch
 		*flags.SelectBatchSize = originalSelectBatch
+		*flags.MutationBatchSize = originalMutationBatch
 		*flags.HardDeleteBatchSize = originalHardDeleteBatch
 	}()
 
 	writeBatch := flags.WriteBatchSizeSetting.MinValue + 1
 	selectBatch := flags.SelectBatchSizeSetting.MinValue + 1
+	mutationBatch := flags.MutationBatchSizeSetting.MinValue + 1
 	hardDelete := flags.HardDeleteBatchSizeSetting.MinValue + 1
 
 	ds := &DestinationConfigurations{
 		WriteBatchSize:      &writeBatch,
 		SelectBatchSize:     &selectBatch,
+		MutationBatchSize:   &mutationBatch,
 		HardDeleteBatchSize: &hardDelete,
 	}
 	assert.NoError(t, ValidateAndOverwriteFlags(ds))
 
 	assert.Equal(t, writeBatch, *flags.WriteBatchSize)
 	assert.Equal(t, selectBatch, *flags.SelectBatchSize)
+	assert.Equal(t, mutationBatch, *flags.MutationBatchSize)
 	assert.Equal(t, hardDelete, *flags.HardDeleteBatchSize)
 }
 

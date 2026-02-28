@@ -14,7 +14,6 @@ var LogLevel = flag.String("log-level", "notice",
 var LogPretty = flag.Bool("log-pretty", false,
 	"Pretty logging instead of JSON")
 
-
 type ConfigDefinition struct {
 	Name         string
 	DefaultValue uint
@@ -39,8 +38,10 @@ var SelectBatchSizeSetting = ConfigDefinition{
 	Description: "Batch size for SELECT operations"}
 var SelectBatchSize = SelectBatchSizeSetting.RegisterFlag()
 
-var MutationBatchSize = flag.Uint("mutation-batch-size", 1_200,
-	"Batch size for ALTER TABLE UPDATE mutations (builds SQL strings, keep low to avoid large queries)")
+var MutationBatchSizeSetting = ConfigDefinition{
+	Name: "mutation_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
+	Description: "Batch size for ALTER TABLE UPDATE mutations (builds SQL strings, keep low to avoid large queries)"}
+var MutationBatchSize = MutationBatchSizeSetting.RegisterFlag()
 
 var HardDeleteBatchSizeSetting = ConfigDefinition{
 	Name: "hard_delete_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
