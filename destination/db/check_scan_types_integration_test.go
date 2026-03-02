@@ -22,7 +22,7 @@ func TestCheckScanTypes(t *testing.T) {
 			"local":    "true",
 		})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	tableName := fmt.Sprintf("test_check_scan_types_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 	err = conn.Exec(context.Background(), fmt.Sprintf(`

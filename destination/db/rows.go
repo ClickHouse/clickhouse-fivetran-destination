@@ -66,11 +66,12 @@ func GetDatabaseRowMappingKey(row []interface{}, csvCols *types.CSVColumns) (str
 		case *time.Time:
 			// format UTC datetime as nanos (due to possibly variable precision),
 			// the rest should actually match CSV datetime format
-			if col.Type == pb.DataType_UTC_DATETIME {
+			switch col.Type {
+			case pb.DataType_UTC_DATETIME:
 				key.WriteString(fmt.Sprint(p.UnixNano()))
-			} else if col.Type == pb.DataType_NAIVE_DATETIME {
+			case pb.DataType_NAIVE_DATETIME:
 				key.WriteString(p.Format(constants.NaiveDateTimeFormat))
-			} else {
+			default:
 				key.WriteString(p.Format(constants.NaiveDateFormat))
 			}
 		case *decimal.Decimal:
@@ -115,8 +116,7 @@ func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns, isHistoryMo
 	return key.String(), nil
 }
 
-// MergeUpdatedRows
-// merges a CSV with existing ClickHouse rows to create a batch of rows to insert back to the database.
+// MergeUpdatedRows merges a CSV with existing ClickHouse rows to create a batch of rows to insert back to the database.
 // `selectRows` are fetched from ClickHouse in advance using primary key values from CSV records.
 // See also: ToUpdatedRow.
 func MergeUpdatedRows(

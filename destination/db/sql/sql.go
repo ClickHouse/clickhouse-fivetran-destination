@@ -151,8 +151,7 @@ func GetCreateTableStatement(
 	return query, nil
 }
 
-// GetTruncateTableStatement
-// generates a query for either "soft" (ALTER TABLE UPDATE) or "hard" (ALTER TABLE DELETE) table truncation.
+// GetTruncateTableStatement generates a query for either "soft" (ALTER TABLE UPDATE) or "hard" (ALTER TABLE DELETE) table truncation.
 //
 // Important: Fivetran uses milliseconds (not nanos) precision for the _fivetran_synced column.
 //
@@ -229,8 +228,7 @@ func GetDescribeTableQuery(schemaName string, tableName string) (string, error) 
 		schemaName, tableName), nil
 }
 
-// GetSelectByPrimaryKeysQuery
-// CSV slice + known primary key columns and their CSV cell indices -> SELECT FINAL query using values from CSV rows.
+// GetSelectByPrimaryKeysQuery converts a CSV slice + known primary key columns and their CSV cell indices to a SELECT FINAL query using values from CSV rows.
 // Sample generated query:
 //
 //	SELECT * FROM `foo`.`bar` FINAL WHERE (`id`, `name`) IN ((42, 'foo'), (144, 'bar')) ORDER BY (`id`, `name`) LIMIT N
@@ -591,8 +589,7 @@ func GetUpdateHistoryActiveStatement(
 	return statement, nil
 }
 
-// GetAllReplicasActiveQuery
-// generates a query to check if there are no inactive replicas.
+// GetAllReplicasActiveQuery generates a query to check if there are no inactive replicas.
 // Excludes Hydra Read Only instances which have disable_insertion_and_mutation = '1'
 func GetAllReplicasActiveQuery(
 	schemaName string,
@@ -623,8 +620,7 @@ func GetAllReplicasActiveQuery(
 	), nil
 }
 
-// GetAllMutationsCompletedQuery
-// generates a query to check that all mutations over a particular table on all cluster replicas are completed.
+// GetAllMutationsCompletedQuery generates a query to check that all mutations over a particular table on all cluster replicas are completed.
 func GetAllMutationsCompletedQuery(
 	schemaName string,
 	tableName string,
@@ -656,7 +652,7 @@ func GetInsertFromSelectStatement(
 	if schemaName == "" {
 		return "", fmt.Errorf("schema name for tables %s/%s is empty", tableName, newTableName)
 	}
-	if colNames == nil || len(colNames) == 0 {
+	if len(colNames) == 0 {
 		return "", fmt.Errorf("column names list is empty")
 	}
 	b := strings.Builder{}

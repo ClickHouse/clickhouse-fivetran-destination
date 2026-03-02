@@ -66,7 +66,7 @@ func TestConnection(t *testing.T) {
 		"local":    "true",
 	})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	err = conn.ConnectionTest(ctx)
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestGrants(t *testing.T) {
 		"local":    "true",
 	})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	addGrant := func(grant string) {
 		grantCreateDatabaseStatement := fmt.Sprintf("GRANT %s TO %s", grant, username)
@@ -159,7 +159,7 @@ func TestDescribeTable(t *testing.T) {
 			"local":    "true",
 		})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	dbName := "fivetran_test"
 	tableName := fmt.Sprintf("test_describe_table_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
@@ -237,7 +237,7 @@ func TestDescribeTable(t *testing.T) {
 	xml := &types.ColumnDefinition{Name: "xml", Type: "String", IsPrimaryKey: true, Comment: "XML"}
 	json := &types.ColumnDefinition{Name: "json", Type: "String", IsPrimaryKey: true, Comment: "JSON"}
 	bin := &types.ColumnDefinition{Name: "bin", Type: "String", IsPrimaryKey: true, Comment: "BIN"}
-	fivetranId := &types.ColumnDefinition{Name: "_fivetran_id", Type: "String", IsPrimaryKey: false}
+	fivetranID := &types.ColumnDefinition{Name: "_fivetran_id", Type: "String", IsPrimaryKey: false}
 	fivetranSynced := &types.ColumnDefinition{Name: "_fivetran_synced", Type: "DateTime", IsPrimaryKey: false}
 	fivetranDeleted := &types.ColumnDefinition{Name: "_fivetran_deleted", Type: "Bool", IsPrimaryKey: false}
 
@@ -247,14 +247,14 @@ func TestDescribeTable(t *testing.T) {
 			nd, ndt, ndt64, ns, nxml, njson, nbin,
 			b, i16, i32, i64, f32, f64, dd,
 			d, dt, dt64, s, xml, json, bin,
-			fivetranId, fivetranSynced, fivetranDeleted,
+			fivetranID, fivetranSynced, fivetranDeleted,
 		},
 		Mapping: map[string]*types.ColumnDefinition{
 			"nb": nb, "ni16": ni16, "ni32": ni32, "ni64": ni64, "nf32": nf32, "nf64": nf64, "ndd": ndd,
 			"nd": nd, "ndt": ndt, "ndt64": ndt64, "ns": ns, "nxml": nxml, "njson": njson, "nbin": nbin,
 			"b": b, "i16": i16, "i32": i32, "i64": i64, "f32": f32, "f64": f64, "dd": dd,
 			"d": d, "dt": dt, "dt64": dt64, "s": s, "xml": xml, "json": json, "bin": bin,
-			"_fivetran_id": fivetranId, "_fivetran_synced": fivetranSynced, "_fivetran_deleted": fivetranDeleted,
+			"_fivetran_id": fivetranID, "_fivetran_synced": fivetranSynced, "_fivetran_deleted": fivetranDeleted,
 		},
 		PrimaryKeys: []string{"b", "i16", "i32", "i64", "f32", "f64", "dd", "d", "dt", "dt64", "s", "xml", "json", "bin"},
 	})

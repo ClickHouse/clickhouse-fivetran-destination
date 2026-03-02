@@ -34,8 +34,6 @@ type ClickHouseConnection struct {
 	driver.Conn
 	username      string
 	isLocal       bool
-	connectTime   time.Time
-	lastUsed      time.Time
 	queryCount    int64
 	errorCount    int64
 	totalDuration time.Duration
@@ -165,7 +163,7 @@ func (conn *ClickHouseConnection) ExecStatement(
 	conn.recordQuery(duration, err == nil)
 
 	if err != nil {
-		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", statement, queryID, err)
+		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", statement, queryID, err)
 		log.Error(err)
 		return err
 	}
@@ -203,7 +201,7 @@ func (conn *ClickHouseConnection) ExecQuery(
 	conn.recordQuery(duration, err == nil)
 
 	if err != nil {
-		err = fmt.Errorf("Error while executing %s [query_id=%s]: %w", query, queryID, err)
+		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", query, queryID, err)
 		log.Error(err)
 		return nil, err
 	}
@@ -211,8 +209,7 @@ func (conn *ClickHouseConnection) ExecQuery(
 	return rows, nil
 }
 
-// ExecBoolQuery
-// using ExecQuery, queries a single row with a single boolean value
+// ExecBoolQuery queries a single row with a single boolean value using ExecQuery.
 func (conn *ClickHouseConnection) ExecBoolQuery(
 	ctx context.Context,
 	query string,
@@ -223,7 +220,7 @@ func (conn *ClickHouseConnection) ExecBoolQuery(
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	if !rows.Next() {
 		return false, fmt.Errorf("unexpected empty result from %s", query)
 	}
@@ -247,7 +244,7 @@ func (conn *ClickHouseConnection) DescribeTable(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var (
 		colName      string
 		colType      string
@@ -276,8 +273,7 @@ func (conn *ClickHouseConnection) DescribeTable(
 	return types.MakeTableDescription(columns), nil
 }
 
-// GetColumnTypes
-// returns the information about the table columns as reported by the driver;
+// GetColumnTypes returns the information about the table columns as reported by the driver;
 // columns have the same order as in the ClickHouse table definition.
 // It is used to determine the scan types of the rows that we will insert into the table,
 // as well as validate the CSV header and build a proper mapping of CSV -> database columns indices.
@@ -294,7 +290,7 @@ func (conn *ClickHouseConnection) GetColumnTypes(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	return rows.ColumnTypes(), nil
 }
 
@@ -307,7 +303,7 @@ func (conn *ClickHouseConnection) GetUserGrants(ctx context.Context) ([]*types.U
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var (
 		accessType string
 		database   *string
@@ -341,7 +337,7 @@ func (conn *ClickHouseConnection) CheckDatabaseExists(
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var count uint64
 	if !rows.Next() {
 		return false, fmt.Errorf("unexpected empty result from %s", statement)
@@ -486,8 +482,8 @@ func (conn *ClickHouseConnection) RenameTable(
 	return nil
 }
 
-// TruncateTable
-// softDeletedColumn switches between "hard" (nil) and "soft" (not nil) truncation (see sql.GetTruncateTableStatement)
+// TruncateTable truncates a table; softDeletedColumn switches between "hard" (nil) and "soft" (not nil) truncation
+// (see sql.GetTruncateTableStatement).
 func (conn *ClickHouseConnection) TruncateTable(
 	ctx context.Context,
 	schemaName string,
@@ -548,9 +544,9 @@ func (conn *ClickHouseConnection) InsertBatch(
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				err = fmt.Errorf("Error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
+				err = fmt.Errorf("error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
 			} else {
-				err = fmt.Errorf("Error while preparing batch for %s: %w", qualifiedTableName, err)
+				err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
 			}
 			log.Error(err)
 			return err
@@ -618,7 +614,7 @@ func (conn *ClickHouseConnection) SelectByPrimaryKeys(
 					if err != nil {
 						return err
 					}
-					defer rows.Close()
+					defer rows.Close() //nolint:errcheck
 					mutex.Lock()
 					defer mutex.Unlock()
 					for i := s.Num * (*flags.SelectBatchSize); rows.Next(); i++ {
@@ -785,7 +781,7 @@ func (conn *ClickHouseConnection) HardDelete(
 	}, string(insertBatchHardDelete))
 }
 
-// HardDeleteWithTimestamp is similar to HardDelete but includes a timestamp condition
+// HardDeleteForEarliestStartHistory is similar to HardDelete but includes a timestamp condition
 // for each row, combining primary key equality checks with a timestamp comparison.
 // This is useful for deleting records that match both the primary key and a timestamp threshold.
 // See also: sql.GetHardDeleteWithTimestampStatement
@@ -836,7 +832,7 @@ func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
 	}, string(insertBatchHardDelete))
 }
 
-// WriteHistoryBatch updates history records by setting _fivetran_active to FALSE and
+// UpdateForEarliestStartHistory updates history records by setting _fivetran_active to FALSE and
 // _fivetran_end to the timestamp from the CSV (typically _fivetran_start - 1).
 // This is used for history mode tables to close out existing active records when new versions arrive.
 //
@@ -969,8 +965,8 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 	return nil
 }
 
-// WaitAllMutationsCompleted
-// if mutation_sync=3 and alter_sync=3 was not enough,
+// WaitAllMutationsCompleted waits for all async mutations to complete.
+// If mutation_sync=3 and alter_sync=3 was not enough,
 // and one of the nodes went down exactly at the time of the ALTER TABLE statement execution,
 // we will still get the error code 341, which indicates that the mutations will still be completed asynchronously;
 // wait until all the nodes are available again, and all mutations are completed before sending the response.
@@ -1012,8 +1008,8 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	return nil
 }
 
-// WaitDatabaseIsCreated
-// if there are parallel requests to create tables in a particular database which does not exist yet,
+// WaitDatabaseIsCreated waits for the database to be created when concurrent creation requests collide.
+// If there are parallel requests to create tables in a particular database which does not exist yet,
 // and some of these requests will get "false" on database existence check,
 // each of these requests will try to create the database by itself.
 // Despite having NOT EXISTS modifier on the database creation statement,
