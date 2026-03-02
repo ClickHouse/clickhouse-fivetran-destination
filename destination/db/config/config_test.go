@@ -151,7 +151,7 @@ func encodeJSON(json string) string {
 	return base64.StdEncoding.EncodeToString([]byte(json))
 }
 
-func parseAdvancedConfigFromRawJson(json string, shouldEncode ...bool) (*AdvancedConfig, error) {
+func parseAdvancedConfigFromRawJSON(json string, shouldEncode ...bool) (*AdvancedConfig, error) {
 	shouldEncodeFlag := len(shouldEncode) == 0 || shouldEncode[0]
 	if shouldEncodeFlag {
 		json = encodeJSON(json)
@@ -169,17 +169,17 @@ func TestParseAdvancedConfigEmpty(t *testing.T) {
 }
 
 func TestParseAdvancedConfigInvalidBase64(t *testing.T) {
-	_, err := parseAdvancedConfigFromRawJson("not-valid-base64!!!", false)
+	_, err := parseAdvancedConfigFromRawJSON("not-valid-base64!!!", false)
 	assert.ErrorContains(t, err, "failed to decode advanced config")
 }
 
 func TestParseAdvancedConfigInvalidJSON(t *testing.T) {
-	_, err := parseAdvancedConfigFromRawJson("{invalid json}")
+	_, err := parseAdvancedConfigFromRawJSON("{invalid json}")
 	assert.ErrorContains(t, err, "failed to parse advanced config JSON")
 }
 
 func TestParseAdvancedConfigUnknownFieldsIgnored(t *testing.T) {
-	cfg, err := parseAdvancedConfigFromRawJson(`{
+	cfg, err := parseAdvancedConfigFromRawJSON(`{
 		"destination_configurations": { "write_batch_size": 100 },
 		"some_future_field": "ignored"
 	}`)
@@ -189,7 +189,7 @@ func TestParseAdvancedConfigUnknownFieldsIgnored(t *testing.T) {
 }
 
 func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
-	cfg, err := parseAdvancedConfigFromRawJson(`{
+	cfg, err := parseAdvancedConfigFromRawJSON(`{
 		"destination_configurations": {
 			"write_batch_size": 500000,
 			"select_batch_size": 3000,
@@ -205,7 +205,7 @@ func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
 }
 
 func TestParseAdvancedConfigPartialConfigs(t *testing.T) {
-	cfg, err := parseAdvancedConfigFromRawJson(`{
+	cfg, err := parseAdvancedConfigFromRawJSON(`{
 		"destination_configurations": {
 			"write_batch_size": 200000
 		}
