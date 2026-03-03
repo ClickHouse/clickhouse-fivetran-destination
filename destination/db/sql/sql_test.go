@@ -83,7 +83,7 @@ func TestGetAlterTableStatement(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` String COMMENT 'foobar', DROP COLUMN `qux`, MODIFY COLUMN `zaq` Int32 COMMENT '', MODIFY COLUMN `qwe` String",
+		"ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` String COMMENT 'foobar',DROP COLUMN `qux`,MODIFY COLUMN `zaq` Int32 COMMENT '',MODIFY COLUMN `qwe` String",
 		statement)
 
 	_, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{})
@@ -111,7 +111,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: "Boolean"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32, `qux` String, `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qux`)", statement)
+	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32,`qux` String,`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qux`)", statement)
 
 	statement, err = GetCreateTableStatement("foo", "bar",
 		types.MakeTableDescription([]*types.ColumnDefinition{
@@ -121,7 +121,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: "Boolean"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32, `qux` String, `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qaz`, `qux`)", statement)
+	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32,`qux` String,`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qaz`,`qux`)", statement)
 
 	statement, err = GetCreateTableStatement("foo", "bar",
 		types.MakeTableDescription([]*types.ColumnDefinition{
@@ -132,7 +132,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: "Boolean"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32, `x` String COMMENT 'XML', `bin` String COMMENT 'BINARY', `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
+	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32,`x` String COMMENT 'XML',`bin` String COMMENT 'BINARY',`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
 	// works without _fivetran_deleted column
 	statement, err = GetCreateTableStatement("foo", "bar",
@@ -142,7 +142,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32, `x` String, `_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
+	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32,`x` String,`_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
 	_, err = GetCreateTableStatement("foo", "", nil)
 	assert.ErrorContains(t, err, "table name is empty")
@@ -275,7 +275,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}},
 	}, fullTableName, false)
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`) IN ((42), (43)) ORDER BY (`id`) LIMIT 2", statement)
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`id`)IN((42),(43))ORDER BY(`id`)LIMIT 2", statement)
 
 	statement, err = GetSelectByPrimaryKeysQuery(batch, &types.CSVColumns{
 		All: []*types.CSVColumn{
@@ -287,7 +287,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}},
 	}, fullTableName, false)
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar')) ORDER BY (`id`, `name`) LIMIT 2", statement)
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`id`,`name`)IN((42,'foo'),(43,'bar'))ORDER BY(`id`,`name`)LIMIT 2", statement)
 
 	statement, err = GetSelectByPrimaryKeysQuery(batch, &types.CSVColumns{
 		All: []*types.CSVColumn{
@@ -299,7 +299,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 	}, fullTableName, false)
 	assert.NoError(t, err)
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890')) ORDER BY (`ts`) LIMIT 2", statement)
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))ORDER BY(`ts`)LIMIT 2", statement)
 }
 
 func TestGetCheckDatabaseExistsStatement(t *testing.T) {
@@ -374,7 +374,7 @@ func TestGetHardDeleteStatement(t *testing.T) {
 			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}},
 	}, fullTableName)
 	assert.NoError(t, err)
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`) IN ((42), (43))", statement)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`id`)IN((42),(43))", statement)
 
 	statement, err = GetHardDeleteStatement(batch, &types.CSVColumns{
 		All: []*types.CSVColumn{
@@ -386,7 +386,7 @@ func TestGetHardDeleteStatement(t *testing.T) {
 			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}},
 	}, fullTableName)
 	assert.NoError(t, err)
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`, `name`) IN ((42, 'foo'), (43, 'bar'))", statement)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`id`,`name`)IN((42,'foo'),(43,'bar'))", statement)
 
 	statement, err = GetHardDeleteStatement(batch, &types.CSVColumns{
 		All: []*types.CSVColumn{
@@ -398,7 +398,7 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	}, fullTableName)
 	assert.NoError(t, err)
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`ts`) IN (('1646455512123456789'), ('1680784200234567890'))", statement)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))", statement)
 }
 
 func TestGetAllReplicasActiveQuery(t *testing.T) {
@@ -441,7 +441,7 @@ func TestGetAllMutationsCompletedQuery(t *testing.T) {
 func TestGetInsertFromSelectStatement(t *testing.T) {
 	query, err := GetInsertFromSelectStatement("foo", "bar", "qaz", []string{"a", "b"})
 	assert.NoError(t, err)
-	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`, `b`) SELECT `a`, `b` FROM `foo`.`bar`", query)
+	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`,`b`) SELECT `a`,`b` FROM `foo`.`bar`", query)
 }
 
 func TestGetInsertFromSelectStatementSingleColumn(t *testing.T) {
