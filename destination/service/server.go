@@ -10,6 +10,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
+	"fivetran.com/fivetran_sdk/destination/db/config"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
@@ -29,14 +30,18 @@ func (s *Server) Capabilities(_ context.Context, _ *pb.CapabilitiesRequest) (*pb
 }
 
 func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse, error) {
-
 	log.Info(fmt.Sprintf("[Test_%s] Starting test", in.Name))
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[Test_%s] %w", in.Name, err))
+		return FailedTestResponse(in.Name, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[Test_%s] Failed to connect: %w", in.Name, err))
 		return FailedTestResponse(in.Name, err), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	switch in.Name {
 	case ConnectionTest:
@@ -69,13 +74,17 @@ func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 
 func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest) (*pb.DescribeTableResponse, error) {
 	log.Info(fmt.Sprintf("[DescribeTable] Starting for %s.%s", in.SchemaName, in.TableName))
-
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[DescribeTable] %w", err))
+		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[DescribeTable] Failed to connect for %s.%s: %w", in.SchemaName, in.TableName, err))
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	tableDescription, err := conn.DescribeTable(ctx, in.SchemaName, in.TableName)
 	if err != nil {
@@ -106,13 +115,17 @@ func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 
 func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*pb.CreateTableResponse, error) {
 	log.Info(fmt.Sprintf("[CreateTable] Starting for %s.%s with %d columns", in.SchemaName, in.Table.Name, len(in.Table.Columns)))
-
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[CreateTable] %w", err))
+		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[CreateTable] Failed to connect for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	log.Info(fmt.Sprintf("[CreateTable] Converting columns for %s.%s", in.SchemaName, in.Table.Name))
 	cols, err := ToClickHouse(in.Table)
@@ -138,13 +151,17 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 
 func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.AlterTableResponse, error) {
 	log.Info(fmt.Sprintf("[AlterTable] Starting for %s.%s with %d columns", in.SchemaName, in.Table.Name, len(in.Table.Columns)))
-
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[AlterTable] %w", err))
+		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[AlterTable] Failed to connect for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	log.Info(fmt.Sprintf("[AlterTable] Describing current table %s.%s", in.SchemaName, in.Table.Name))
 	currentTableDescription, err := conn.DescribeTable(ctx, in.SchemaName, in.Table.Name)
@@ -190,12 +207,17 @@ func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 	log.Info(fmt.Sprintf("[Truncate] Starting %s delete for %s.%s, synced_column=%s, truncate_before=%s",
 		deleteType, in.SchemaName, in.TableName, in.SyncedColumn, truncateBefore.Format(time.RFC3339)))
 
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[Truncate] %w", err))
+		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[Truncate] GetClickHouseConnection error for %s.%s: %w", in.SchemaName, in.TableName, err))
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	log.Info(fmt.Sprintf("[Truncate] Checking if table %s.%s exists", in.SchemaName, in.TableName))
 	// should not be failed if the table does not exist, as per SDK documentation
@@ -247,12 +269,17 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetFivetranTableMetadata error: %w", err)), nil
 	}
 
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[WriteHistoryBatch] %w", err))
+		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteHistoryBatch] GetClickHouseConnection error for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error: %w", err)), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	log.Notice(fmt.Sprintf("[WriteHistoryBatch] Getting column types for %s.%s", in.SchemaName, in.Table.Name))
 	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)
@@ -324,12 +351,17 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
 
-	conn, err := db.GetClickHouseConnection(ctx, in.GetConfiguration())
+	connConfig, err := config.ParseAll(in.GetConfiguration())
+	if err != nil {
+		log.Error(fmt.Errorf("[WriteBatch] %w", err))
+		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
+	}
+	conn, err := db.GetClickHouseConnection(ctx, connConfig)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteBatch] Failed to connect for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	log.Notice(fmt.Sprintf("[WriteBatch] Getting column types for %s.%s", in.SchemaName, in.Table.Name))
 	columnTypes, err := conn.GetColumnTypes(ctx, in.SchemaName, in.Table.Name)

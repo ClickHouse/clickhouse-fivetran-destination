@@ -1,0 +1,36 @@
+name: 'Setup Go & Proto'
+description: 'Checkout SDK, install Go, Protoc, and generate proto files'
+
+inputs:
+  go-version:
+    description: 'Go version to install'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout SDK Repo
+      shell: bash
+      run: make prepare-fivetran-sdk
+
+    - name: Install Go ${{ inputs.go-version }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
+    - name: Install Protoc-Gen-Go
+      shell: bash
+      run: make install-protoc-gen-go
+
+    - name: Generate proto files
+      shell: bash
+      run: |
+        mkdir -p proto
+        make generate-proto
+
+    - name: Go mod tidy
+      shell: bash
+      run: go mod tidy

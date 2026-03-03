@@ -2,6 +2,7 @@ package flags
 
 import (
 	"flag"
+	"strings"
 	"time"
 )
 
@@ -13,14 +14,39 @@ var LogLevel = flag.String("log-level", "notice",
 var LogPretty = flag.Bool("log-pretty", false,
 	"Pretty logging instead of JSON")
 
-var WriteBatchSize = flag.Uint("write-batch-size", 100_000,
-	"Batch size for INSERT operations (uses native protocol)")
-var SelectBatchSize = flag.Uint("select-batch-size", 1_500,
-	"Batch size for SELECT operations")
+
+type ConfigDefinition struct {
+	Name         string
+	DefaultValue uint
+	MinValue     uint
+	MaxValue     uint
+	Description  string
+	Flag         *uint
+}
+
+func (s *ConfigDefinition) RegisterFlag() *uint {
+	s.Flag = flag.Uint(strings.ReplaceAll(s.Name, "_", "-"), s.DefaultValue, s.Description)
+	return s.Flag
+}
+
+var WriteBatchSizeSetting = ConfigDefinition{
+	Name: "write_batch_size", DefaultValue: 100_000, MinValue: 5_000, MaxValue: 100_000,
+	Description: "Batch size for INSERT operations (uses native protocol)"}
+var WriteBatchSize = WriteBatchSizeSetting.RegisterFlag()
+
+var SelectBatchSizeSetting = ConfigDefinition{
+	Name: "select_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
+	Description: "Batch size for SELECT operations"}
+var SelectBatchSize = SelectBatchSizeSetting.RegisterFlag()
+
 var MutationBatchSize = flag.Uint("mutation-batch-size", 1_200,
 	"Batch size for ALTER TABLE UPDATE mutations (builds SQL strings, keep low to avoid large queries)")
-var HardDeleteBatchSize = flag.Uint("hard-delete-batch-size", 1_500,
-	"Batch size for DELETE mutations (builds SQL strings, keep low to avoid large queries)")
+
+var HardDeleteBatchSizeSetting = ConfigDefinition{
+	Name: "hard_delete_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
+	Description: "Batch size for DELETE mutations (builds SQL strings, keep low to avoid large queries)"}
+var HardDeleteBatchSize = HardDeleteBatchSizeSetting.RegisterFlag()
+
 var MaxParallelSelects = flag.Uint("max-parallel-selects", 10,
 	"Max number of parallel SELECT queries")
 

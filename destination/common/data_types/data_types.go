@@ -70,8 +70,7 @@ var (
 	}
 )
 
-// ToFivetranDataType
-// Maps ClickHouse data types to Fivetran data types, taking Nullable into consideration.
+// ToFivetranDataType maps ClickHouse data types to Fivetran data types, taking Nullable into consideration.
 // STRING, JSON, XML, BINARY are all valid CH String types, we distinguish them by the column comment.
 func ToFivetranDataType(
 	colType string,
@@ -96,10 +95,10 @@ func ToFivetranDataType(
 	return dataType, nil, nil
 }
 
-// ToClickHouseDataType
-// - Fivetran Metadata fields have known types and are not Nullable
-// - Primary key fields are not Nullable
-// - All other fields are Nullable by default
+// ToClickHouseDataType converts a Fivetran column definition to a ClickHouse type.
+//   - Fivetran Metadata fields have known types and are not Nullable
+//   - Primary key fields are not Nullable
+//   - All other fields are Nullable by default
 func ToClickHouseDataType(col *pb.Column) (ClickHouseType, error) {
 	metaType, ok := FivetranMetadataColumnToClickHouseType[col.Name]
 	if ok {
@@ -125,7 +124,7 @@ func ToClickHouseDataType(col *pb.Column) (ClickHouseType, error) {
 	return chType, nil
 }
 
-// ToClickHouseDecimalType
+// ToClickHouseDecimalType converts Fivetran decimal parameters to a ClickHouse Decimal type string.
 // If Fivetran decimal precision or scale is greater than the maximum allowed by ClickHouse (P = 76), we set 76 instead.
 // If Fivetran scale is greater than its precision, we set the scale equal to the precision.
 // See precision and scale valid ranges: https://clickhouse.com/docs/en/sql-reference/data-types/decimal
