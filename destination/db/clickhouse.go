@@ -84,6 +84,8 @@ func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*C
 		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
 		// https://github.com/ClickHouse/clickhouse-private/pull/12617
 		settings["mutations_sync"] = 3
+		// https://clickhouse.com/docs/en/operations/settings/settings#lightweight_deletes_sync
+		settings["lightweight_deletes_sync"] = 3
 		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
 		settings["select_sequential_consistency"] = 1
 	}
