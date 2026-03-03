@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -129,7 +130,18 @@ func ParseAdvancedConfig(configuration map[string]string) (*AdvancedConfig, erro
 		return nil, fmt.Errorf("failed to parse advanced config JSON: %w", err)
 	}
 
+	warnOnUnknownFields(jsonBytes)
+
 	return &cfg, nil
+}
+
+func warnOnUnknownFields(jsonBytes []byte) {
+	decoder := json.NewDecoder(bytes.NewReader(jsonBytes))
+	decoder.DisallowUnknownFields()
+	var strict AdvancedConfig
+	if err := decoder.Decode(&strict); err != nil {
+		log.Warn(fmt.Sprintf("Advanced config contains unknown fields (they will be ignored): %v", err))
+	}
 }
 
 // ValidateAndOverwriteFlags overrides the global flag values with values from the

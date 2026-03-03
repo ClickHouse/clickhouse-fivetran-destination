@@ -126,6 +126,7 @@ These configurations affect how the connector processes data before sending it t
 
 All fields are optional. If a field is not specified, the default value is used.
 If a value is outside the allowed range, the destination will report an error during sync.
+Unknown fields are silently ignored (a warning is logged) and do not cause errors, which allows forward compatibility when new settings are added.
 
 Example:
 
