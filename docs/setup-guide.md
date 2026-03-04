@@ -122,6 +122,7 @@ These configurations affect how the connector processes data before sending it t
 |---------|------|---------|---------------|-------------|
 | `write_batch_size` | integer | `100000` | 5,000 – 100,000 | Number of rows per batch for insert, update, and replace operations. |
 | `select_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for SELECT queries used during updates. |
+| `mutation_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for ALTER TABLE UPDATE mutations in history mode. Keep low to avoid large SQL statements. |
 | `hard_delete_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for hard delete operations. |
 
 All fields are optional. If a field is not specified, the default value is used.

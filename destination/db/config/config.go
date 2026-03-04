@@ -108,6 +108,7 @@ type AdvancedConfig struct {
 type DestinationConfigurations struct {
 	WriteBatchSize      *uint `json:"write_batch_size,omitempty"`
 	SelectBatchSize     *uint `json:"select_batch_size,omitempty"`
+	MutationBatchSize   *uint `json:"mutation_batch_size,omitempty"`
 	HardDeleteBatchSize *uint `json:"hard_delete_batch_size,omitempty"`
 }
 
@@ -155,6 +156,9 @@ func ValidateAndOverwriteFlags(ds *DestinationConfigurations) error {
 		return err
 	}
 	if err := applySetting(&flags.SelectBatchSizeSetting, ds.SelectBatchSize); err != nil {
+		return err
+	}
+	if err := applySetting(&flags.MutationBatchSizeSetting, ds.MutationBatchSize); err != nil {
 		return err
 	}
 	if err := applySetting(&flags.HardDeleteBatchSizeSetting, ds.HardDeleteBatchSize); err != nil {
