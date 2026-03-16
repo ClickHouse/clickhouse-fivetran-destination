@@ -7,6 +7,7 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
 	"fivetran.com/fivetran_sdk/destination/common/constants"
+	csvreader "fivetran.com/fivetran_sdk/destination/common/csv"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
@@ -415,31 +416,36 @@ func (s *Server) processReplaceFiles(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, replaceFile := range in.ReplaceFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchReplaceOp, fileIdx+1, len(in.ReplaceFiles), replaceFile))
-				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeBatchReplaceOp, replaceFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeBatchReplaceOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   replaceFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchReplaceOp, replaceFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchReplaceOp, replaceFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
-				log.Notice(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s with %d rows", writeBatchReplaceOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, nullStr)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] ReplaceBatch failed for %s.%s: %w", writeBatchReplaceOp, in.SchemaName, in.Table.Name, err))
+				if err := func() error {
+					reader, err := csvreader.NewCSVFileReader(replaceFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeBatchReplaceOp, replaceFile, err))
+						return err
+					}
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, true)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchReplaceOp, replaceFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s", writeBatchReplaceOp, in.SchemaName, in.Table.Name))
+					totalRows, err := conn.ReplaceBatch(ctx, in.SchemaName, in.Table, reader, csvColumns, nullStr)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] ReplaceBatch failed for %s.%s: %w", writeBatchReplaceOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeBatchReplaceOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   replaceFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeBatchReplaceOp, replaceFile, totalRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
 			}
@@ -467,42 +473,55 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, earliestStartFile := range in.EarliestStartFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchEarliestStartOp, fileIdx+1, len(in.EarliestStartFiles), earliestStartFile))
-				csvData, err := ReadCSVFile(earliestStartFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeHistoryBatchEarliestStartOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   earliestStartFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchEarliestStartOp, earliestStartFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
+				if err := func() error {
+					// First pass: hard delete overlapping records
+					deleteReader, err := csvreader.NewCSVFileReader(earliestStartFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
+						return err
+					}
+					defer deleteReader.Close()
+					csvColumns, err := types.MakeCSVColumns(deleteReader.Header(), driverColumns, metadata.ColumnsMap, false)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing HardDeleteForEarliestStartHistory for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
+					deleteRows, err := conn.HardDeleteForEarliestStartHistory(ctx, in.SchemaName, in.Table, deleteReader, csvColumns)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] HardDeleteForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
 
-				log.Notice(fmt.Sprintf("[%s] Executing HardDeleteForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.HardDeleteForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] HardDeleteForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err))
+					// Second pass: update active records
+					updateReader, err := csvreader.NewCSVFileReader(earliestStartFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err))
+						return err
+					}
+					defer updateReader.Close()
+					log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
+					updateRows, err := conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, updateReader, csvColumns, constants.FivetranStart)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+
+					totalRows := deleteRows + updateRows
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeHistoryBatchEarliestStartOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   earliestStartFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total (%d deleted, %d updated)", writeHistoryBatchEarliestStartOp, earliestStartFile, deleteRows, deleteRows, updateRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranStart)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err))
-					return err
-				}
-
 			}
 			return nil
 		}, writeHistoryBatchEarliestStartOp)
@@ -529,31 +548,36 @@ func (s *Server) processReplaceFilesForHistoryBatch(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, replaceFile := range in.ReplaceFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchReplaceOp, fileIdx+1, len(in.ReplaceFiles), replaceFile))
-				csvData, err := ReadCSVFile(replaceFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchReplaceOp, replaceFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeHistoryBatchReplaceOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   replaceFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchReplaceOp, replaceFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchReplaceOp, replaceFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
-				log.Notice(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s with %d rows", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.ReplaceBatch(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, nullStr)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] ReplaceBatch failed for %s.%s: %w", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name, err))
+				if err := func() error {
+					reader, err := csvreader.NewCSVFileReader(replaceFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchReplaceOp, replaceFile, err))
+						return err
+					}
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, true)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchReplaceOp, replaceFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing ReplaceBatch for %s.%s", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name))
+					totalRows, err := conn.ReplaceBatch(ctx, in.SchemaName, in.Table, reader, csvColumns, nullStr)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] ReplaceBatch failed for %s.%s: %w", writeHistoryBatchReplaceOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeHistoryBatchReplaceOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   replaceFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeHistoryBatchReplaceOp, replaceFile, totalRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
 			}
@@ -583,32 +607,36 @@ func (s *Server) processUpdateFiles(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, updateFile := range in.UpdateFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchUpdateOp, fileIdx+1, len(in.UpdateFiles), updateFile))
-
-				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeBatchUpdateOp, updateFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeBatchUpdateOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   updateFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchUpdateOp, updateFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchUpdateOp, updateFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
-				log.Notice(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s with %d rows", writeBatchUpdateOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr, false)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] UpdateBatch failed for %s.%s: %w", writeBatchUpdateOp, in.SchemaName, in.Table.Name, err))
+				if err := func() error {
+					reader, err := csvreader.NewCSVFileReader(updateFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeBatchUpdateOp, updateFile, err))
+						return err
+					}
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, true)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchUpdateOp, updateFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s", writeBatchUpdateOp, in.SchemaName, in.Table.Name))
+					totalRows, err := conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, reader, nullStr, unmodifiedStr, false)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] UpdateBatch failed for %s.%s: %w", writeBatchUpdateOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeBatchUpdateOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   updateFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeBatchUpdateOp, updateFile, totalRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
 			}
@@ -638,31 +666,36 @@ func (s *Server) processUpdateFilesForHistoryBatch(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, updateFile := range in.UpdateFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchUpdateOp, fileIdx+1, len(in.UpdateFiles), updateFile))
-				csvData, err := ReadCSVFile(updateFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchUpdateOp, updateFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeHistoryBatchUpdateOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   updateFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchUpdateOp, updateFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchUpdateOp, updateFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
-				log.Notice(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s with %d rows", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, csvWithoutHeader, nullStr, unmodifiedStr, true)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] UpdateBatch failed for %s.%s: %w", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name, err))
+				if err := func() error {
+					reader, err := csvreader.NewCSVFileReader(updateFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchUpdateOp, updateFile, err))
+						return err
+					}
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, true)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchUpdateOp, updateFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing UpdateBatch for %s.%s", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name))
+					totalRows, err := conn.UpdateBatch(ctx, in.SchemaName, in.Table, driverColumns, csvColumns, reader, nullStr, unmodifiedStr, true)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] UpdateBatch failed for %s.%s: %w", writeHistoryBatchUpdateOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeHistoryBatchUpdateOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   updateFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeHistoryBatchUpdateOp, updateFile, totalRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
 			}
@@ -690,31 +723,36 @@ func (s *Server) processDeleteFiles(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, deleteFile := range in.DeleteFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeBatchDeleteOp, fileIdx+1, len(in.DeleteFiles), deleteFile))
-				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeBatchDeleteOp, deleteFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeBatchDeleteOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   deleteFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeBatchDeleteOp, deleteFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, true)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchDeleteOp, deleteFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
-				log.Notice(fmt.Sprintf("[%s] Executing HardDelete for %s.%s with %d rows", writeBatchDeleteOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.HardDelete(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] HardDelete failed for %s.%s: %w", writeBatchDeleteOp, in.SchemaName, in.Table.Name, err))
+				if err := func() error {
+					reader, err := csvreader.NewCSVFileReader(deleteFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeBatchDeleteOp, deleteFile, err))
+						return err
+					}
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, true)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchDeleteOp, deleteFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing HardDelete for %s.%s", writeBatchDeleteOp, in.SchemaName, in.Table.Name))
+					totalRows, err := conn.HardDelete(ctx, in.SchemaName, in.Table, reader, csvColumns)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] HardDelete failed for %s.%s: %w", writeBatchDeleteOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeBatchDeleteOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   deleteFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeBatchDeleteOp, deleteFile, totalRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
 			}
@@ -742,31 +780,36 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 		err = benchmark.RunAndNotice(func() error {
 			for fileIdx, deleteFile := range in.DeleteFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchDeleteOp, fileIdx+1, len(in.DeleteFiles), deleteFile))
-				csvData, err := ReadCSVFile(deleteFile, in.Keys, compression, encryption)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to read CSV file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err))
-					return err
-				}
-				if len(csvData) < 2 {
-					logEmptyCSV(&emptyCSVWarnParams{
-						operation:  writeHistoryBatchDeleteOp,
-						schemaName: in.SchemaName,
-						tableName:  in.Table.Name,
-						fileName:   deleteFile,
-					})
-					continue
-				}
-				log.Notice(fmt.Sprintf("[%s] File %s contains %d rows (excluding header)", writeHistoryBatchDeleteOp, deleteFile, len(csvData)-1))
-				csvColumns, err := types.MakeCSVColumns(csvData[0], driverColumns, metadata.ColumnsMap, false)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err))
-					return err
-				}
-				csvWithoutHeader := csvData[1:]
-				log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s with %d rows", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, len(csvWithoutHeader)))
-				err = conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, csvWithoutHeader, csvColumns, constants.FivetranEnd)
-				if err != nil {
-					log.Error(fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, err))
+				if err := func() error {
+					reader, err := csvreader.NewCSVFileReader(deleteFile, in.Keys, compression, encryption)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err))
+						return err
+					}
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, false)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err))
+						return err
+					}
+					log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name))
+					totalRows, err := conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, reader, csvColumns, constants.FivetranEnd)
+					if err != nil {
+						log.Error(fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, err))
+						return err
+					}
+					if totalRows == 0 {
+						logEmptyCSV(&emptyCSVWarnParams{
+							operation:  writeHistoryBatchDeleteOp,
+							schemaName: in.SchemaName,
+							tableName:  in.Table.Name,
+							fileName:   deleteFile,
+						})
+					} else {
+						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeHistoryBatchDeleteOp, deleteFile, totalRows))
+					}
+					return nil
+				}(); err != nil {
 					return err
 				}
 			}

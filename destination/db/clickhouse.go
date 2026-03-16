@@ -13,6 +13,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
 	"fivetran.com/fivetran_sdk/destination/common/constants"
+	csvfile "fivetran.com/fivetran_sdk/destination/common/csv"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/retry"
@@ -654,37 +655,40 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	csv [][]string,
+	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
 	nullStr string,
-) error {
-	return benchmark.RunAndNotice(func() error {
+) (int, error) {
+	return benchmark.RunAndNoticeWithData(func() (int, error) {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
-		if err != nil {
-			return err
-		}
-		for _, group := range groups {
-			for _, slice := range group {
-				batch := csv[slice.Start:slice.End]
-				insertRows := make([][]interface{}, len(batch))
-				for j, csvRow := range batch {
-					insertRow, err := ToInsertRow(csvRow, csvColumns, nullStr)
-					if err != nil {
-						return err
-					}
-					insertRows[j] = insertRow
-				}
-				err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, nil, string(insertBatchReplaceTask))
+		totalRows := 0
+		for {
+			batch, err := reader.ReadBatch(*flags.WriteBatchSize)
+			if err != nil {
+				return totalRows, err
+			}
+			if batch == nil {
+				break
+			}
+			totalRows += len(batch)
+			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchReplace, len(batch), totalRows))
+			insertRows := make([][]interface{}, len(batch))
+			for j, csvRow := range batch {
+				insertRow, err := ToInsertRow(csvRow, csvColumns, nullStr)
 				if err != nil {
-					return err
+					return totalRows, err
 				}
+				insertRows[j] = insertRow
+			}
+			err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, nil, string(insertBatchReplaceTask))
+			if err != nil {
+				return totalRows, err
 			}
 		}
-		return nil
+		return totalRows, nil
 	}, string(insertBatchReplace))
 }
 
@@ -707,38 +711,41 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	table *pb.Table,
 	driverColumns *types.DriverColumns,
 	csvColumns *types.CSVColumns,
-	csv [][]string,
+	reader *csvfile.CSVFileReader,
 	nullStr string,
 	unmodifiedStr string,
 	isHistoryMode bool,
-) error {
-	return benchmark.RunAndNotice(func() error {
+) (int, error) {
+	return benchmark.RunAndNoticeWithData(func() (int, error) {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		groups, err := GroupSlices(uint(len(csv)), *flags.WriteBatchSize, 1)
-		if err != nil {
-			return err
-		}
-		for _, group := range groups {
-			for _, slice := range group {
-				batch := csv[slice.Start:slice.End]
-				selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, driverColumns, csvColumns, batch, isHistoryMode)
-				if err != nil {
-					return err
-				}
-				insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr, isHistoryMode)
-				if err != nil {
-					return err
-				}
-				err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, skipIdx, string(insertBatchUpdateTask))
-				if err != nil {
-					return err
-				}
+		totalRows := 0
+		for {
+			batch, err := reader.ReadBatch(*flags.WriteBatchSize)
+			if err != nil {
+				return totalRows, err
+			}
+			if batch == nil {
+				break
+			}
+			totalRows += len(batch)
+			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchUpdate, len(batch), totalRows))
+			selectRows, err := conn.SelectByPrimaryKeys(ctx, qualifiedTableName, driverColumns, csvColumns, batch, isHistoryMode)
+			if err != nil {
+				return totalRows, err
+			}
+			insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr, isHistoryMode)
+			if err != nil {
+				return totalRows, err
+			}
+			err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, skipIdx, string(insertBatchUpdateTask))
+			if err != nil {
+				return totalRows, err
 			}
 		}
-		return nil
+		return totalRows, nil
 	}, string(insertBatchUpdate))
 }
 
@@ -749,32 +756,35 @@ func (conn *ClickHouseConnection) HardDelete(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	csv [][]string,
+	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
-) error {
-	return benchmark.RunAndNotice(func() error {
+) (int, error) {
+	return benchmark.RunAndNoticeWithData(func() (int, error) {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		groups, err := GroupSlices(uint(len(csv)), *flags.HardDeleteBatchSize, 1)
-		if err != nil {
-			return err
-		}
-		for _, group := range groups {
-			for _, slice := range group {
-				batch := csv[slice.Start:slice.End]
-				statement, err := sql.GetHardDeleteStatement(batch, csvColumns, qualifiedTableName)
-				if err != nil {
-					return err
-				}
-				err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
-				if err != nil {
-					return err
-				}
+		totalRows := 0
+		for {
+			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
+			if err != nil {
+				return totalRows, err
+			}
+			if batch == nil {
+				break
+			}
+			totalRows += len(batch)
+			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchHardDelete, len(batch), totalRows))
+			statement, err := sql.GetHardDeleteStatement(batch, csvColumns, qualifiedTableName)
+			if err != nil {
+				return totalRows, err
+			}
+			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
+			if err != nil {
+				return totalRows, err
 			}
 		}
-		return nil
+		return totalRows, nil
 	}, string(insertBatchHardDelete))
 }
 
@@ -786,46 +796,48 @@ func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	csv [][]string,
+	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
-) error {
-	return benchmark.RunAndNotice(func() error {
+) (int, error) {
+	return benchmark.RunAndNoticeWithData(func() (int, error) {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
-		// Find the _fivetran_start column index and type
 		fivetranStartIndex, fivetranStartType, err := findColumnInCSV(csvColumns, constants.FivetranStart)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
-		groups, err := GroupSlices(uint(len(csv)), *flags.HardDeleteBatchSize, 1)
-		if err != nil {
-			return err
-		}
-		for _, group := range groups {
-			for _, slice := range group {
-				batch := csv[slice.Start:slice.End]
-				statement, err := sql.GetHardDeleteWithTimestampStatement(
-					batch,
-					csvColumns,
-					qualifiedTableName,
-					constants.FivetranStart,
-					fivetranStartIndex,
-					fivetranStartType,
-				)
-				if err != nil {
-					return err
-				}
-				err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
-				if err != nil {
-					return err
-				}
+		totalRows := 0
+		for {
+			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
+			if err != nil {
+				return totalRows, err
+			}
+			if batch == nil {
+				break
+			}
+			totalRows += len(batch)
+			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchHardDelete, len(batch), totalRows))
+			statement, err := sql.GetHardDeleteWithTimestampStatement(
+				batch,
+				csvColumns,
+				qualifiedTableName,
+				constants.FivetranStart,
+				fivetranStartIndex,
+				fivetranStartType,
+			)
+			if err != nil {
+				return totalRows, err
+			}
+			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
+			if err != nil {
+				return totalRows, err
 			}
 		}
-		return nil
+		return totalRows, nil
 	}, string(insertBatchHardDelete))
 }
 
@@ -852,20 +864,20 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	csv [][]string,
+	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
 	fivetranStartColumnName string,
-) error {
-	return benchmark.RunAndNotice(func() error {
+) (int, error) {
+	return benchmark.RunAndNoticeWithData(func() (int, error) {
 		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		// Find the _fivetran_start column index and type
 		fivetranStartColumnIndex, fivetranStartColumnType, err := findColumnInCSV(csvColumns, fivetranStartColumnName)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
@@ -874,38 +886,39 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 		}
 
-		// Use MutationBatchSize for ALTER TABLE UPDATE mutations to avoid generating
-		// extremely large SQL statements that can cause ClickHouse OOM during AST parsing
-		groups, err := GroupSlices(uint(len(csv)), *flags.MutationBatchSize, 1)
-		if err != nil {
-			return err
-		}
-
-		for _, group := range groups {
-			for _, slice := range group {
-				batch := csv[slice.Start:slice.End]
-				statement, err := sql.GetUpdateHistoryActiveStatement(
-					batch,
-					csvColumns,
-					qualifiedTableName,
-					fivetranStartColumnIndex,
-					fivetranStartColumnType,
-				)
-				if err != nil {
-					return err
+		totalRows := 0
+		for {
+			// Use MutationBatchSize for ALTER TABLE UPDATE mutations to avoid generating
+			// extremely large SQL statements that can cause ClickHouse OOM during AST parsing
+			batch, err := reader.ReadBatch(*flags.MutationBatchSize)
+			if err != nil {
+				return totalRows, err
+			}
+			if batch == nil {
+				break
+			}
+			totalRows += len(batch)
+			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", updateHistoryBatch, len(batch), totalRows))
+			statement, err := sql.GetUpdateHistoryActiveStatement(
+				batch,
+				csvColumns,
+				qualifiedTableName,
+				fivetranStartColumnIndex,
+				fivetranStartColumnType,
+			)
+			if err != nil {
+				return totalRows, err
+			}
+			err = conn.ExecStatement(ctx, statement, updateHistoryBatch, true)
+			if err != nil {
+				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
+				if waitErr != nil {
+					return totalRows, waitErr
 				}
-				err = conn.ExecStatement(ctx, statement, updateHistoryBatch, true)
-				if err != nil {
-					// Wait for mutations to complete if there's an error
-					waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
-					if waitErr != nil {
-						return waitErr
-					}
-					return nil
-				}
+				return totalRows, nil
 			}
 		}
-		return nil
+		return totalRows, nil
 	}, string(updateHistoryBatch))
 }
 

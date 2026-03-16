@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
+	csvfile "fivetran.com/fivetran_sdk/destination/common/csv"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/stretchr/testify/assert"
 )
+
+const historyModeCSVFile = "../../tests/resources/history_mode.csv"
 
 // mockConn embeds driver.Conn so it satisfies the interface with zero boilerplate.
 // Only Exec is overridden; any other method called unexpectedly will panic (useful test signal).
@@ -38,6 +41,18 @@ func historyModeTable() *pb.Table {
 	return &pb.Table{Name: "users"}
 }
 
+func openHistoryModeReader(t *testing.T) *csvfile.CSVFileReader {
+	t.Helper()
+	reader, err := csvfile.NewCSVFileReader(
+		historyModeCSVFile,
+		map[string][]byte{historyModeCSVFile: nil},
+		pb.Compression_OFF,
+		pb.Encryption_NONE,
+	)
+	assert.NoError(t, err)
+	return reader
+}
+
 func TestUpdateForEarliestStartHistoryBatchesExec(t *testing.T) {
 	original := *flags.MutationBatchSize
 	defer func() { *flags.MutationBatchSize = original }()
@@ -46,19 +61,15 @@ func TestUpdateForEarliestStartHistoryBatchesExec(t *testing.T) {
 	mock := &mockConn{}
 	conn := &ClickHouseConnection{Conn: mock, isLocal: true}
 
-	csv := [][]string{
-		{"1", "2025-11-11T20:57:00Z"},
-		{"2", "2025-11-11T20:57:00Z"},
-		{"3", "2025-11-11T20:57:00Z"},
-		{"4", "2025-11-11T20:57:00Z"},
-		{"5", "2025-11-11T20:57:00Z"},
-	}
+	reader := openHistoryModeReader(t)
+	defer reader.Close()
 
-	err := conn.UpdateForEarliestStartHistory(
+	totalRows, err := conn.UpdateForEarliestStartHistory(
 		context.Background(), "tester", historyModeTable(),
-		csv, historyModeCSVColumns(), constants.FivetranStart,
+		reader, historyModeCSVColumns(), constants.FivetranStart,
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, 5, totalRows)
 	assert.Equal(t, int64(3), mock.execCount.Load(),
 		"5 rows with MutationBatchSize=2 should produce 3 ExecStatement calls")
 }
@@ -71,16 +82,15 @@ func TestUpdateForEarliestStartHistorySingleBatch(t *testing.T) {
 	mock := &mockConn{}
 	conn := &ClickHouseConnection{Conn: mock, isLocal: true}
 
-	csv := [][]string{
-		{"1", "2025-11-11T20:57:00Z"},
-		{"2", "2025-11-11T20:57:00Z"},
-	}
+	reader := openHistoryModeReader(t)
+	defer reader.Close()
 
-	err := conn.UpdateForEarliestStartHistory(
+	totalRows, err := conn.UpdateForEarliestStartHistory(
 		context.Background(), "tester", historyModeTable(),
-		csv, historyModeCSVColumns(), constants.FivetranStart,
+		reader, historyModeCSVColumns(), constants.FivetranStart,
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, 5, totalRows)
 	assert.Equal(t, int64(1), mock.execCount.Load(),
-		"2 rows with MutationBatchSize=1500 should produce 1 ExecStatement call")
+		"5 rows with MutationBatchSize=1500 should produce 1 ExecStatement call")
 }
