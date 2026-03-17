@@ -76,7 +76,14 @@ jobs:
 
       - name: Run Go tests
         run: |
-          make test
+          make test-with-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: cover.out
+          flags: test-local-${{ matrix.clickhouse }}
 
   test-cloud:
 #    needs: [ "test" ]
@@ -108,4 +115,11 @@ jobs:
 
       - name: Run Go tests
         run: |
-          make test
+          make test-with-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: cover.out
+          flags: test-cloud
