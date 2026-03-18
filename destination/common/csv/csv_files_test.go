@@ -13,7 +13,7 @@ import (
 
 var key, _ = base64.StdEncoding.DecodeString("VyEZCkPngvf4mtRHemjGkC6tmd/22j0R9z+DQv2he/Q=")
 
-func TestCSVFileReaderStreaming(t *testing.T) {
+func TestCSVFileReaderReadsAllRowsIfBatchSizeIsGreater(t *testing.T) {
 	expectedCSV := readExpectedCSV(t, "../../../tests/resources/campaign.csv")
 	fileName := "../../../tests/resources/campaign.csv.zst.aes"
 
@@ -34,7 +34,7 @@ func TestCSVFileReaderStreaming(t *testing.T) {
 	assert.Nil(t, batch)
 }
 
-func TestCSVFileReaderBatchedReading(t *testing.T) {
+func TestCSVFileReaderReadsRowsInBatches(t *testing.T) {
 	expectedCSV := readExpectedCSV(t, "../../../tests/resources/campaign.csv")
 	fileName := "../../../tests/resources/campaign.csv.zst.aes"
 
