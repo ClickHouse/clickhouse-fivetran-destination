@@ -53,6 +53,10 @@ jobs:
           - "latest"
           - "head"
 
+    permissions:
+      # IMPORTANT: this permission is mandatory for codecov-action
+      id-token: write
+
     steps:
       - uses: actions/checkout@v6
 
@@ -81,13 +85,18 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           files: cover.out
           flags: test-local-${{ matrix.clickhouse }}
 
   test-cloud:
 #    needs: [ "test" ]
     runs-on: ubuntu-latest
+
+    permissions:
+      # IMPORTANT: this permission is mandatory for codecov-action
+      id-token: write
+
     steps:
       - uses: actions/checkout@v6
 
@@ -120,6 +129,6 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           files: cover.out
           flags: test-cloud
