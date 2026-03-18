@@ -81,7 +81,7 @@ func TestCSVFileReaderErrors(t *testing.T) {
 
 	// File not found
 	_, err := NewCSVFileReader("nonexistent.csv", map[string][]byte{"nonexistent.csv": key}, pb.Compression_ZSTD, pb.Encryption_AES)
-	assert.ErrorContains(t, err, "file nonexistent.csv does not exist")
+	assert.ErrorContains(t, err, "failed to open file nonexistent.csv")
 
 	// Key was not provided
 	_, err = NewCSVFileReader("nonexistent.csv", map[string][]byte{"not-found": key}, pb.Compression_ZSTD, pb.Encryption_AES)
@@ -111,6 +111,13 @@ func TestCSVFileReaderErrors(t *testing.T) {
 	emptyCSVName := "../../../tests/resources/empty.csv"
 	_, err = NewCSVFileReader(emptyCSVName, map[string][]byte{emptyCSVName: key}, pb.Compression_OFF, pb.Encryption_NONE)
 	assert.ErrorContains(t, err, "received an empty CSV file")
+
+	// Batch size is 0
+	validReader, err := NewCSVFileReader(fileName, map[string][]byte{fileName: key}, pb.Compression_ZSTD, pb.Encryption_AES)
+	assert.NoError(t, err)
+	_, err = validReader.ReadBatch(0)
+	assert.ErrorContains(t, err, "batchSize must be greater than 0")
+	validReader.Close()
 }
 
 func readExpectedCSV(t *testing.T, path string) [][]string {

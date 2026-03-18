@@ -106,6 +106,9 @@ func (r *CSVFileReader) Header() []string {
 // ReadBatch reads up to batchSize data rows from the CSV.
 // Returns (nil, nil) when there are no more rows to read.
 func (r *CSVFileReader) ReadBatch(batchSize uint) ([][]string, error) {
+	if batchSize <= 0 {
+		return nil, fmt.Errorf("batchSize must be greater than 0")
+	}
 	if r.done {
 		return nil, nil
 	}
