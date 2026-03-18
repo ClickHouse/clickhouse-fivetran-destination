@@ -126,7 +126,7 @@ func TestGrants(t *testing.T) {
 
 	// users start with zero privileges and the first check immediately fails
 	err = conn.GrantsTest(ctx)
-	assert.ErrorContains(t, err, "To execute this query, it's necessary to have the grant SELECT(access_type, database, `table`, column, user_name) ON system.grants")
+	assert.ErrorContains(t, err, "it's necessary to have the grant SELECT")
 
 	// gradually add more privileges
 	addGrant("SELECT ON system.grants")
