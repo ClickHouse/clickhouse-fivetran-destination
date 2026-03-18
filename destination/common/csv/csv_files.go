@@ -40,7 +40,7 @@ func NewCSVFileReader(
 	}
 	file, err := os.Open(fileName)
 	if err != nil {
-		return nil, fmt.Errorf("file %s does not exist", fileName)
+		return nil, fmt.Errorf("failed to open file %s: %w", fileName, err)
 	}
 
 	r := &CSVFileReader{
