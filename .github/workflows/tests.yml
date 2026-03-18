@@ -54,7 +54,7 @@ jobs:
           - "head"
 
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
       - name: Setup Go & Proto
         uses: ./.github/actions/setup-go-and-proto
@@ -90,7 +90,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Start ClickHouse in Docker (required to use clickhouse-client)
-        uses: hoverkraft-tech/compose-action@@v2.5.0
+        uses: hoverkraft-tech/compose-action@v2.5.0
         env:
           CLICKHOUSE_VERSION: latest
         with:
