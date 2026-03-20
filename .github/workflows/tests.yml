@@ -53,6 +53,10 @@ jobs:
           - "latest"
           - "head"
 
+    permissions:
+      # IMPORTANT: this permission is mandatory for codecov-action
+      id-token: write
+
     steps:
       - uses: actions/checkout@v6
 
@@ -76,11 +80,23 @@ jobs:
 
       - name: Run Go tests
         run: |
-          make test
+          make test-with-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: cover.out
+          flags: test-local-${{ matrix.clickhouse }}
 
   test-cloud:
 #    needs: [ "test" ]
     runs-on: ubuntu-latest
+
+    permissions:
+      # IMPORTANT: this permission is mandatory for codecov-action
+      id-token: write
+
     steps:
       - uses: actions/checkout@v6
 
@@ -108,4 +124,11 @@ jobs:
 
       - name: Run Go tests
         run: |
-          make test
+          make test-with-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: cover.out
+          flags: test-cloud
