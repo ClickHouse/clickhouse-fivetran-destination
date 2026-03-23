@@ -8,6 +8,9 @@
 <a href="https://github.com/ClickHouse/clickhouse-fivetran-destination/actions/workflows/tests.yml">
 <img src="https://github.com/ClickHouse/clickhouse-fivetran-destination/actions/workflows/tests.yml/badge.svg?branch=main">
 </a>
+<a href="https://codecov.io/gh/ClickHouse/clickhouse-fivetran-destination" >
+<img src="https://codecov.io/gh/ClickHouse/clickhouse-fivetran-destination/graph/badge.svg?token=KJISDOA55Y"/>
+</a>
 </p>
 
 ## About
