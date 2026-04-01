@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -16,7 +17,10 @@ import (
 	"fivetran.com/fivetran_sdk/destination/cmd"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/db/config"
+	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Runs the destination app, invokes SDK tester with a given input file, and verifies the output from ClickHouse.
@@ -354,6 +358,119 @@ func TestHistoryMode(t *testing.T) {
 		{"3", "name 3", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
 		{"4", "name 4", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
+}
+
+/*
+	func TestConnectionTestSuccess(t *testing.T) {
+		startServer(t)
+		client, cleanup := newGRPCClient(t)
+		defer cleanup()
+
+		resp := callConnectionTest(t, client, readConfigMap(t))
+		t.Helper()
+		require.True(t, resp.GetSuccess(), "expected success, got failure: %s", resp.GetFailure())
+	}
+
+	func TestConnectionTestHostWithProtocol(t *testing.T) {
+		startServer(t)
+		client, cleanup := newGRPCClient(t)
+		defer cleanup()
+
+		cfg := cloneConfigMap(readConfigMap(t))
+		cfg["host"] = "http://" + cfg["host"]
+
+		resp := callConnectionTest(t, client, cfg)
+		t.Helper()
+		require.False(t, resp.GetSuccess())
+		require.Contains(t, resp.GetFailure(), "should not contain protocol or port")
+	}
+*/
+func TestConnectionWrongPort(t *testing.T) {
+	startServer(t)
+	client, cleanup := newGRPCClient(t)
+	defer cleanup()
+
+	cfg := cloneConfigMap(readConfigMap(t))
+	cfg["port"] = "asdf"
+
+	resp := callConnectionTest(t, client, cfg)
+	t.Helper()
+	require.False(t, resp.GetSuccess())
+	require.Contains(t, resp.GetFailure(), "must be a number in range [1, 65535]")
+}
+
+/*
+	func TestConnectionTestHostWithPath(t *testing.T) {
+		startServer(t)
+		client, cleanup := newGRPCClient(t)
+		defer cleanup()
+
+		cfg := cloneConfigMap(readConfigMap(t))
+		cfg["host"] = cfg["host"] + "/default"
+
+		resp := callConnectionTest(t, client, cfg)
+
+		t.Helper()
+		require.False(t, resp.GetSuccess())
+		require.Contains(t, resp.GetFailure(), "should not contain path")
+	}
+
+	func TestConnectionTestWrongHost(t *testing.T) {
+		startServer(t)
+		client, cleanup := newGRPCClient(t)
+		defer cleanup()
+
+		cfg := cloneConfigMap(readConfigMap(t))
+		cfg["host"] = "non_existing_host"
+
+		resp := callConnectionTest(t, client, cfg)
+
+		t.Helper()
+		require.False(t, resp.GetSuccess())
+		require.Contains(t, resp.GetFailure(), "no such host")
+	}
+
+	func TestConnectionTCPTimeout(t *testing.T) {
+		startServer(t)
+		client, cleanup := newGRPCClient(t)
+		defer cleanup()
+
+		cfg := cloneConfigMap(readConfigMap(t))
+		cfg["host"] = "192.0.2.1" // 192.0.2.1 is part of the 192.0.2.0/24 range, designated by IANA as TEST-NET-1 for use in documentation and example code
+
+		start := time.Now()
+		resp := callConnectionTest(t, client, cfg)
+		elapsed := time.Since(start)
+
+		require.False(t, resp.GetSuccess())
+		require.Contains(t, resp.GetFailure(), "i/o timeout")
+		require.Less(t, elapsed, 15*time.Second, "expected connection test to fail within 15, took %s", elapsed)
+	}
+*/
+func newGRPCClient(t *testing.T) (pb.DestinationConnectorClient, func()) {
+	t.Helper()
+	addr := fmt.Sprintf("localhost:%d", *flags.Port)
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	return pb.NewDestinationConnectorClient(conn), func() { _ = conn.Close() }
+}
+
+func cloneConfigMap(src map[string]string) map[string]string {
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func callConnectionTest(t *testing.T, client pb.DestinationConnectorClient, cfg map[string]string) *pb.TestResponse {
+	t.Helper()
+	resp, err := client.Test(context.Background(), &pb.TestRequest{
+		Name:          "connection",
+		Configuration: cfg,
+	})
+	require.NoError(t, err)
+	return resp
 }
 
 // fail on the first mismatch, to prevent long console output

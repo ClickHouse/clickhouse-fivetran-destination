@@ -12,7 +12,7 @@ func getTestConnection(t *testing.T, ctx context.Context, configuration map[stri
 	t.Helper()
 	connConfig, err := config.Parse(configuration)
 	require.NoError(t, err)
-	conn, err := GetClickHouseConnection(ctx, connConfig)
+	conn, err := GetClickHouseConnection(ctx, connConfig, true)
 	require.NoError(t, err)
 	return conn
 }

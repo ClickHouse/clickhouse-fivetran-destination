@@ -33,7 +33,7 @@ func TestGetConnectionFailureAfterMaxRetries(t *testing.T) {
 		"local":    "true",
 	})
 	require.NoError(t, err)
-	conn, err := GetClickHouseConnection(ctx, connConfig)
+	conn, err := GetClickHouseConnection(ctx, connConfig, true)
 	assert.ErrorContains(t, err, "ClickHouse connection error: ping failed after 3 attempts: dial tcp [::1]:9999: connect: connection refused")
 	assert.Nil(t, conn)
 }
@@ -47,7 +47,7 @@ func TestGetConnectionInvalidUsername(t *testing.T) {
 		"local":    "true",
 	})
 	require.NoError(t, err)
-	conn, err := GetClickHouseConnection(ctx, connConfig)
+	conn, err := GetClickHouseConnection(ctx, connConfig, true)
 	assert.ErrorContains(t, err, "ClickHouse connection error: code: 516, message: invalid-user: Authentication failed")
 	assert.Nil(t, conn)
 
@@ -59,7 +59,7 @@ func TestGetConnectionInvalidUsername(t *testing.T) {
 		"local":    "true",
 	})
 	require.NoError(t, err)
-	conn, err = GetClickHouseConnection(ctx, connConfig)
+	conn, err = GetClickHouseConnection(ctx, connConfig, true)
 	assert.ErrorContains(t, err, "ClickHouse connection error")
 	assert.Nil(t, conn)
 }

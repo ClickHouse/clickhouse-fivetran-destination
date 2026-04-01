@@ -67,7 +67,7 @@ func (conn *ClickHouseConnection) recordQuery(duration time.Duration, success bo
 	}
 }
 
-func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*ClickHouseConnection, error) {
+func GetClickHouseConnection(ctx context.Context, connConfig *config.Config, retryPing bool) (*ClickHouseConnection, error) {
 	log.Info(fmt.Sprintf("Initializing ClickHouse connection to %s:%d",
 		connConfig.Host, connConfig.Port))
 
@@ -98,8 +98,9 @@ func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*C
 			Password: connConfig.Password,
 			Database: "system",
 		},
-		Protocol:     clickhouse.Native,
-		Settings:     settings,
+		Protocol: clickhouse.Native,
+		Settings: settings,
+		//DialTimeout:  10 * time.Second,
 		MaxOpenConns: int(*flags.MaxOpenConnections),
 		MaxIdleConns: int(*flags.MaxIdleConnections),
 		ReadTimeout:  *flags.RequestTimeoutDuration,
@@ -119,9 +120,13 @@ func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*C
 		log.Error(err)
 		return nil, err
 	}
-	err = retry.OnNetError(func() error {
-		return conn.Ping(ctx)
-	}, ctx, "ping", false)
+	if true {
+		err = retry.OnNetError(func() error {
+			return conn.Ping(ctx)
+		}, ctx, "ping", false)
+	} else {
+		err = conn.Ping(ctx)
+	}
 	if err != nil {
 		err = fmt.Errorf("ClickHouse connection error: %w", err)
 		log.Error(err)

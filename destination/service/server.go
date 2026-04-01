@@ -37,7 +37,7 @@ func (s *Server) Test(ctx context.Context, in *pb.TestRequest) (*pb.TestResponse
 		log.Error(fmt.Errorf("[Test_%s] %w", in.Name, err))
 		return FailedTestResponse(in.Name, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, false)
 	if err != nil {
 		log.Error(fmt.Errorf("[Test_%s] Failed to connect: %w", in.Name, err))
 		return FailedTestResponse(in.Name, err), nil
@@ -80,7 +80,7 @@ func (s *Server) DescribeTable(ctx context.Context, in *pb.DescribeTableRequest)
 		log.Error(fmt.Errorf("[DescribeTable] %w", err))
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, true)
 	if err != nil {
 		log.Error(fmt.Errorf("[DescribeTable] Failed to connect for %s.%s: %w", in.SchemaName, in.TableName, err))
 		return FailedDescribeTableResponse(in.SchemaName, in.TableName, err), nil
@@ -121,7 +121,7 @@ func (s *Server) CreateTable(ctx context.Context, in *pb.CreateTableRequest) (*p
 		log.Error(fmt.Errorf("[CreateTable] %w", err))
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, true)
 	if err != nil {
 		log.Error(fmt.Errorf("[CreateTable] Failed to connect for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedCreateTableResponse(in.SchemaName, in.Table.Name, err), nil
@@ -157,7 +157,7 @@ func (s *Server) AlterTable(ctx context.Context, in *pb.AlterTableRequest) (*pb.
 		log.Error(fmt.Errorf("[AlterTable] %w", err))
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, true)
 	if err != nil {
 		log.Error(fmt.Errorf("[AlterTable] Failed to connect for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedAlterTableResponse(in.SchemaName, in.Table.Name, err), nil
@@ -213,7 +213,7 @@ func (s *Server) Truncate(ctx context.Context, in *pb.TruncateRequest) (*pb.Trun
 		log.Error(fmt.Errorf("[Truncate] %w", err))
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, true)
 	if err != nil {
 		log.Error(fmt.Errorf("[Truncate] GetClickHouseConnection error for %s.%s: %w", in.SchemaName, in.TableName, err))
 		return FailedTruncateTableResponse(in.SchemaName, in.TableName, err), nil
@@ -275,7 +275,7 @@ func (s *Server) WriteHistoryBatch(ctx context.Context, in *pb.WriteHistoryBatch
 		log.Error(fmt.Errorf("[WriteHistoryBatch] %w", err))
 		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, true)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteHistoryBatch] GetClickHouseConnection error for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedWriteHistoryBatchResponse(in.SchemaName, in.Table.Name, fmt.Errorf("GetClickHouseConnection error: %w", err)), nil
@@ -357,7 +357,7 @@ func (s *Server) WriteBatch(ctx context.Context, in *pb.WriteBatchRequest) (*pb.
 		log.Error(fmt.Errorf("[WriteBatch] %w", err))
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
 	}
-	conn, err := db.GetClickHouseConnection(ctx, connConfig)
+	conn, err := db.GetClickHouseConnection(ctx, connConfig, true)
 	if err != nil {
 		log.Error(fmt.Errorf("[WriteBatch] Failed to connect for %s.%s: %w", in.SchemaName, in.Table.Name, err))
 		return FailedWriteBatchResponse(in.SchemaName, in.Table.Name, err), nil
