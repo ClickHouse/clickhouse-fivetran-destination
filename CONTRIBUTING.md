@@ -132,8 +132,19 @@ Run the SDK tester with all input JSON files (see [sdk_tests](./sdk_tests) direc
 make recreate-test-db && make sdk-test
 ```
 
+After running, you can inspect the resulting tables directly:
+
+```bash
+# Check table schema
+curl --data-binary "SELECT name, type, comment FROM system.columns WHERE database = 'tester' AND table = 'transaction' FORMAT CSV" http://localhost:8123
+
+# Check table data
+curl --data-binary "SELECT * FROM tester.transaction FINAL FORMAT CSV" http://localhost:8123
+```
+
 See also: Fivetran SDK
-tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester).
+tester [documentation](https://github.com/fivetran/fivetran_sdk/tree/main/tools/destination-tester)
+and the [Schema Migration Helper Guide](https://github.com/fivetran/fivetran_partner_sdk/blob/f61fa5186477d25fb3564233773e0123e73c29bd/schema-migration-helper-service.md) for the `Migrate` RPC contract.
 
 ## Lint
 
