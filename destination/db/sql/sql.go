@@ -884,7 +884,7 @@ func GetInsertNewActiveVersionsStatement(
 
 	insertColumns := strings.Join(insertColumnList, ",")
 
-	var insertIntoPart string = fmt.Sprintf("INSERT INTO %s (%s)", fullTableName, insertColumns)
+	insertIntoPart := fmt.Sprintf("INSERT INTO %s (%s)", fullTableName, insertColumns)
 
 	// Step 2: Build the SELECT and FROM parts:
 	// SELECT <unchanged_cols>, {override_value} as {override_column_name}, {operation_timestamp} as _fivetran_start FROM {schema.table}
@@ -913,7 +913,7 @@ func GetInsertNewActiveVersionsStatement(
 
 	selectExprs := strings.Join(selectParts, ",")
 
-	var selectFromPart string = fmt.Sprintf("SELECT %s FROM %s FINAL",
+	selectFromPart := fmt.Sprintf("SELECT %s FROM %s FINAL",
 		selectExprs,
 		fullTableName,
 	)
@@ -921,7 +921,7 @@ func GetInsertNewActiveVersionsStatement(
 	// Step 3: Build the WHERE part: WHERE _fivetran_active  AND _fivetran_start < {operation_timestamp}
 	// For DROP: only insert new versions for rows where the column actually has a value (AND {column_name} IS NOT NULL)
 
-	var wherePart string = fmt.Sprintf("WHERE `_fivetran_active` AND `_fivetran_start` < '%s'", operationTimestampNanos)
+	wherePart := fmt.Sprintf("WHERE `_fivetran_active` AND `_fivetran_start` < '%s'", operationTimestampNanos)
 
 	if overrideValue == nil && overrideColumn != "" {
 		wherePart += fmt.Sprintf(" AND %s IS NOT NULL", identifier(overrideColumn))

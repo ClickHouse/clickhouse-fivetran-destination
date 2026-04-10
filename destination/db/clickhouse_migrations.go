@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
-	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/log"
-	"fivetran.com/fivetran_sdk/destination/common/retry"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/sql"
 )
@@ -196,26 +194,6 @@ func (conn *ClickHouseConnection) MigrateAddColumnWithDefault(
 	}
 	// Step 2: Set default value
 	return conn.UpdateColumnValue(ctx, schemaName, tableName, column, defaultValue, false)
-}
-
-// waitMutationsOnTable polls system.mutations until all mutations on the given table are complete.
-// Uses system.mutations directly (not clusterAllReplicas) so it works on both local Docker and ClickHouse Cloud.
-func (conn *ClickHouseConnection) waitMutationsOnTable(
-	ctx context.Context,
-	schemaName string,
-	tableName string,
-) error {
-	query, err := sql.GetLocalMutationsCompletedQuery(schemaName, tableName)
-	if err != nil {
-		return err
-	}
-	return retry.OnFalseWithFixedDelay(func() (bool, error) {
-		allDone, queryErr := conn.ExecBoolQuery(ctx, query, allMutationsCompleted, false)
-		if queryErr != nil {
-			return false, queryErr
-		}
-		return allDone, nil
-	}, ctx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
 }
 
 // validateHistoryModeTable checks preconditions for history mode operations:
