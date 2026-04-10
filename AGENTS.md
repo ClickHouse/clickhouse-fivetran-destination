@@ -21,7 +21,7 @@ See [README.md](./README.md) for documentation links and [CONTRIBUTING.md](./CON
 The codebase lives under `destination/` and is organized as:
 
 - `cmd/` — entry point; starts the gRPC server on port 50052
-- `service/` — gRPC service implementation (`Server` struct implements `DestinationConnectorServer`). RPC handlers are in `server.go`; the `Migrate` RPC handler is in `migrate.go`
+- `service/` — gRPC service implementation (`Server` struct implements `DestinationConnectorServer`). RPC handlers are in `server.go`; the `Migrate` RPC handler is in `server_migrate.go`
 - `db/` — ClickHouse database operations (connections, queries, mutations). Migration-specific DB methods (e.g., `MigrateCopyTable`, `MigrateSoftDeleteToHistory`) are in `clickhouse.go`
 - `db/sql/` — SQL query building
 - `db/config/` — connection configuration parsing
@@ -72,7 +72,7 @@ All tests run with `make test`. Integration and e2e tests need ClickHouse runnin
 
 - **SDK tester `schema_migration` operation mapping**: DDL operations (`add_column`, `change_column_data_type`, `drop_column`) in the test JSON are sent as `AlterTable` RPC calls. All other operations (`copy_column`, `rename_column`, `update_column_value`, `copy_table`, etc.) are sent as `Migrate` RPC calls.
 - **`set_column_to_null`**: The SDK tester sends this as an `UpdateColumnValueOperation` with `value = "NULL"` (the literal string), not an empty string. The Migrate handler must detect both `""` and `"NULL"` as null indicators.
-- **`drop_column_in_history_mode`**: The SDK tester validates that the column is physically removed from the table after the operation. The implementation must insert new history versions, close old active rows, AND then `ALTER TABLE DROP COLUMN`.
+- **`drop_column_in_history_mode`**: The SDK tester validates that the column remains present in history mode. The implementation must insert new history versions, close old active rows, and leave the column nullable so historical values remain queryable while future active rows carry `NULL`.
 - **ClickHouse column ordering**: New columns added via `ALTER TABLE ADD COLUMN` appear at the end of the table, after existing columns like `_fivetran_synced`. Test assertions must match this physical column order, not a logical/expected order.
 - **`copy_table_to_history_mode` / `soft_delete_to_history`**: The source table may not have a `_fivetran_deleted` column (e.g., tables created with `history_mode: false` in the SDK tester). The implementation must check if the soft-delete column exists before referencing it in SQL. If absent, treat all rows as active.
 - **History mode add/drop column ordering**: INSERT new active rows first, then UPDATE to close old active rows. The reverse order would cause the UPDATE to read stale data since `mutations_sync=3` makes operations synchronous.
