@@ -371,7 +371,6 @@ func TestHistoryMode(t *testing.T) {
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
 }
 
-
 func TestSchemaMigrationsDDL(t *testing.T) {
 	fileName := "schema_migrations_input_ddl.json"
 	tableName := "transaction"
@@ -396,6 +395,52 @@ func TestSchemaMigrationsDDL(t *testing.T) {
 		{"10", "200", "false", "\\N"},
 		{"20", "50", "false", "\\N"},
 	}, dbRecordsCSVStr)
+}
+
+func TestSchemaMigrationsDML(t *testing.T) {
+	fileName := "schema_migrations_input_dml.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// Verify transaction table after: copy_column(desc->desc_detailed), update_column_value(amount=202.57),
+	// add_column_with_default_value(operation_time), set_column_to_null(desc), rename_column(amount->amount_renamed)
+	// Note: dynamically added columns (desc_detailed, operation_time) appear after _fivetran_synced
+	assertTableColumns(t, "transaction", [][]string{
+		{"id", "Int32", ""},
+		{"amount_renamed", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"desc_detailed", "Nullable(String)", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify data: amount_renamed should be 202.57, desc should be NULL, desc_detailed should have original values
+	query := "SELECT id, amount_renamed, desc, desc_detailed FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "202.57", "\\N", "\\N"},
+		{"2", "202.57", "\\N", "two"},
+		{"3", "202.57", "\\N", "two"},
+		{"4", "202.57", "\\N", "two"},
+		{"10", "202.57", "\\N", "three"},
+		{"20", "202.57", "\\N", "money"},
+	}, dbRecordsCSVStr)
+
+	// Verify transaction_renamed exists (was transaction_new, copied from transaction before rename, then table-renamed)
+	// Note: column is still "amount" because copy_table happened before rename_column
+	assertTableColumns(t, "transaction_renamed", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"desc_detailed", "Nullable(String)", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify transaction_drop was dropped
+	query = "SELECT count() FROM system.tables WHERE database = 'tester' AND name = 'transaction_drop' FORMAT CSV"
+	result := runQuery(t, query)
+	require.Contains(t, result, "0")
 }
 
 // fail on the first mismatch, to prevent long console output
