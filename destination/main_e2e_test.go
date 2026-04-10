@@ -33,10 +33,10 @@ func TestAllDataTypes(t *testing.T) {
 	assertTableRowsWithFivetranID(t, tableName, [][]string{
 		{"true", "42", "144", "100500", "100.5", "200.5", "42.42",
 			"2024-05-07", "2024-04-05 15:33:14", "2024-02-03 12:44:22.123456789",
-			"foo", "{\"a\": 1,\"b\": 2}", "<a>1</a>", "FFFA", "15:00", "abc-123-xyz"},
+			"foo", "{\"a\": 1,\"b\": 2}", "<a>1</a>", "FFFA", "15:00", "abc-123-xyz", "false"},
 		{"false", "-42", "-144", "-100500", "-100.5", "-200.5", "-42.42",
 			"2021-02-03", "2021-06-15 04:15:16", "2021-02-03 14:47:45.234567890",
-			"bar", "{\"c\": 3,\"d\": 4}", "<b>42</b>", "FFFE", "12:42", "vbn-543-hjk"}})
+			"bar", "{\"c\": 3,\"d\": 4}", "<b>42</b>", "FFFE", "12:42", "vbn-543-hjk", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"b", "Nullable(Bool)", ""},
 		{"i16", "Nullable(Int16)", ""},
@@ -54,7 +54,8 @@ func TestAllDataTypes(t *testing.T) {
 		{"bin", "Nullable(String)", "BINARY"},
 		{"nt", "Nullable(String)", "NAIVE_TIME"},
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_id", "String", ""}})
+		{"_fivetran_id", "String", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestMutateAfterAlter(t *testing.T) {
@@ -63,9 +64,9 @@ func TestMutateAfterAlter(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
-		{"1", "200", "asd", "zxc", "\\N", "\\N"},
-		{"2", "50", "\\N", "\\N", "<c>99</c>", "DD"},
-		{"4", "20.5", "x", "\\N", "<d>77</d>", "\\N"}})
+		{"1", "200", "asd", "zxc", "\\N", "\\N", "false"},
+		{"2", "50", "\\N", "\\N", "<c>99</c>", "DD", "false"},
+		{"4", "20.5", "x", "\\N", "<d>77</d>", "\\N", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"amount", "Nullable(Float32)", ""},
@@ -73,7 +74,8 @@ func TestMutateAfterAlter(t *testing.T) {
 		{"s2", "Nullable(String)", ""},
 		{"s3", "Nullable(String)", "XML"},
 		{"s4", "Nullable(String)", "BINARY"},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestUpdateAndHardDelete(t *testing.T) {
@@ -82,12 +84,13 @@ func TestUpdateAndHardDelete(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
-		{"1", "1111"},
-		{"2", "two"}})
+		{"1", "1111", "false"},
+		{"2", "two", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"name", "Nullable(String)", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestSoftDelete(t *testing.T) {
@@ -114,13 +117,14 @@ func TestUTCDateTimePrimaryKey(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"144", "2024-01-14 15:13:12.000000000"},
-		{"2", "2024-01-14 15:13:12.123000000"}},
+		{"144", "2024-01-14 15:13:12.000000000", "false"},
+		{"2", "2024-01-14 15:13:12.123000000", "false"}},
 		"ts")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
 		{"ts", "DateTime64(9, 'UTC')", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestNaiveDateTimePK(t *testing.T) {
@@ -129,12 +133,13 @@ func TestNaiveDateTimePK(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"144", "2022-06-01 18:44:13"}},
+		{"144", "2022-06-01 18:44:13", "false"}},
 		"dt")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
 		{"dt", "DateTime64(0, 'UTC')", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestNaiveDatePK(t *testing.T) {
@@ -143,12 +148,13 @@ func TestNaiveDatePK(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"144", "2022-06-01"}},
+		{"144", "2022-06-01", "false"}},
 		"d")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
 		{"d", "Date32", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestCompositeFloatPK(t *testing.T) {
@@ -157,14 +163,15 @@ func TestCompositeFloatPK(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"144", "300.3", "3.3", "4.4"}},
+		{"144", "300.3", "3.3", "4.4", "false"}},
 		"dec, f32, f64")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
 		{"dec", "Decimal(10, 4)", ""},
 		{"f32", "Float32", ""},
 		{"f64", "Float64", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestStringPK(t *testing.T) {
@@ -173,12 +180,13 @@ func TestStringPK(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"144", "qaz"}},
+		{"144", "qaz", "false"}},
 		"s")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
 		{"s", "String", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestCompositePKWithBoolean(t *testing.T) {
@@ -187,12 +195,13 @@ func TestCompositePKWithBoolean(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"144", "3", "true"}}, "l, b")
+		{"144", "3", "true", "false"}}, "l, b")
 	assertTableColumns(t, tableName, [][]string{
 		{"i", "Nullable(Int32)", ""},
 		{"l", "Int64", ""},
 		{"b", "Bool", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
@@ -201,11 +210,12 @@ func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
-		{"1", "\\N"}})
+		{"1", "\\N", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"name", "Nullable(String)", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestSoftTruncateBefore(t *testing.T) {
@@ -230,12 +240,13 @@ func TestHardTruncateBefore(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
-		{"2", "bar"},
-		{"3", "qaz"}})
+		{"2", "bar", "false"},
+		{"3", "qaz", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"name", "Nullable(String)", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestTableNotFound(t *testing.T) {
@@ -250,15 +261,16 @@ func TestChangePK(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"1", "200", "foo"},
-		{"2", "50", "bar"},
-		{"4", "20.5", "qaz"}},
+		{"1", "200", "foo", "false"},
+		{"2", "50", "bar", "false"},
+		{"4", "20.5", "qaz", "false"}},
 		"id, s")
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"amount", "Nullable(Float32)", ""},
 		{"s", "String", ""}, // non-nullable, now a PK
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestDropPK(t *testing.T) {
@@ -267,15 +279,16 @@ func TestDropPK(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"1", "200", "foo"},
-		{"2", "50", "bar"},
-		{"4", "20.5", "qaz"}},
+		{"1", "200", "foo", "false"},
+		{"2", "50", "bar", "false"},
+		{"4", "20.5", "qaz", "false"}},
 		"id")
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"amount", "Nullable(Float32)", ""},
 		{"s", "Nullable(String)", ""}, // was PK, now it is Nullable (as a non-PK column)
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestChangePKAndAllColumns(t *testing.T) {
@@ -284,14 +297,15 @@ func TestChangePKAndAllColumns(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
-		{"1", "foo"},
-		{"2", "bar"},
-		{"4", "qaz"}},
+		{"1", "foo", "false"},
+		{"2", "bar", "false"},
+		{"4", "qaz", "false"}},
 		"id")
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""}, // the only PK now
 		{"s", "Nullable(String)", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestTruncateDateValues(t *testing.T) {
@@ -300,14 +314,15 @@ func TestTruncateDateValues(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
-		{"1", "1900-01-01", "1900-01-01 00:00:00", "1900-01-01 00:00:00.000000000"},
-		{"2", "2299-12-31", "2262-04-11 23:47:16", "2262-04-11 23:47:16.000000000"}})
+		{"1", "1900-01-01", "1900-01-01 00:00:00", "1900-01-01 00:00:00.000000000", "false"},
+		{"2", "2299-12-31", "2262-04-11 23:47:16", "2262-04-11 23:47:16.000000000", "false"}})
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
 		{"d", "Nullable(Date32)", ""},
 		{"dt", "Nullable(DateTime64(0, 'UTC'))", ""},
 		{"utc", "Nullable(DateTime64(9, 'UTC'))", ""},
-		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""}})
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
 }
 
 func TestLargeInputFile(t *testing.T) {
