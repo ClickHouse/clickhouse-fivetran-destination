@@ -371,7 +371,6 @@ func TestHistoryMode(t *testing.T) {
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
 }
 
-
 func TestSchemaMigrationsDDL(t *testing.T) {
 	fileName := "schema_migrations_input_ddl.json"
 	tableName := "transaction"
@@ -395,6 +394,132 @@ func TestSchemaMigrationsDDL(t *testing.T) {
 		{"4", "150.33", "false", "\\N"},
 		{"10", "200", "false", "\\N"},
 		{"20", "50", "false", "\\N"},
+	}, dbRecordsCSVStr)
+}
+
+func TestSchemaMigrationsDML(t *testing.T) {
+	fileName := "schema_migrations_input_dml.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// Verify transaction table after: copy_column(desc->desc_detailed), update_column_value(amount=202.57),
+	// add_column_with_default_value(operation_time), set_column_to_null(desc), rename_column(amount->amount_renamed)
+	// Note: dynamically added columns (desc_detailed, operation_time) appear after _fivetran_synced
+	assertTableColumns(t, "transaction", [][]string{
+		{"id", "Int32", ""},
+		{"amount_renamed", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"desc_detailed", "Nullable(String)", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify data: amount_renamed should be 202.57, desc should be NULL, desc_detailed should have original values
+	query := "SELECT id, amount_renamed, desc, desc_detailed FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "202.57", "\\N", "\\N"},
+		{"2", "202.57", "\\N", "two"},
+		{"3", "202.57", "\\N", "two"},
+		{"4", "202.57", "\\N", "two"},
+		{"10", "202.57", "\\N", "three"},
+		{"20", "202.57", "\\N", "money"},
+	}, dbRecordsCSVStr)
+
+	// Verify transaction_renamed exists (was transaction_new, copied from transaction before rename, then table-renamed)
+	// Note: column is still "amount" because copy_table happened before rename_column
+	assertTableColumns(t, "transaction_renamed", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"desc_detailed", "Nullable(String)", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify transaction_drop was dropped
+	query = "SELECT count() FROM system.tables WHERE database = 'tester' AND name = 'transaction_drop' FORMAT CSV"
+	result := runQuery(t, query)
+	require.Contains(t, result, "0")
+}
+
+func TestSchemaMigrationsSyncModes(t *testing.T) {
+	fileName := "schema_migrations_input_sync_modes.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// Verify transaction_history table: desc dropped in history mode, article added in history mode (appears at end)
+	// desc column is preserved (not physically dropped) per the spec — historical values are maintained
+	assertTableColumns(t, "transaction_history", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""},
+		{"article", "Nullable(String)", ""}})
+
+	// Verify transaction table was converted to history mode (soft_delete -> history)
+	assertTableColumns(t, "transaction", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""}})
+
+	// Verify new_transaction_history was converted to soft-delete mode (history -> soft_delete)
+	assertTableColumns(t, "new_transaction_history", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+
+	// Verify transaction data: converted to history mode, all rows active
+	query := "SELECT id, amount, desc, _fivetran_active FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "\\N", "true"},
+		{"2", "150.33", "two", "true"},
+		{"3", "150.33", "two", "true"},
+		{"4", "150.33", "two", "true"},
+		{"10", "200", "three", "true"},
+		{"20", "50", "money", "true"},
+	}, dbRecordsCSVStr)
+
+	// Verify new_transaction_history data: converted to soft-delete, all rows not deleted
+	query = "SELECT id, amount, _fivetran_deleted FROM tester.new_transaction_history FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr = runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "false"},
+		{"2", "150.33", "false"},
+		{"3", "150.33", "false"},
+		{"4", "150.33", "false"},
+		{"10", "200", "false"},
+		{"20", "50", "false"},
+	}, dbRecordsCSVStr)
+
+	// Verify transaction_history data: history rows with article added and desc dropped
+	// Each original row should have an inactive version (before add/drop) and an active version (after)
+	query = "SELECT id, amount, article, _fivetran_active FROM tester.transaction_history FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr = runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "\\N", "false"},
+		{"1", "100.45", "Ordered article", "true"},
+		{"2", "150.33", "\\N", "false"},
+		{"2", "150.33", "Ordered article", "true"},
+		{"3", "150.33", "\\N", "false"},
+		{"3", "150.33", "Ordered article", "true"},
+		{"4", "150.33", "\\N", "false"},
+		{"4", "150.33", "Ordered article", "true"},
+		{"10", "200", "\\N", "false"},
+		{"10", "100", "\\N", "false"},
+		{"10", "100", "Ordered article", "true"},
+		{"20", "50", "\\N", "false"},
+		{"20", "50", "Ordered article", "true"},
 	}, dbRecordsCSVStr)
 }
 

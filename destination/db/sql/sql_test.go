@@ -480,3 +480,27 @@ func TestGetRenameTablesStatementErrors(t *testing.T) {
 	_, err = GetRenameTableStatement("", "table", "new")
 	assert.ErrorContains(t, err, "schema name for tables table/new is empty")
 }
+
+func TestGetLocalMutationsCompletedQuery(t *testing.T) {
+	query, err := GetLocalMutationsCompletedQuery("foo", "bar")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = 'foo' AND table = 'bar' AND is_done = 0", query)
+
+	_, err = GetLocalMutationsCompletedQuery("", "bar")
+	assert.ErrorContains(t, err, "schema name for table bar is empty")
+
+	_, err = GetLocalMutationsCompletedQuery("foo", "")
+	assert.ErrorContains(t, err, "table name is empty")
+
+	// Test SQL escaping of schema/table names with single quotes
+	query, err = GetLocalMutationsCompletedQuery("test'db", "test'table")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = 'test''db' AND table = 'test''table' AND is_done = 0", query)
+}
+
+func TestEscapeSQLString(t *testing.T) {
+	assert.Equal(t, "hello", escapeSQLString("hello"))
+	assert.Equal(t, "O''Brien", escapeSQLString("O'Brien"))
+	assert.Equal(t, "it''s a ''test''", escapeSQLString("it's a 'test'"))
+	assert.Equal(t, "", escapeSQLString(""))
+}

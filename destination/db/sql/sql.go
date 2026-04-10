@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"fivetran.com/fivetran_sdk/destination/common/constants"
+	constants "fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -689,6 +689,34 @@ func GetRenameTableStatement(
 	return fmt.Sprintf("RENAME TABLE %s TO %s",
 		fromTableIdentifier, toTableIdentifier), nil
 }
+
+
+// GetLocalMutationsCompletedQuery generates a query to check if all mutations on a table are complete.
+// Unlike GetAllMutationsCompletedQuery, this queries system.mutations directly (no clusterAllReplicas)
+// and works on both local Docker ClickHouse and ClickHouse Cloud.
+func GetLocalMutationsCompletedQuery(schemaName string, tableName string) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
+	}
+	return fmt.Sprintf(
+		"SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = %s AND table = %s AND is_done = 0",
+		singleQuoted(schemaName), singleQuoted(tableName),
+	), nil
+}
+
+// escapeSQLString escapes single quotes in a string for use in SQL literals.
+func escapeSQLString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// singleQuoted wraps a string in single quotes with escaping for SQL string literals.
+func singleQuoted(s string) string {
+	return fmt.Sprintf("'%s'", escapeSQLString(s))
+}
+
 
 func identifier(s string) string {
 	return fmt.Sprintf("`%s`", s)
