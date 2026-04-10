@@ -10,6 +10,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// MaxDateTime64 is the maximum DateTime64(9, 'UTC') value supported by ClickHouse.
+// DateTime64(9) stores nanoseconds since epoch as int64; this is the upper-bound date
+// that fits within int64 range. All incoming dates beyond this are clamped to this value.
+// Used as the sentinel _fivetran_end value for active history mode rows.
+var MaxDateTime64 = time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC)
+
+// MaxDateTime64Nanos is MaxDateTime64 as a nanosecond-since-epoch string, ready for SQL interpolation.
+var MaxDateTime64Nanos = strconv.FormatInt(MaxDateTime64.UnixNano(), 10)
+
 func Value(colType pb.DataType, value string) (string, error) {
 	switch colType {
 	case // quote types that we can pass as a string
@@ -105,7 +114,7 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		// However, due to the way the driver works, the actual upper bound is 2262-04-11 23:47:16.
 		year, month, day := result.Date()
 		if year > 2262 || (year == 2262 && month > 4) || (year == 2262 && month == 4 && day > 11) {
-			return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+			return MaxDateTime64, nil
 		}
 		if year < 1900 {
 			return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC), nil
@@ -113,7 +122,7 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		hours, minutes, seconds := result.Clock()
 		if year == 2262 && month == 4 && day == 11 && hours == 23 {
 			if minutes > 47 || minutes == 47 && seconds > 16 || minutes == 47 && seconds == 16 {
-				return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+				return MaxDateTime64, nil
 			}
 		}
 		return result, nil
@@ -126,7 +135,7 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		// See https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
 		year, month, day := result.Date()
 		if year > 2262 || (year == 2262 && month > 4) || (year == 2262 && month == 4 && day > 11) {
-			return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+			return MaxDateTime64, nil
 		}
 		if year < 1900 {
 			return time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC), nil
@@ -134,7 +143,7 @@ func Parse(colName string, colType pb.DataType, val string) (any, error) {
 		hours, minutes, seconds := result.Clock()
 		if year == 2262 && month == 4 && day == 11 && hours == 23 {
 			if minutes > 47 || minutes == 47 && seconds > 16 || minutes == 47 && seconds == 16 && result.Nanosecond() > 0 {
-				return time.Date(2262, time.April, 11, 23, 47, 16, 0, time.UTC), nil
+				return MaxDateTime64, nil
 			}
 		}
 		return result, nil

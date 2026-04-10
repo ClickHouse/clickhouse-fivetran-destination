@@ -11,7 +11,7 @@ endif
 FIVETRAN_TAG     = "8b30d60b8eb2040f858c3f3c1ab819daed9fd84d"
 FIVETRAN_SDK_URL = "https://raw.githubusercontent.com/fivetran/fivetran_partner_sdk/$(FIVETRAN_TAG)"
 
-SDK_TESTER_VERSION = "2.25.1118.001"
+SDK_TESTER_VERSION = "2.26.0408.001"
 SDK_TESTER_IMAGE   = "us-docker.pkg.dev/build-286712/public-docker-us/sdktesters-v2/sdk-tester:$(SDK_TESTER_VERSION)"
 
 PROTOC_GEN_GO_VERSION = "v1.36.10"
