@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -97,4 +98,128 @@ func TestParseTimestampToNanos(t *testing.T) {
 	// Empty string
 	_, err = parseTimestampToNanos("")
 	assert.Error(t, err)
+}
+
+func TestHandleDropOperation_DefaultEntity(t *testing.T) {
+	resp, err := handleDropOperation(context.Background(), nil, "schema", "table", &pb.DropOperation{})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unsupported drop operation entity")
+}
+
+func TestHandleDropOperation_InvalidTimestamp(t *testing.T) {
+	resp, err := handleDropOperation(context.Background(), nil, "schema", "table", &pb.DropOperation{
+		Entity: &pb.DropOperation_DropColumnInHistoryMode{
+			DropColumnInHistoryMode: &pb.DropColumnInHistoryMode{
+				Column:             "col",
+				OperationTimestamp: "not-a-timestamp",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "failed to parse operation timestamp")
+}
+
+func TestHandleCopyOperation_DefaultEntity(t *testing.T) {
+	resp, err := handleCopyOperation(context.Background(), nil, "schema", "table", &pb.CopyOperation{})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unsupported copy operation entity")
+}
+
+func TestHandleRenameOperation_DefaultEntity(t *testing.T) {
+	resp, err := handleRenameOperation(context.Background(), nil, "schema", "table", &pb.RenameOperation{})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unsupported rename operation entity")
+}
+
+func TestHandleAddOperation_DefaultEntity(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unsupported add operation entity")
+}
+
+func TestHandleAddOperation_UnknownColumnType(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnWithDefaultValue{
+			AddColumnWithDefaultValue: &pb.AddColumnWithDefaultValue{
+				Column:       "col",
+				ColumnType:   pb.DataType_UNSPECIFIED,
+				DefaultValue: "val",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unknown datatype")
+}
+
+func TestHandleAddOperation_HistoryMode_UnknownColumnType(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnInHistoryMode{
+			AddColumnInHistoryMode: &pb.AddColumnInHistoryMode{
+				Column:             "col",
+				ColumnType:         pb.DataType_UNSPECIFIED,
+				DefaultValue:       "val",
+				OperationTimestamp: "2024-01-15T10:30:00Z",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unknown datatype")
+}
+
+func TestHandleAddOperation_HistoryMode_InvalidTimestamp(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnInHistoryMode{
+			AddColumnInHistoryMode: &pb.AddColumnInHistoryMode{
+				Column:             "col",
+				ColumnType:         pb.DataType_STRING,
+				DefaultValue:       "val",
+				OperationTimestamp: "not-a-timestamp",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "failed to parse operation timestamp")
+}
+
+func TestHandleTableSyncModeMigration_UnsupportedLiveTransitions(t *testing.T) {
+	unsupportedTypes := []pb.TableSyncModeMigrationType{
+		pb.TableSyncModeMigrationType_SOFT_DELETE_TO_LIVE,
+		pb.TableSyncModeMigrationType_HISTORY_TO_LIVE,
+		pb.TableSyncModeMigrationType_LIVE_TO_SOFT_DELETE,
+		pb.TableSyncModeMigrationType_LIVE_TO_HISTORY,
+	}
+	for _, mt := range unsupportedTypes {
+		t.Run(mt.String(), func(t *testing.T) {
+			resp, err := handleTableSyncModeMigration(context.Background(), nil, "schema", "table",
+				&pb.TableSyncModeMigrationOperation{Type: mt})
+			require.NoError(t, err)
+			assert.True(t, resp.GetUnsupported())
+		})
+	}
+}
+
+func TestHandleTableSyncModeMigration_DefaultUnknownType(t *testing.T) {
+	resp, err := handleTableSyncModeMigration(context.Background(), nil, "schema", "table",
+		&pb.TableSyncModeMigrationOperation{Type: pb.TableSyncModeMigrationType(999)})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "unknown sync mode migration type")
+}
+
+func TestFormatMigrateValue_InvalidNaiveDatetime(t *testing.T) {
+	result := formatMigrateValue("not-a-date", pb.DataType_NAIVE_DATETIME)
+	assert.Equal(t, "not-a-date", result)
+}
+
+func TestFormatMigrateValue_InvalidNaiveDate(t *testing.T) {
+	result := formatMigrateValue("not-a-date", pb.DataType_NAIVE_DATE)
+	assert.Equal(t, "not-a-date", result)
 }
