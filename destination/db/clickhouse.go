@@ -115,17 +115,13 @@ func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*C
 	}
 	conn, err := clickhouse.Open(options)
 	if err != nil {
-		err = fmt.Errorf("error while opening a connection to ClickHouse: %w", err)
-		log.Error(err)
-		return nil, err
+		return nil, fmt.Errorf("error while opening a connection to ClickHouse: %w", err)
 	}
 	err = retry.OnNetError(func() error {
 		return conn.Ping(ctx)
 	}, ctx, "ping", false)
 	if err != nil {
-		err = fmt.Errorf("ClickHouse connection error: %w", err)
-		log.Error(err)
-		return nil, err
+		return nil, fmt.Errorf("ClickHouse connection error: %w", err)
 	}
 	log.Info("ClickHouse connection established successfully")
 	return &ClickHouseConnection{Conn: conn, username: connConfig.Username, isLocal: connConfig.Local}, nil
@@ -161,9 +157,7 @@ func (conn *ClickHouseConnection) ExecStatement(
 	conn.recordQuery(duration, err == nil)
 
 	if err != nil {
-		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", statement, queryID, err)
-		log.Error(err)
-		return err
+		return fmt.Errorf("error while executing %s [query_id=%s]: %w", logQuery, queryID, err)
 	}
 	log.Info(fmt.Sprintf("Successfully executed %s [query_id=%s] in %v", op, queryID, duration))
 	return nil
@@ -199,9 +193,7 @@ func (conn *ClickHouseConnection) ExecQuery(
 	conn.recordQuery(duration, err == nil)
 
 	if err != nil {
-		err = fmt.Errorf("error while executing %s [query_id=%s]: %w", query, queryID, err)
-		log.Error(err)
-		return nil, err
+		return nil, fmt.Errorf("error while executing %s [query_id=%s]: %w", logQuery, queryID, err)
 	}
 	log.Info(fmt.Sprintf("Query %s [query_id=%s] completed in %v", op, queryID, duration))
 	return rows, nil
@@ -542,12 +534,9 @@ func (conn *ClickHouseConnection) InsertBatch(
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				err = fmt.Errorf("error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
-			} else {
-				err = fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
+				return fmt.Errorf("error while preparing batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
 			}
-			log.Error(err)
-			return err
+			return fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
 		}
 		for i, row := range rows {
 			if skipIdx[i] {
@@ -556,23 +545,17 @@ func (conn *ClickHouseConnection) InsertBatch(
 			err = batch.Append(row...)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					err = fmt.Errorf("error appending row to a batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
-				} else {
-					err = fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
+					return fmt.Errorf("error appending row to a batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
 				}
-				log.Error(err)
-				return err
+				return fmt.Errorf("error appending row to a batch for %s: %w", qualifiedTableName, err)
 			}
 		}
 		err = batch.Send()
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				err = fmt.Errorf("error while sending batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
-			} else {
-				err = fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
+				return fmt.Errorf("error while sending batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err())
 			}
-			log.Error(err)
-			return err
+			return fmt.Errorf("error while sending batch for %s: %w", qualifiedTableName, err)
 		}
 		return nil
 	}, ctx, opName, true)

@@ -14,7 +14,7 @@ func RunAndNotice(op func() error, opName string) error {
 	if err == nil {
 		log.Notice(fmt.Sprintf("%s completed in %d ms", opName, elapsed))
 	} else {
-		log.Notice(fmt.Sprintf("%s failed after %d ms: %s", opName, elapsed, err))
+		err = fmt.Errorf("%s failed after %d ms: %w", opName, elapsed, err)
 	}
 	return err
 }
@@ -26,7 +26,7 @@ func RunAndNoticeWithData[T any](op func() (T, error), opName string) (T, error)
 	if err == nil {
 		log.Notice(fmt.Sprintf("%s completed in %d ms", opName, elapsed))
 	} else {
-		log.Notice(fmt.Sprintf("%s failed after %d ms: %s", opName, elapsed, err))
+		err = fmt.Errorf("%s failed after %d ms: %w", opName, elapsed, err)
 	}
 	return data, err
 }
