@@ -502,24 +502,25 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"20", "50", "false"},
 	}, dbRecordsCSVStr)
 
-	// Verify transaction_history data: history rows with article added and desc dropped
-	// Each original row should have an inactive version (before add/drop) and an active version (after)
-	query = "SELECT id, amount, article, _fivetran_active FROM tester.transaction_history FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1"
+	// Verify transaction_history data: history rows with article added and desc dropped.
+	// The add/drop operations use the same operation_timestamp, so this assertion ensures
+	// the drop still mutates active rows at that timestamp (desc must be NULL on active rows).
+	query = "SELECT id, amount, desc, article, _fivetran_active FROM tester.transaction_history FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1"
 	dbRecordsCSVStr = runQuery(t, query)
 	assertDatabaseRecords(t, [][]string{
-		{"1", "100.45", "\\N", "false"},
-		{"1", "100.45", "Ordered article", "true"},
-		{"2", "150.33", "\\N", "false"},
-		{"2", "150.33", "Ordered article", "true"},
-		{"3", "150.33", "\\N", "false"},
-		{"3", "150.33", "Ordered article", "true"},
-		{"4", "150.33", "\\N", "false"},
-		{"4", "150.33", "Ordered article", "true"},
-		{"10", "200", "\\N", "false"},
-		{"10", "100", "\\N", "false"},
-		{"10", "100", "Ordered article", "true"},
-		{"20", "50", "\\N", "false"},
-		{"20", "50", "Ordered article", "true"},
+		{"1", "100.45", "\\N", "\\N", "false"},
+		{"1", "100.45", "\\N", "Ordered article", "true"},
+		{"2", "150.33", "two", "\\N", "false"},
+		{"2", "150.33", "\\N", "Ordered article", "true"},
+		{"3", "150.33", "two", "\\N", "false"},
+		{"3", "150.33", "\\N", "Ordered article", "true"},
+		{"4", "150.33", "two", "\\N", "false"},
+		{"4", "150.33", "\\N", "Ordered article", "true"},
+		{"10", "200", "three", "\\N", "false"},
+		{"10", "100", "three", "\\N", "false"},
+		{"10", "100", "\\N", "Ordered article", "true"},
+		{"20", "50", "money", "\\N", "false"},
+		{"20", "50", "\\N", "Ordered article", "true"},
 	}, dbRecordsCSVStr)
 }
 

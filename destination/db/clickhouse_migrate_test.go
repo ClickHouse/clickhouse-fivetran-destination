@@ -38,6 +38,12 @@ func TestMigrateAddColumnWithDefault_SQLBuilderError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestMigrateUpdateRowsAtOperationTimestamp_SQLBuilderError(t *testing.T) {
+	err := nilConn.MigrateUpdateRowsAtOperationTimestamp(
+		context.Background(), "", "table", "col", "val", false, "123")
+	assert.Error(t, err)
+}
+
 func TestValidateHistoryModeTable_SQLBuilderError(t *testing.T) {
 	_, err := nilConn.validateHistoryModeTable(context.Background(), "", "table", "123")
 	assert.Error(t, err)

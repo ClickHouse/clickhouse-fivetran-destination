@@ -36,6 +36,26 @@ func TestGetUpdateColumnValueStatement(t *testing.T) {
 	assert.ErrorContains(t, err, "column name is empty")
 }
 
+func TestGetUpdateRowsAtOperationTimestampStatement(t *testing.T) {
+	stmt, err := GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", "42", false, "1117314420000000000")
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"ALTER TABLE `s`.`t` UPDATE `col` = '42' WHERE `_fivetran_start` = '1117314420000000000'",
+		stmt)
+
+	stmt, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", "", true, "1117314420000000000")
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"ALTER TABLE `s`.`t` UPDATE `col` = NULL WHERE `_fivetran_start` = '1117314420000000000'",
+		stmt)
+
+	_, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "", "42", false, "1117314420000000000")
+	assert.ErrorContains(t, err, "column name is empty")
+
+	_, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", "42", false, "")
+	assert.ErrorContains(t, err, "operation timestamp is empty")
+}
+
 func TestGetCopyColumnUpdateStatement(t *testing.T) {
 	stmt, err := GetCopyColumnUpdateStatement("s", "t", "new_col", "old_col")
 	assert.NoError(t, err)

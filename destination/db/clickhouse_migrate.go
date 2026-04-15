@@ -21,6 +21,7 @@ const (
 	migrateUpdateColumnValue connectionOpType = "Migrate(UpdateColumnValue)"
 	migrateAddColumnDefault  connectionOpType = "Migrate(AddColumnDefault)"
 	migrateHistoryInsert     connectionOpType = "Migrate(History, Insert)"
+	migrateHistoryUpdate     connectionOpType = "Migrate(History, Update)"
 	migrateHistoryClose      connectionOpType = "Migrate(History, Close)"
 	migrateSyncModeInsert    connectionOpType = "Migrate(SyncMode, Insert)"
 )
@@ -196,6 +197,34 @@ func (conn *ClickHouseConnection) MigrateAddColumnWithDefault(
 	return conn.UpdateColumnValue(ctx, schemaName, tableName, column, defaultValue, false)
 }
 
+func (conn *ClickHouseConnection) MigrateUpdateRowsAtOperationTimestamp(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	column string,
+	value string,
+	isNull bool,
+	operationTimestampNanos string,
+) error {
+	statement, err := sql.GetUpdateRowsAtOperationTimestampStatement(
+		schemaName, tableName, column, value, isNull, operationTimestampNanos)
+	if err != nil {
+		return err
+	}
+	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
+	if err != nil {
+		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
+	}
+	err = conn.ExecStatement(ctx, statement, migrateHistoryUpdate, true)
+	if err != nil {
+		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
+		if waitErr != nil {
+			return waitErr
+		}
+	}
+	return nil
+}
+
 // validateHistoryModeTable checks preconditions for history mode operations:
 // 1. Table must not be empty (skip the operation if it is)
 // 2. max(_fivetran_start) for active rows must be <= operation_timestamp
@@ -313,7 +342,14 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	if err != nil {
 		return err
 	}
-	// Step 4: Close old active rows
+	// Step 4: Update rows at operation timestamp.
+	// This follows the helper guide for same-timestamp composability.
+	err = conn.MigrateUpdateRowsAtOperationTimestamp(
+		ctx, schemaName, tableName, column, defaultValue, false, operationTimestampNanos)
+	if err != nil {
+		return err
+	}
+	// Step 5: Close old active rows
 	closeStmt, err := sql.GetCloseActiveRowsStatement(schemaName, tableName, operationTimestampNanos, "")
 	if err != nil {
 		return err
@@ -368,10 +404,15 @@ func (conn *ClickHouseConnection) MigrateDropColumnInHistoryMode(
 	if err != nil {
 		return err
 	}
-	// Note: Documentation mentions that the next thing to do is to "Update the newly added row with the operation_timestamp",
-	// but we are already doing that within the replacing merge Tree logic.
-
-	// Step 3: Close old active rows (only where column IS NOT NULL)
+	// Step 3: Update rows at operation timestamp.
+	// This handles chained migrations with the same timestamp where active rows may already
+	// exist at _fivetran_start = operation_timestamp.
+	err = conn.MigrateUpdateRowsAtOperationTimestamp(
+		ctx, schemaName, tableName, column, "", true, operationTimestampNanos)
+	if err != nil {
+		return err
+	}
+	// Step 4: Close old active rows (only where column IS NOT NULL)
 	closeStmt, err := sql.GetCloseActiveRowsStatement(schemaName, tableName, operationTimestampNanos, column)
 	if err != nil {
 		return err

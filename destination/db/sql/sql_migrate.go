@@ -47,6 +47,47 @@ func GetUpdateColumnValueStatement(schemaName string, tableName string, column s
 	return fmt.Sprintf("ALTER TABLE %s UPDATE %s = %s WHERE true", fullTableName, identifier(column), sqlValue), nil
 }
 
+// GetUpdateRowsAtOperationTimestampStatement generates:
+// ALTER TABLE `schema`.`table`
+// UPDATE `column` = <value>
+// WHERE `_fivetran_start` = '<operation_timestamp>'
+//
+// This follows the Schema Migration Helper guide step that updates rows at operation_timestamp
+// to make same-timestamp history operations composable.
+func GetUpdateRowsAtOperationTimestampStatement(
+	schemaName string,
+	tableName string,
+	column string,
+	value string,
+	isNull bool,
+	operationTimestampNanos string,
+) (string, error) {
+	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
+	if err != nil {
+		return "", err
+	}
+	if column == "" {
+		return "", fmt.Errorf("column name is empty")
+	}
+	if operationTimestampNanos == "" {
+		return "", fmt.Errorf("operation timestamp is empty")
+	}
+	var sqlValue string
+	if isNull {
+		sqlValue = "NULL"
+	} else {
+		sqlValue = fmt.Sprintf("'%s'", escapeSQLString(value))
+	}
+	return fmt.Sprintf(
+		"ALTER TABLE %s UPDATE %s = %s WHERE %s = '%s'",
+		fullTableName,
+		identifier(column),
+		sqlValue,
+		identifier(constants.FivetranStart),
+		operationTimestampNanos,
+	), nil
+}
+
 // GetCopyColumnUpdateStatement generates: ALTER TABLE `schema`.`table` UPDATE `toColumn` = `fromColumn` WHERE true
 // Used for copying data from one column to another within the same table.
 func GetCopyColumnUpdateStatement(schemaName string, tableName string, toColumn string, fromColumn string) (string, error) {
