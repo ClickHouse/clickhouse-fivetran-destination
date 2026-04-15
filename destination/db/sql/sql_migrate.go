@@ -339,7 +339,7 @@ func GetInsertFromSelectWithHistoryColumnsStatement(
 	}
 
 	return fmt.Sprintf(
-		"INSERT INTO %s (%s,%s,%s,%s,%s) SELECT %s,%s,%s,'%s',%s FROM %s",
+		"INSERT INTO %s (%s,%s,%s,%s,%s) SELECT %s,%s,%s,'%s',%s FROM %s FINAL",
 		toIdentifier,
 		cols,
 		identifier(constants.FivetranSynced),
@@ -355,13 +355,37 @@ func GetInsertFromSelectWithHistoryColumnsStatement(
 	), nil
 }
 
-// GetInsertFromSelectHistoryToSoftDeleteStatement generates a statement for converting
-// a history mode table to soft-delete mode.
+// GetInsertFromSelectHistoryToSoftDeleteStatement generates SQL for HISTORY_TO_SOFT_DELETE.
+//
+// Why the "latest row per PK" subquery is needed:
+// A history-mode table stores multiple versions per primary key (different _fivetran_start values).
+// During conversion to soft-delete mode, we must keep only one row per PK (the latest version),
+// then derive the soft-delete flag from that row's _fivetran_active value.
+//
+// If we selected directly from the history table, keepDeletedRows=true would copy all versions
+// for each PK, which violates the migration contract (latest version only).
+//
+// ClickHouse adaptation:
+// We use "ORDER BY <pk>, _fivetran_start DESC LIMIT 1 BY <pk>" over FINAL to select the latest
+// version per PK in a single statement.
+//
+// Shape of generated SQL:
+//
+//	INSERT INTO <schema.to_table> (<cols>, `_fivetran_synced`, <soft_deleted_column>)
+//	SELECT <cols>, `_fivetran_synced`, if(`_fivetran_active` = true, false, true)
+//	FROM (
+//	    SELECT <cols>, `_fivetran_synced`, `_fivetran_active`
+//	    FROM <schema.from_table> FINAL
+//	    ORDER BY <pk_cols>, `_fivetran_start` DESC
+//	    LIMIT 1 BY <pk_cols>
+//	)
+//	[WHERE `_fivetran_active` = true] -- appended only when keepDeletedRows = false
 func GetInsertFromSelectHistoryToSoftDeleteStatement(
 	schemaName string,
 	fromTable string,
 	toTable string,
 	colNames []string,
+	pkColNames []string,
 	softDeletedColumn string,
 	keepDeletedRows bool,
 ) (string, error) {
@@ -377,6 +401,9 @@ func GetInsertFromSelectHistoryToSoftDeleteStatement(
 	if len(colNames) == 0 {
 		return "", fmt.Errorf("column names list is empty")
 	}
+	if len(pkColNames) == 0 {
+		return "", fmt.Errorf("primary key column names list is empty")
+	}
 
 	fromIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(fromTable))
 	toIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(toTable))
@@ -390,6 +417,15 @@ func GetInsertFromSelectHistoryToSoftDeleteStatement(
 	}
 	cols := colsList.String()
 
+	var pkColsList strings.Builder
+	for i, col := range pkColNames {
+		pkColsList.WriteString(identifier(col))
+		if i < len(pkColNames)-1 {
+			pkColsList.WriteString(",")
+		}
+	}
+	pkCols := pkColsList.String()
+
 	deletedExpr := fmt.Sprintf("if(%s = true, false, true)", identifier(constants.FivetranActive))
 
 	var whereClause string
@@ -397,8 +433,19 @@ func GetInsertFromSelectHistoryToSoftDeleteStatement(
 		whereClause = fmt.Sprintf(" WHERE %s = true", identifier(constants.FivetranActive))
 	}
 
+	latestPerPKSubquery := fmt.Sprintf(
+		"SELECT %s,%s,%s FROM %s FINAL ORDER BY %s,%s DESC LIMIT 1 BY %s",
+		cols,
+		identifier(constants.FivetranSynced),
+		identifier(constants.FivetranActive),
+		fromIdentifier,
+		pkCols,
+		identifier(constants.FivetranStart),
+		pkCols,
+	)
+
 	return fmt.Sprintf(
-		"INSERT INTO %s (%s,%s,%s) SELECT %s,%s,%s FROM %s FINAL%s",
+		"INSERT INTO %s (%s,%s,%s) SELECT %s,%s,%s FROM (%s)%s",
 		toIdentifier,
 		cols,
 		identifier(constants.FivetranSynced),
@@ -406,7 +453,7 @@ func GetInsertFromSelectHistoryToSoftDeleteStatement(
 		cols,
 		identifier(constants.FivetranSynced),
 		deletedExpr,
-		fromIdentifier,
+		latestPerPKSubquery,
 		whereClause,
 	), nil
 }

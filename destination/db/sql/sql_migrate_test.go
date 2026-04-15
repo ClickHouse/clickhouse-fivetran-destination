@@ -161,28 +161,28 @@ func TestGetInsertFromSelectWithHistoryColumnsStatement(t *testing.T) {
 		[]string{"id", "amount"}, "_fivetran_deleted")
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"INSERT INTO `s`.`to_t` (`id`,`amount`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) SELECT `id`,`amount`,`_fivetran_synced`,`_fivetran_synced`,'9223372036000000000',if(`_fivetran_deleted` = 0, true, false) FROM `s`.`from_t`",
+		"INSERT INTO `s`.`to_t` (`id`,`amount`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) SELECT `id`,`amount`,`_fivetran_synced`,`_fivetran_synced`,'9223372036000000000',if(`_fivetran_deleted` = 0, true, false) FROM `s`.`from_t` FINAL",
 		stmt)
 
 	stmt, err = GetInsertFromSelectWithHistoryColumnsStatement("s", "from_t", "to_t",
 		[]string{"id"}, "")
 	assert.NoError(t, err)
-	assert.Contains(t, stmt, "true FROM `s`.`from_t`") // no _fivetran_deleted reference
+	assert.Contains(t, stmt, "true FROM `s`.`from_t` FINAL") // no _fivetran_deleted reference
 }
 
 func TestGetInsertFromSelectHistoryToSoftDeleteStatement(t *testing.T) {
 	stmt, err := GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from_t", "to_t",
-		[]string{"id", "amount"}, "_fivetran_deleted", false)
+		[]string{"id", "amount"}, []string{"id"}, "_fivetran_deleted", false)
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"INSERT INTO `s`.`to_t` (`id`,`amount`,`_fivetran_synced`,`_fivetran_deleted`) SELECT `id`,`amount`,`_fivetran_synced`,if(`_fivetran_active` = true, false, true) FROM `s`.`from_t` FINAL WHERE `_fivetran_active` = true",
+		"INSERT INTO `s`.`to_t` (`id`,`amount`,`_fivetran_synced`,`_fivetran_deleted`) SELECT `id`,`amount`,`_fivetran_synced`,if(`_fivetran_active` = true, false, true) FROM (SELECT `id`,`amount`,`_fivetran_synced`,`_fivetran_active` FROM `s`.`from_t` FINAL ORDER BY `id`,`_fivetran_start` DESC LIMIT 1 BY `id`) WHERE `_fivetran_active` = true",
 		stmt)
 
 	stmt, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from_t", "to_t",
-		[]string{"id"}, "_fivetran_deleted", true)
+		[]string{"id"}, []string{"id"}, "_fivetran_deleted", true)
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"INSERT INTO `s`.`to_t` (`id`,`_fivetran_synced`,`_fivetran_deleted`) SELECT `id`,`_fivetran_synced`,if(`_fivetran_active` = true, false, true) FROM `s`.`from_t` FINAL",
+		"INSERT INTO `s`.`to_t` (`id`,`_fivetran_synced`,`_fivetran_deleted`) SELECT `id`,`_fivetran_synced`,if(`_fivetran_active` = true, false, true) FROM (SELECT `id`,`_fivetran_synced`,`_fivetran_active` FROM `s`.`from_t` FINAL ORDER BY `id`,`_fivetran_start` DESC LIMIT 1 BY `id`)",
 		stmt)
 }
 
@@ -253,15 +253,18 @@ func TestGetInsertFromSelectWithHistoryColumnsStatementErrors(t *testing.T) {
 }
 
 func TestGetInsertFromSelectHistoryToSoftDeleteStatementErrors(t *testing.T) {
-	_, err := GetInsertFromSelectHistoryToSoftDeleteStatement("", "from", "to", []string{"id"}, "_fivetran_deleted", false)
+	_, err := GetInsertFromSelectHistoryToSoftDeleteStatement("", "from", "to", []string{"id"}, []string{"id"}, "_fivetran_deleted", false)
 	assert.ErrorContains(t, err, "schema name is empty")
 
-	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "", "to", []string{"id"}, "_fivetran_deleted", false)
+	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "", "to", []string{"id"}, []string{"id"}, "_fivetran_deleted", false)
 	assert.ErrorContains(t, err, "from table name is empty")
 
-	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "", []string{"id"}, "_fivetran_deleted", false)
+	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "", []string{"id"}, []string{"id"}, "_fivetran_deleted", false)
 	assert.ErrorContains(t, err, "to table name is empty")
 
-	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "to", []string{}, "_fivetran_deleted", false)
+	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "to", []string{}, []string{"id"}, "_fivetran_deleted", false)
 	assert.ErrorContains(t, err, "column names list is empty")
+
+	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "to", []string{"id"}, []string{}, "_fivetran_deleted", false)
+	assert.ErrorContains(t, err, "primary key column names list is empty")
 }

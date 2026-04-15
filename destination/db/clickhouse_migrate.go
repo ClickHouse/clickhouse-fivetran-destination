@@ -585,6 +585,7 @@ func (conn *ClickHouseConnection) MigrateHistoryToSoftDelete(
 	// Step 2: Build new TableDescription
 	var newCols []*types.ColumnDefinition
 	var colNames []string
+	var pkColNames []string
 	for _, col := range srcDesc.Columns {
 		// Skip history columns
 		if col.Name == constants.FivetranStart || col.Name == constants.FivetranEnd || col.Name == constants.FivetranActive {
@@ -596,6 +597,9 @@ func (conn *ClickHouseConnection) MigrateHistoryToSoftDelete(
 		}
 		newCols = append(newCols, col)
 		colNames = append(colNames, col.Name)
+		if col.IsPrimaryKey {
+			pkColNames = append(pkColNames, col.Name)
+		}
 	}
 	// Add _fivetran_deleted
 	if softDeletedColumn == "" {
@@ -611,7 +615,7 @@ func (conn *ClickHouseConnection) MigrateHistoryToSoftDelete(
 	}
 	// Step 4: INSERT...SELECT
 	insertStmt, err := sql.GetInsertFromSelectHistoryToSoftDeleteStatement(
-		schemaName, tableName, newTableName, colNames, softDeletedColumn, keepDeletedRows)
+		schemaName, tableName, newTableName, colNames, pkColNames, softDeletedColumn, keepDeletedRows)
 	if err != nil {
 		return err
 	}
