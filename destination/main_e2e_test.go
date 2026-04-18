@@ -210,7 +210,7 @@ func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
 
 func TestSoftTruncateBefore(t *testing.T) {
 	fileName := "input_soft_truncate_before.json"
-	tableName := "table_to_truncate"
+	tableName := "table_to_soft_truncate"
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
@@ -226,7 +226,7 @@ func TestSoftTruncateBefore(t *testing.T) {
 
 func TestHardTruncateBefore(t *testing.T) {
 	fileName := "input_hard_truncate_before.json"
-	tableName := "table_to_truncate"
+	tableName := "table_to_hard_truncate"
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 	assertTableRowsWithPK(t, tableName, [][]string{
@@ -524,7 +524,7 @@ func readConfigMap(t *testing.T) map[string]string {
 	rootDir := getProjectRootDir(t)
 	configBytes, err := os.ReadFile(fmt.Sprintf("%s/sdk_tests/configuration.json", rootDir))
 	require.NoError(t, err,
-		"copy the default configuration first: cp sdk_tests/default_configuration.json sdk_tests/configuration.json")
+		"copy the default configuration first: cp sdk_tests/default_configuration.json.txt sdk_tests/configuration.json")
 	m := make(map[string]string)
 	err = json.Unmarshal(configBytes, &m)
 	require.NoError(t, err)
