@@ -747,6 +747,10 @@ func (conn *ClickHouseConnection) HardDelete(
 		if err != nil {
 			return 0, err
 		}
+		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
+		if err != nil {
+			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
+		}
 		totalRows := 0
 		for {
 			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
@@ -764,7 +768,11 @@ func (conn *ClickHouseConnection) HardDelete(
 			}
 			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
 			if err != nil {
-				return totalRows, err
+				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
+				if waitErr != nil {
+					return totalRows, waitErr
+				}
+				return totalRows, nil
 			}
 		}
 		return totalRows, nil
@@ -793,6 +801,11 @@ func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
 			return 0, err
 		}
 
+		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
+		if err != nil {
+			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
+		}
+
 		totalRows := 0
 		for {
 			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
@@ -817,7 +830,11 @@ func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
 			}
 			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
 			if err != nil {
-				return totalRows, err
+				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
+				if waitErr != nil {
+					return totalRows, waitErr
+				}
+				return totalRows, nil
 			}
 		}
 		return totalRows, nil
@@ -961,8 +978,8 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 }
 
 // WaitAllMutationsCompleted waits for all async mutations to complete.
-// If mutation_sync=3 and alter_sync=3 was not enough,
-// and one of the nodes went down exactly at the time of the ALTER TABLE statement execution,
+// If mutation_sync=3 and alter_sync=3 is not enough if
+// one of the nodes went down exactly at the time of the ALTER TABLE statement execution,
 // we will still get the error code 341, which indicates that the mutations will still be completed asynchronously;
 // wait until all the nodes are available again, and all mutations are completed before sending the response.
 func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
