@@ -17,12 +17,6 @@ func GetRenameColumnStatement(schemaName string, tableName string, fromColumn st
 	if err != nil {
 		return "", err
 	}
-	if fromColumn == "" {
-		return "", fmt.Errorf("from column name is empty")
-	}
-	if toColumn == "" {
-		return "", fmt.Errorf("to column name is empty")
-	}
 	return fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", fullTableName, identifier(fromColumn), identifier(toColumn)), nil
 }
 
@@ -34,9 +28,6 @@ func GetUpdateColumnValueStatement(schemaName string, tableName string, column s
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
-	}
-	if column == "" {
-		return "", fmt.Errorf("column name is empty")
 	}
 	var sqlValue string
 	if isNull {
@@ -66,12 +57,6 @@ func GetUpdateRowsAtOperationTimestampStatement(
 	if err != nil {
 		return "", err
 	}
-	if column == "" {
-		return "", fmt.Errorf("column name is empty")
-	}
-	if operationTimestampNanos == "" {
-		return "", fmt.Errorf("operation timestamp is empty")
-	}
 	var sqlValue string
 	if isNull {
 		sqlValue = "NULL"
@@ -95,27 +80,12 @@ func GetCopyColumnUpdateStatement(schemaName string, tableName string, toColumn 
 	if err != nil {
 		return "", err
 	}
-	if fromColumn == "" {
-		return "", fmt.Errorf("from column name is empty")
-	}
-	if toColumn == "" {
-		return "", fmt.Errorf("to column name is empty")
-	}
 	return fmt.Sprintf("ALTER TABLE %s UPDATE %s = %s WHERE true", fullTableName, identifier(toColumn), identifier(fromColumn)), nil
 }
 
 // GetCreateTableAsStatement generates: CREATE TABLE `schema`.`toTable` AS `schema`.`fromTable`
 // Clones the table structure and engine settings.
 func GetCreateTableAsStatement(schemaName string, fromTable string, toTable string) (string, error) {
-	if schemaName == "" {
-		return "", fmt.Errorf("schema name is empty")
-	}
-	if fromTable == "" {
-		return "", fmt.Errorf("from table name is empty")
-	}
-	if toTable == "" {
-		return "", fmt.Errorf("to table name is empty")
-	}
 	fromIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(fromTable))
 	toIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(toTable))
 	return fmt.Sprintf("CREATE TABLE %s AS %s", toIdentifier, fromIdentifier), nil
@@ -142,9 +112,6 @@ func GetCloseActiveRowsStatement(
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
-	}
-	if operationTimestampNanos == "" {
-		return "", fmt.Errorf("operation timestamp is empty")
 	}
 	endTimestampNanos, err := subtractOneMillisecond(operationTimestampNanos)
 	if err != nil {
@@ -223,9 +190,6 @@ func GetInsertNewActiveVersionsStatement(
 	if len(tableColNames) == 0 {
 		return "", fmt.Errorf("column names list is empty")
 	}
-	if operationTimestampNanos == "" {
-		return "", fmt.Errorf("operation timestamp is empty")
-	}
 
 	// Step 1: Build the INSERT INTO part: INSERT INTO {schema.table} (<column_list>)
 	var insertColumnList []string
@@ -283,7 +247,7 @@ func GetInsertNewActiveVersionsStatement(
 
 	wherePart := fmt.Sprintf("WHERE `_fivetran_active` AND `_fivetran_start` < '%s'", operationTimestampNanos)
 
-	if overrideValue == nil && overrideColumn != "" {
+	if overrideValue == nil {
 		wherePart += fmt.Sprintf(" AND %s IS NOT NULL", identifier(overrideColumn))
 	}
 
@@ -305,15 +269,6 @@ func GetInsertFromSelectWithHistoryColumnsStatement(
 	colNames []string,
 	softDeletedColumn string,
 ) (string, error) {
-	if schemaName == "" {
-		return "", fmt.Errorf("schema name is empty")
-	}
-	if fromTable == "" {
-		return "", fmt.Errorf("from table name is empty")
-	}
-	if toTable == "" {
-		return "", fmt.Errorf("to table name is empty")
-	}
 	if len(colNames) == 0 {
 		return "", fmt.Errorf("column names list is empty")
 	}
@@ -389,15 +344,6 @@ func GetInsertFromSelectHistoryToSoftDeleteStatement(
 	softDeletedColumn string,
 	keepDeletedRows bool,
 ) (string, error) {
-	if schemaName == "" {
-		return "", fmt.Errorf("schema name is empty")
-	}
-	if fromTable == "" {
-		return "", fmt.Errorf("from table name is empty")
-	}
-	if toTable == "" {
-		return "", fmt.Errorf("to table name is empty")
-	}
 	if len(colNames) == 0 {
 		return "", fmt.Errorf("column names list is empty")
 	}

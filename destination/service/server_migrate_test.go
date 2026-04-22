@@ -223,3 +223,171 @@ func TestFormatMigrateValue_InvalidNaiveDate(t *testing.T) {
 	result := formatMigrateValue("not-a-date", pb.DataType_NAIVE_DATE)
 	assert.Equal(t, "not-a-date", result)
 }
+
+// Each Migrate handler validates non-optional proto fields inline, right where the
+// field is read. Downstream code trusts these invariants, so the handler must
+// respond with FailedMigrateResponse when any required scalar is empty.
+
+func TestHandleDropOperation_MissingColumn(t *testing.T) {
+	resp, err := handleDropOperation(context.Background(), nil, "schema", "table", &pb.DropOperation{
+		Entity: &pb.DropOperation_DropColumnInHistoryMode{
+			DropColumnInHistoryMode: &pb.DropColumnInHistoryMode{
+				OperationTimestamp: "2024-01-15T10:30:00Z",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "drop_column_in_history_mode.column is required")
+}
+
+func TestHandleCopyOperation_CopyTable_MissingFields(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      *pb.CopyTable
+		wantMsg string
+	}{
+		{"missing from_table", &pb.CopyTable{ToTable: "t2"}, "copy_table.from_table is required"},
+		{"missing to_table", &pb.CopyTable{FromTable: "t1"}, "copy_table.to_table is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handleCopyOperation(context.Background(), nil, "schema", "table", &pb.CopyOperation{
+				Entity: &pb.CopyOperation_CopyTable{CopyTable: tc.op},
+			})
+			require.NoError(t, err)
+			assert.Contains(t, resp.GetTask().GetMessage(), tc.wantMsg)
+		})
+	}
+}
+
+func TestHandleCopyOperation_CopyColumn_MissingFields(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      *pb.CopyColumn
+		wantMsg string
+	}{
+		{"missing from_column", &pb.CopyColumn{ToColumn: "b"}, "copy_column.from_column is required"},
+		{"missing to_column", &pb.CopyColumn{FromColumn: "a"}, "copy_column.to_column is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handleCopyOperation(context.Background(), nil, "schema", "table", &pb.CopyOperation{
+				Entity: &pb.CopyOperation_CopyColumn{CopyColumn: tc.op},
+			})
+			require.NoError(t, err)
+			assert.Contains(t, resp.GetTask().GetMessage(), tc.wantMsg)
+		})
+	}
+}
+
+func TestHandleCopyOperation_CopyTableToHistoryMode_MissingFields(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      *pb.CopyTableToHistoryMode
+		wantMsg string
+	}{
+		{"missing from_table", &pb.CopyTableToHistoryMode{ToTable: "t2"}, "copy_table_to_history_mode.from_table is required"},
+		{"missing to_table", &pb.CopyTableToHistoryMode{FromTable: "t1"}, "copy_table_to_history_mode.to_table is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handleCopyOperation(context.Background(), nil, "schema", "table", &pb.CopyOperation{
+				Entity: &pb.CopyOperation_CopyTableToHistoryMode{CopyTableToHistoryMode: tc.op},
+			})
+			require.NoError(t, err)
+			assert.Contains(t, resp.GetTask().GetMessage(), tc.wantMsg)
+		})
+	}
+}
+
+func TestHandleRenameOperation_RenameTable_MissingFields(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      *pb.RenameTable
+		wantMsg string
+	}{
+		{"missing from_table", &pb.RenameTable{ToTable: "t2"}, "rename_table.from_table is required"},
+		{"missing to_table", &pb.RenameTable{FromTable: "t1"}, "rename_table.to_table is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handleRenameOperation(context.Background(), nil, "schema", "table", &pb.RenameOperation{
+				Entity: &pb.RenameOperation_RenameTable{RenameTable: tc.op},
+			})
+			require.NoError(t, err)
+			assert.Contains(t, resp.GetTask().GetMessage(), tc.wantMsg)
+		})
+	}
+}
+
+func TestHandleRenameOperation_RenameColumn_MissingFields(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      *pb.RenameColumn
+		wantMsg string
+	}{
+		{"missing from_column", &pb.RenameColumn{ToColumn: "b"}, "rename_column.from_column is required"},
+		{"missing to_column", &pb.RenameColumn{FromColumn: "a"}, "rename_column.to_column is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handleRenameOperation(context.Background(), nil, "schema", "table", &pb.RenameOperation{
+				Entity: &pb.RenameOperation_RenameColumn{RenameColumn: tc.op},
+			})
+			require.NoError(t, err)
+			assert.Contains(t, resp.GetTask().GetMessage(), tc.wantMsg)
+		})
+	}
+}
+
+func TestHandleAddOperation_AddColumnWithDefault_MissingColumn(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnWithDefaultValue{
+			AddColumnWithDefaultValue: &pb.AddColumnWithDefaultValue{
+				ColumnType:   pb.DataType_STRING,
+				DefaultValue: "val",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, resp.GetTask().GetMessage(), "add_column_with_default_value.column is required")
+}
+
+func TestHandleAddOperation_HistoryMode_MissingColumn(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnInHistoryMode{
+			AddColumnInHistoryMode: &pb.AddColumnInHistoryMode{
+				ColumnType:         pb.DataType_STRING,
+				OperationTimestamp: "2024-01-15T10:30:00Z",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "add_column_in_history_mode.column is required")
+}
+
+func TestHandleUpdateColumnValue_MissingColumn(t *testing.T) {
+	resp, err := handleUpdateColumnValue(context.Background(), nil, "schema", "table",
+		&pb.UpdateColumnValueOperation{Value: "v"})
+	require.NoError(t, err)
+	assert.Contains(t, resp.GetTask().GetMessage(), "update_column_value.column is required")
+}
+
+func TestMigrate_MissingSchema(t *testing.T) {
+	// schema/table are checked before any connection is attempted, so a zero-value Server is safe here.
+	resp, err := (&Server{}).Migrate(context.Background(), &pb.MigrateRequest{
+		Details: &pb.MigrationDetails{Table: "t"},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, resp.GetTask().GetMessage(), "migration_details.schema is required")
+}
+
+func TestMigrate_MissingTable(t *testing.T) {
+	resp, err := (&Server{}).Migrate(context.Background(), &pb.MigrateRequest{
+		Details: &pb.MigrationDetails{Schema: "s"},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, resp.GetTask().GetMessage(), "migration_details.table is required")
+}

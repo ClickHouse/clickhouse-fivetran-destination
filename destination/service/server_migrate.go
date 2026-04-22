@@ -15,13 +15,19 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
-
 func (s *Server) Migrate(ctx context.Context, in *pb.MigrateRequest) (*pb.MigrateResponse, error) {
 	details := in.GetDetails()
 	schema := details.GetSchema()
 	table := details.GetTable()
 
 	log.Info(fmt.Sprintf("[Migrate] Starting for %s.%s", schema, table))
+
+	if schema == "" {
+		return FailedMigrateResponse(schema, table, fmt.Errorf("migration_details.schema is required")), nil
+	}
+	if table == "" {
+		return FailedMigrateResponse(schema, table, fmt.Errorf("migration_details.table is required")), nil
+	}
 
 	connConfig, err := config.ParseAll(in.GetConfiguration())
 	if err != nil {
@@ -80,6 +86,10 @@ func handleDropOperation(
 		col := entity.DropColumnInHistoryMode.GetColumn()
 		opTS := entity.DropColumnInHistoryMode.GetOperationTimestamp()
 		log.Info(fmt.Sprintf("[Migrate] Dropping column %s in history mode for %s.%s at %s", col, schema, table, opTS))
+
+		if col == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("drop_column_in_history_mode.column is required")), nil
+		}
 		tsNanos, err := parseTimestampToNanos(opTS)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -109,6 +119,13 @@ func handleCopyOperation(
 		fromTable := entity.CopyTable.GetFromTable()
 		toTable := entity.CopyTable.GetToTable()
 		log.Info(fmt.Sprintf("[Migrate] Copying table %s.%s to %s.%s", schema, fromTable, schema, toTable))
+
+		if fromTable == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("copy_table.from_table is required")), nil
+		}
+		if toTable == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("copy_table.to_table is required")), nil
+		}
 		err := conn.MigrateCopyTable(ctx, schema, fromTable, toTable)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -120,6 +137,13 @@ func handleCopyOperation(
 		fromCol := entity.CopyColumn.GetFromColumn()
 		toCol := entity.CopyColumn.GetToColumn()
 		log.Info(fmt.Sprintf("[Migrate] Copying column %s to %s in %s.%s", fromCol, toCol, schema, table))
+
+		if fromCol == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("copy_column.from_column is required")), nil
+		}
+		if toCol == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("copy_column.to_column is required")), nil
+		}
 		err := conn.MigrateCopyColumn(ctx, schema, table, fromCol, toCol)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -130,8 +154,15 @@ func handleCopyOperation(
 	case *pb.CopyOperation_CopyTableToHistoryMode:
 		fromTable := entity.CopyTableToHistoryMode.GetFromTable()
 		toTable := entity.CopyTableToHistoryMode.GetToTable()
-		softDeletedCol := entity.CopyTableToHistoryMode.GetSoftDeletedColumn()
+		softDeletedCol := entity.CopyTableToHistoryMode.GetSoftDeletedColumn() // optional per proto
 		log.Info(fmt.Sprintf("[Migrate] Copying table %s.%s to history mode %s.%s", schema, fromTable, schema, toTable))
+
+		if fromTable == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("copy_table_to_history_mode.from_table is required")), nil
+		}
+		if toTable == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("copy_table_to_history_mode.to_table is required")), nil
+		}
 		err := conn.MigrateCopyTableToHistoryMode(ctx, schema, fromTable, toTable, softDeletedCol)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -157,6 +188,13 @@ func handleRenameOperation(
 		fromTable := entity.RenameTable.GetFromTable()
 		toTable := entity.RenameTable.GetToTable()
 		log.Info(fmt.Sprintf("[Migrate] Renaming table %s.%s to %s.%s", schema, fromTable, schema, toTable))
+
+		if fromTable == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("rename_table.from_table is required")), nil
+		}
+		if toTable == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("rename_table.to_table is required")), nil
+		}
 		err := conn.RenameTable(ctx, schema, fromTable, toTable)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -168,6 +206,13 @@ func handleRenameOperation(
 		fromCol := entity.RenameColumn.GetFromColumn()
 		toCol := entity.RenameColumn.GetToColumn()
 		log.Info(fmt.Sprintf("[Migrate] Renaming column %s to %s in %s.%s", fromCol, toCol, schema, table))
+
+		if fromCol == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("rename_column.from_column is required")), nil
+		}
+		if toCol == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("rename_column.to_column is required")), nil
+		}
 		err := conn.RenameColumn(ctx, schema, table, fromCol, toCol)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -192,10 +237,13 @@ func handleAddOperation(
 	case *pb.AddOperation_AddColumnWithDefaultValue:
 		col := entity.AddColumnWithDefaultValue.GetColumn()
 		colType := entity.AddColumnWithDefaultValue.GetColumnType()
-		defaultValue := entity.AddColumnWithDefaultValue.GetDefaultValue()
+		defaultValue := entity.AddColumnWithDefaultValue.GetDefaultValue() // pass-through; "" is a valid default
 		log.Info(fmt.Sprintf("[Migrate] Adding column %s (%s) with default '%s' to %s.%s",
 			col, colType.String(), defaultValue, schema, table))
 
+		if col == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("add_column_with_default_value.column is required")), nil
+		}
 		chType, err := migrateColumnType(colType)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -211,10 +259,13 @@ func handleAddOperation(
 	case *pb.AddOperation_AddColumnInHistoryMode:
 		col := entity.AddColumnInHistoryMode.GetColumn()
 		colType := entity.AddColumnInHistoryMode.GetColumnType()
-		defaultValue := entity.AddColumnInHistoryMode.GetDefaultValue()
+		defaultValue := entity.AddColumnInHistoryMode.GetDefaultValue() // pass-through; "" is a valid default
 		opTS := entity.AddColumnInHistoryMode.GetOperationTimestamp()
 		log.Info(fmt.Sprintf("[Migrate] Adding column %s in history mode to %s.%s at %s", col, schema, table, opTS))
 
+		if col == "" {
+			return FailedMigrateResponse(schema, table, fmt.Errorf("add_column_in_history_mode.column is required")), nil
+		}
 		chType, err := migrateColumnType(colType)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -244,12 +295,16 @@ func handleUpdateColumnValue(
 	op *pb.UpdateColumnValueOperation,
 ) (*pb.MigrateResponse, error) {
 	col := op.GetColumn()
-	value := op.GetValue()
+	value := op.GetValue() // pass-through; "" means NULL
 	isNull := value == "" || value == "NULL"
 	if isNull {
 		log.Info(fmt.Sprintf("[Migrate] Setting column %s to NULL in %s.%s", col, schema, table))
 	} else {
 		log.Info(fmt.Sprintf("[Migrate] Updating column %s to '%s' in %s.%s", col, value, schema, table))
+	}
+
+	if col == "" {
+		return FailedMigrateResponse(schema, table, fmt.Errorf("update_column_value.column is required")), nil
 	}
 	err := conn.UpdateColumnValue(ctx, schema, table, col, value, isNull)
 	if err != nil {

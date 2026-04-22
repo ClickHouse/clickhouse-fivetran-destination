@@ -15,12 +15,6 @@ func TestGetRenameColumnStatement(t *testing.T) {
 
 	_, err = GetRenameColumnStatement("", "t", "old", "new")
 	assert.ErrorContains(t, err, "schema name for table t is empty")
-
-	_, err = GetRenameColumnStatement("s", "t", "", "new")
-	assert.ErrorContains(t, err, "from column name is empty")
-
-	_, err = GetRenameColumnStatement("s", "t", "old", "")
-	assert.ErrorContains(t, err, "to column name is empty")
 }
 
 func TestGetUpdateColumnValueStatement(t *testing.T) {
@@ -31,9 +25,6 @@ func TestGetUpdateColumnValueStatement(t *testing.T) {
 	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", "", true)
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = NULL WHERE true", stmt)
-
-	_, err = GetUpdateColumnValueStatement("s", "t", "", "42", false)
-	assert.ErrorContains(t, err, "column name is empty")
 }
 
 func TestGetUpdateRowsAtOperationTimestampStatement(t *testing.T) {
@@ -48,39 +39,18 @@ func TestGetUpdateRowsAtOperationTimestampStatement(t *testing.T) {
 	assert.Equal(t,
 		"ALTER TABLE `s`.`t` UPDATE `col` = NULL WHERE `_fivetran_start` = '1117314420000000000'",
 		stmt)
-
-	_, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "", "42", false, "1117314420000000000")
-	assert.ErrorContains(t, err, "column name is empty")
-
-	_, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", "42", false, "")
-	assert.ErrorContains(t, err, "operation timestamp is empty")
 }
 
 func TestGetCopyColumnUpdateStatement(t *testing.T) {
 	stmt, err := GetCopyColumnUpdateStatement("s", "t", "new_col", "old_col")
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `new_col` = `old_col` WHERE true", stmt)
-
-	_, err = GetCopyColumnUpdateStatement("s", "t", "", "old_col")
-	assert.ErrorContains(t, err, "to column name is empty")
-
-	_, err = GetCopyColumnUpdateStatement("s", "t", "new_col", "")
-	assert.ErrorContains(t, err, "from column name is empty")
 }
 
 func TestGetCreateTableAsStatement(t *testing.T) {
 	stmt, err := GetCreateTableAsStatement("s", "from_t", "to_t")
 	assert.NoError(t, err)
 	assert.Equal(t, "CREATE TABLE `s`.`to_t` AS `s`.`from_t`", stmt)
-
-	_, err = GetCreateTableAsStatement("", "from_t", "to_t")
-	assert.ErrorContains(t, err, "schema name is empty")
-
-	_, err = GetCreateTableAsStatement("s", "", "to_t")
-	assert.ErrorContains(t, err, "from table name is empty")
-
-	_, err = GetCreateTableAsStatement("s", "from_t", "")
-	assert.ErrorContains(t, err, "to table name is empty")
 }
 
 func TestGetCloseActiveRowsStatement(t *testing.T) {
@@ -96,9 +66,6 @@ func TestGetCloseActiveRowsStatement(t *testing.T) {
 	assert.Equal(t,
 		unfiltered+" AND `desc` IS NOT NULL",
 		stmt)
-
-	_, err = GetCloseActiveRowsStatement("s", "t", "", "")
-	assert.ErrorContains(t, err, "operation timestamp is empty")
 }
 
 func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
@@ -152,7 +119,7 @@ func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
 		"INSERT INTO `s`.`t` (`id`,`amount`,`desc`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) SELECT `id`,`amount`,NULL,`_fivetran_synced`,'1117314420000000000','9223372036000000000',true FROM `s`.`t` FINAL WHERE `_fivetran_active` AND `_fivetran_start` < '1117314420000000000' AND `desc` IS NOT NULL",
 		stmt)
 
-	_, err = GetInsertNewActiveVersionsStatement("s", "t", []*types.ColumnDefinition{}, "", nil, "ts")
+	_, err = GetInsertNewActiveVersionsStatement("s", "t", []*types.ColumnDefinition{}, "article", nil, "1117314420000000000")
 	assert.ErrorContains(t, err, "column names list is empty")
 }
 
@@ -184,6 +151,42 @@ func TestGetInsertFromSelectHistoryToSoftDeleteStatement(t *testing.T) {
 	assert.Equal(t,
 		"INSERT INTO `s`.`to_t` (`id`,`_fivetran_synced`,`_fivetran_deleted`) SELECT `id`,`_fivetran_synced`,if(`_fivetran_active` = true, false, true) FROM (SELECT `id`,`_fivetran_synced`,`_fivetran_active` FROM `s`.`from_t` FINAL ORDER BY `id`,`_fivetran_start` DESC LIMIT 1 BY `id`)",
 		stmt)
+
+	// composite primary keys: ORDER BY and LIMIT 1 BY must list every PK column in order
+	stmt, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from_t", "to_t",
+		[]string{"tenant_id", "id", "amount"},
+		[]string{"tenant_id", "id"},
+		"_fivetran_deleted", false)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"INSERT INTO `s`.`to_t` (`tenant_id`,`id`,`amount`,`_fivetran_synced`,`_fivetran_deleted`) SELECT `tenant_id`,`id`,`amount`,`_fivetran_synced`,if(`_fivetran_active` = true, false, true) FROM (SELECT `tenant_id`,`id`,`amount`,`_fivetran_synced`,`_fivetran_active` FROM `s`.`from_t` FINAL ORDER BY `tenant_id`,`id`,`_fivetran_start` DESC LIMIT 1 BY `tenant_id`,`id`) WHERE `_fivetran_active` = true",
+		stmt)
+}
+
+func TestSubtractOneMillisecond(t *testing.T) {
+	// typical nanosecond epoch timestamp
+	out, err := subtractOneMillisecond("1117314420000000000")
+	assert.NoError(t, err)
+	assert.Equal(t, "1117314419999000000", out)
+
+	// exact boundary: input equal to 1ms in nanos yields 0
+	out, err = subtractOneMillisecond("1000000")
+	assert.NoError(t, err)
+	assert.Equal(t, "0", out)
+
+	// underflow: input smaller than 1ms in nanos yields a negative value
+	// (not expected for real timestamps, but pins down current behavior)
+	out, err = subtractOneMillisecond("500000")
+	assert.NoError(t, err)
+	assert.Equal(t, "-500000", out)
+
+	// non-numeric input surfaces the parse error
+	_, err = subtractOneMillisecond("not-a-number")
+	assert.Error(t, err)
+
+	// empty string also surfaces a parse error
+	_, err = subtractOneMillisecond("")
+	assert.Error(t, err)
 }
 
 func TestGetUpdateColumnValueStatementSpecialChars(t *testing.T) {
@@ -207,62 +210,30 @@ func TestGetTableRowCountQuery(t *testing.T) {
 	query, err := GetTableRowCountQuery("foo", "bar")
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT count() FROM `foo`.`bar` LIMIT 1", query)
-
-	_, err = GetTableRowCountQuery("", "bar")
-	assert.ErrorContains(t, err, "schema name for table bar is empty")
-
-	_, err = GetTableRowCountQuery("foo", "")
-	assert.ErrorContains(t, err, "table name is empty")
 }
 
 func TestGetMaxFivetranStartQuery(t *testing.T) {
 	query, err := GetMaxFivetranStartQuery("foo", "bar")
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT max(`_fivetran_start`) FROM `foo`.`bar` WHERE `_fivetran_active` = true", query)
-
-	_, err = GetMaxFivetranStartQuery("", "bar")
-	assert.ErrorContains(t, err, "schema name for table bar is empty")
-
-	_, err = GetMaxFivetranStartQuery("foo", "")
-	assert.ErrorContains(t, err, "table name is empty")
 }
 
-func TestGetCloseActiveRowsStatementErrors(t *testing.T) {
-	_, err := GetCloseActiveRowsStatement("", "t", "123", "")
-	assert.ErrorContains(t, err, "schema name for table t is empty")
-
-	_, err = GetCloseActiveRowsStatement("s", "", "123", "")
-	assert.ErrorContains(t, err, "table name is empty")
-
-	_, err = GetCloseActiveRowsStatement("s", "t", "not-a-number", "")
+func TestGetCloseActiveRowsStatement_InvalidTimestamp(t *testing.T) {
+	// A non-numeric operation timestamp is a real parse error — not a boundary-validated field.
+	_, err := GetCloseActiveRowsStatement("s", "t", "not-a-number", "")
 	assert.ErrorContains(t, err, "invalid operation timestamp")
 }
 
-func TestGetInsertFromSelectWithHistoryColumnsStatementErrors(t *testing.T) {
-	_, err := GetInsertFromSelectWithHistoryColumnsStatement("", "from", "to", []string{"id"}, "")
-	assert.ErrorContains(t, err, "schema name is empty")
-
-	_, err = GetInsertFromSelectWithHistoryColumnsStatement("s", "", "to", []string{"id"}, "")
-	assert.ErrorContains(t, err, "from table name is empty")
-
-	_, err = GetInsertFromSelectWithHistoryColumnsStatement("s", "from", "", []string{"id"}, "")
-	assert.ErrorContains(t, err, "to table name is empty")
-
-	_, err = GetInsertFromSelectWithHistoryColumnsStatement("s", "from", "to", []string{}, "")
+func TestGetInsertFromSelectWithHistoryColumnsStatement_EmptyColumns(t *testing.T) {
+	// Internal invariant: colNames is derived from DescribeTable and must be non-empty.
+	_, err := GetInsertFromSelectWithHistoryColumnsStatement("s", "from", "to", []string{}, "")
 	assert.ErrorContains(t, err, "column names list is empty")
 }
 
-func TestGetInsertFromSelectHistoryToSoftDeleteStatementErrors(t *testing.T) {
-	_, err := GetInsertFromSelectHistoryToSoftDeleteStatement("", "from", "to", []string{"id"}, []string{"id"}, "_fivetran_deleted", false)
-	assert.ErrorContains(t, err, "schema name is empty")
-
-	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "", "to", []string{"id"}, []string{"id"}, "_fivetran_deleted", false)
-	assert.ErrorContains(t, err, "from table name is empty")
-
-	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "", []string{"id"}, []string{"id"}, "_fivetran_deleted", false)
-	assert.ErrorContains(t, err, "to table name is empty")
-
-	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "to", []string{}, []string{"id"}, "_fivetran_deleted", false)
+func TestGetInsertFromSelectHistoryToSoftDeleteStatement_InternalInvariants(t *testing.T) {
+	// colNames and pkColNames are derived internally from DescribeTable; these invariants
+	// are still enforced by the builder.
+	_, err := GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "to", []string{}, []string{"id"}, "_fivetran_deleted", false)
 	assert.ErrorContains(t, err, "column names list is empty")
 
 	_, err = GetInsertFromSelectHistoryToSoftDeleteStatement("s", "from", "to", []string{"id"}, []string{}, "_fivetran_deleted", false)
