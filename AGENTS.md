@@ -35,6 +35,16 @@ The codebase lives under `destination/` and is organized as:
 
 All commands are explained in [CONTRIBUTING.md](./CONTRIBUTING.md) and defined in the [Makefile](./Makefile). Before wanting to execute tests or lints, check these files.
 
+## Required finishing checks (before declaring work done)
+
+After any Go code change, run these three commands in order and confirm they pass. Do **not** skip `make lint` — the Cursor-integrated diagnostics (`ReadLints`) use `gopls` and do **not** run the project-configured `golangci-lint` rule set, so it is not a substitute.
+
+1. `go build ./...`
+2. `go test ./destination/...` (scoped subset is fine when the change is localized; run the full suite for anything touching shared code)
+3. `make lint` — runs Dockerized `golangci-lint` against `.golangci.yml`. This is the authoritative linter for this repo.
+
+If you skip any of these, say so explicitly and explain why.
+
 ## Testing
 
 Refer to the "Running Go tests" and "Running tests with Fivetran SDK tester" sections in [CONTRIBUTING.md](./CONTRIBUTING.md) for full details.
@@ -85,7 +95,7 @@ To debug SDK test scenarios without modifying Go test code, run the destination 
 
 ## Code style
 
-- Linter: [golangci-lint](https://golangci-lint.run) configured in [.golangci.yml](./.golangci.yml). Run with `make lint`.
+- Linter: [golangci-lint](https://golangci-lint.run) configured in [.golangci.yml](./.golangci.yml). Run with `make lint` — this is required before declaring work done (see "Required finishing checks" above). `ReadLints` / `gopls` diagnostics are not a substitute; `golangci-lint` runs additional checks (e.g. `staticcheck`, `errcheck`).
 - Use `fmt.Errorf` with `%w` for error wrapping.
 - Logging uses `zerolog` via the `destination/common/log` package — use `log.Info`, `log.Warn`, `log.Error`.
 - Assertions in tests use `github.com/stretchr/testify` (`assert` and `require`).
