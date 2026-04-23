@@ -89,6 +89,15 @@
                "table": "transaction_drop"
             }
          ]
+      },
+      {
+         "update_column_value": [
+            {
+               "table": "transaction",
+               "column": "operation_time",
+               "value": "2024-01-15T10:30:00.123Z"
+            }
+         ]
       }
    ],
    "describe_table" : [

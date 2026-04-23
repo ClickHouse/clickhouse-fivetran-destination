@@ -45,40 +45,6 @@ func TestMigrateColumnType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown datatype")
 }
 
-func TestFormatMigrateValue(t *testing.T) {
-	// UTC_DATETIME — converts to nanoseconds
-	result := formatMigrateValue("2005-05-28T20:57:00Z", pb.DataType_UTC_DATETIME)
-	assert.Equal(t, "1117313820000000000", result)
-
-	// UTC_DATETIME with subseconds
-	result = formatMigrateValue("2024-01-15T10:30:00.123Z", pb.DataType_UTC_DATETIME)
-	assert.Equal(t, "1705314600123000000", result)
-
-	// NAIVE_DATETIME — reformats
-	result = formatMigrateValue("2005-05-28T20:57:00", pb.DataType_NAIVE_DATETIME)
-	assert.Equal(t, "2005-05-28 20:57:00", result)
-
-	// NAIVE_DATE — passes through
-	result = formatMigrateValue("2005-05-28", pb.DataType_NAIVE_DATE)
-	assert.Equal(t, "2005-05-28", result)
-
-	// STRING — passes through unchanged
-	result = formatMigrateValue("hello world", pb.DataType_STRING)
-	assert.Equal(t, "hello world", result)
-
-	// Invalid datetime — returns original value
-	result = formatMigrateValue("not-a-date", pb.DataType_UTC_DATETIME)
-	assert.Equal(t, "not-a-date", result)
-
-	// Empty value
-	result = formatMigrateValue("", pb.DataType_STRING)
-	assert.Equal(t, "", result)
-
-	// INT type — passes through
-	result = formatMigrateValue("42", pb.DataType_INT)
-	assert.Equal(t, "42", result)
-}
-
 func TestParseTimestampToNanos(t *testing.T) {
 	// RFC3339 format
 	nanos, err := parseTimestampToNanos("2005-05-28T20:57:00Z")
@@ -189,6 +155,41 @@ func TestHandleAddOperation_HistoryMode_InvalidTimestamp(t *testing.T) {
 	assert.Contains(t, resp.GetTask().GetMessage(), "failed to parse operation timestamp")
 }
 
+// values.NewMigrateValue surfaces UTC_DATETIME parse failures to the caller; make sure
+// the handler propagates that error rather than silently sending a malformed literal
+// to ClickHouse (regression guard — the old formatMigrateValue quietly passed the
+// raw string through on parse failure).
+func TestHandleAddOperation_AddColumnWithDefault_InvalidUTCDateTime(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnWithDefaultValue{
+			AddColumnWithDefaultValue: &pb.AddColumnWithDefaultValue{
+				Column:       "col",
+				ColumnType:   pb.DataType_UTC_DATETIME,
+				DefaultValue: "not-a-date",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "UTC datetime")
+}
+
+func TestHandleAddOperation_HistoryMode_InvalidUTCDateTime(t *testing.T) {
+	resp, err := handleAddOperation(context.Background(), nil, "schema", "table", &pb.AddOperation{
+		Entity: &pb.AddOperation_AddColumnInHistoryMode{
+			AddColumnInHistoryMode: &pb.AddColumnInHistoryMode{
+				Column:             "col",
+				ColumnType:         pb.DataType_UTC_DATETIME,
+				DefaultValue:       "not-a-date",
+				OperationTimestamp: "2024-01-15T10:30:00Z",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp.GetTask())
+	assert.Contains(t, resp.GetTask().GetMessage(), "UTC datetime")
+}
+
 func TestHandleTableSyncModeMigration_UnsupportedLiveTransitions(t *testing.T) {
 	unsupportedTypes := []pb.TableSyncModeMigrationType{
 		pb.TableSyncModeMigrationType_SOFT_DELETE_TO_LIVE,
@@ -212,16 +213,6 @@ func TestHandleTableSyncModeMigration_DefaultUnknownType(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp.GetTask())
 	assert.Contains(t, resp.GetTask().GetMessage(), "unknown sync mode migration type")
-}
-
-func TestFormatMigrateValue_InvalidNaiveDatetime(t *testing.T) {
-	result := formatMigrateValue("not-a-date", pb.DataType_NAIVE_DATETIME)
-	assert.Equal(t, "not-a-date", result)
-}
-
-func TestFormatMigrateValue_InvalidNaiveDate(t *testing.T) {
-	result := formatMigrateValue("not-a-date", pb.DataType_NAIVE_DATE)
-	assert.Equal(t, "not-a-date", result)
 }
 
 // Each Migrate handler validates non-optional proto fields inline, right where the
@@ -373,6 +364,43 @@ func TestHandleUpdateColumnValue_MissingColumn(t *testing.T) {
 		&pb.UpdateColumnValueOperation{Value: "v"})
 	require.NoError(t, err)
 	assert.Contains(t, resp.GetTask().GetMessage(), "update_column_value.column is required")
+}
+
+// buildUpdateColumnMigrateValue short-circuits to SQL NULL when isNull is true,
+// without round-tripping to DescribeTable. The nil conn proves that contract:
+// any accidental DescribeTable call would panic.
+func TestBuildUpdateColumnMigrateValue_NullShortCircuit(t *testing.T) {
+	mv, err := buildUpdateColumnMigrateValue(context.Background(), nil, "s", "t", "col", "", true)
+	require.NoError(t, err)
+	assert.True(t, mv.IsNull())
+	assert.Equal(t, "NULL", mv.Literal())
+}
+
+// The SDK tester's set_column_to_null scenario arrives as an
+// UpdateColumnValueOperation with value either "" or the literal string "NULL"
+// (see AGENTS.md). Both must be treated as SQL NULL; any other value — even
+// one that looks similar, like "null" or "0" — is a real value that should be
+// written as a quoted literal.
+func TestIsSetColumnToNullValue(t *testing.T) {
+	cases := []struct {
+		value string
+		null  bool
+	}{
+		{"", true},
+		{"NULL", true},
+		{"null", false}, // case-sensitive per spec
+		{"Null", false},
+		{"0", false},
+		{"false", false},
+		{"NULL ", false}, // trailing whitespace is a real value
+		{" NULL", false},
+		{"anything else", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.value, func(t *testing.T) {
+			assert.Equal(t, tc.null, isSetColumnToNullValue(tc.value))
+		})
+	}
 }
 
 func TestMigrate_MissingSchema(t *testing.T) {

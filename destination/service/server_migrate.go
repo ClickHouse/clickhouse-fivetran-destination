@@ -12,6 +12,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/db"
 	"fivetran.com/fivetran_sdk/destination/db/config"
 	"fivetran.com/fivetran_sdk/destination/db/sql"
+	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
 
@@ -248,8 +249,11 @@ func handleAddOperation(
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
-		formattedValue := formatMigrateValue(defaultValue, colType)
-		err = conn.MigrateAddColumnWithDefault(ctx, schema, table, col, chType.Type, chType.Comment, formattedValue)
+		defaultMV, err := values.NewMigrateValue(colType, defaultValue)
+		if err != nil {
+			return FailedMigrateResponse(schema, table, err), nil
+		}
+		err = conn.MigrateAddColumnWithDefault(ctx, schema, table, col, chType.Type, chType.Comment, defaultMV)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
@@ -274,7 +278,11 @@ func handleAddOperation(
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
-		err = conn.MigrateAddColumnInHistoryMode(ctx, schema, table, col, chType.Type, chType.Comment, defaultValue, tsNanos)
+		defaultMV, err := values.NewMigrateValue(colType, defaultValue)
+		if err != nil {
+			return FailedMigrateResponse(schema, table, err), nil
+		}
+		err = conn.MigrateAddColumnInHistoryMode(ctx, schema, table, col, chType.Type, chType.Comment, defaultMV, tsNanos)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
@@ -296,7 +304,7 @@ func handleUpdateColumnValue(
 ) (*pb.MigrateResponse, error) {
 	col := op.GetColumn()
 	value := op.GetValue() // pass-through; "" means NULL
-	isNull := value == "" || value == "NULL"
+	isNull := isSetColumnToNullValue(value)
 	if isNull {
 		log.Info(fmt.Sprintf("[Migrate] Setting column %s to NULL in %s.%s", col, schema, table))
 	} else {
@@ -306,12 +314,70 @@ func handleUpdateColumnValue(
 	if col == "" {
 		return FailedMigrateResponse(schema, table, fmt.Errorf("update_column_value.column is required")), nil
 	}
-	err := conn.UpdateColumnValue(ctx, schema, table, col, value, isNull)
+
+	// UpdateColumnValueOperation carries no DataType in the proto (unlike
+	// AddColumnWithDefaultValue, which does). To apply the same type-aware
+	// formatting as the add-column path — critical for UTC_DATETIME, where
+	// DateTime64(9,'UTC') needs an unambiguous nanosecond literal — we
+	// recover the Fivetran DataType from the existing column metadata.
+	//
+	// This round-trip goes away once the upstream proto adds a DataType field
+	// to UpdateColumnValueOperation (tracked in fivetran_partner_sdk).
+	defaultVal, err := buildUpdateColumnMigrateValue(ctx, conn, schema, table, col, value, isNull)
 	if err != nil {
+		return FailedMigrateResponse(schema, table, err), nil
+	}
+	if err := conn.UpdateColumnValue(ctx, schema, table, col, defaultVal); err != nil {
 		return FailedMigrateResponse(schema, table, err), nil
 	}
 	log.Info(fmt.Sprintf("[Migrate] Updated column %s in %s.%s", col, schema, table))
 	return SuccessfulMigrateResponse(), nil
+}
+
+// isSetColumnToNullValue reports whether an UpdateColumnValueOperation.Value
+// should be treated as SQL NULL.
+//
+// The SDK tester's set_column_to_null scenario arrives as an
+// UpdateColumnValueOperation with value == "" or value == "NULL" (the literal
+// four-character string, not the SQL keyword). Both must be treated as null
+// per AGENTS.md; anything else is a real value.
+func isSetColumnToNullValue(value string) bool {
+	return value == "" || value == "NULL"
+}
+
+// buildUpdateColumnMigrateValue recovers the column's Fivetran DataType by
+// describing the destination table, then formats value accordingly. When the
+// column's ClickHouse type can't be mapped back to a Fivetran type (e.g. the
+// table was created outside this connector), it falls back to the pre-fix
+// behavior of treating value as an opaque quoted literal.
+func buildUpdateColumnMigrateValue(
+	ctx context.Context,
+	conn *db.ClickHouseConnection,
+	schema string,
+	table string,
+	col string,
+	value string,
+	isNull bool,
+) (values.MigrateValue, error) {
+	if isNull {
+		return values.NewMigrateValueNull(), nil
+	}
+	tableDesc, err := conn.DescribeTable(ctx, schema, table)
+	if err != nil {
+		return values.MigrateValue{}, err
+	}
+	colDef := tableDesc.Mapping[col]
+	if colDef == nil {
+		return values.MigrateValue{}, fmt.Errorf("column %s does not exist in %s.%s", col, schema, table)
+	}
+	colType, _, typeErr := dt.ToFivetranDataType(colDef.Type, colDef.Comment, colDef.DecimalParams)
+	if typeErr != nil {
+		log.Warn(fmt.Sprintf(
+			"[Migrate] Could not recover Fivetran type for %s.%s.%s (%s); falling back to untyped literal: %v",
+			schema, table, col, colDef.Type, typeErr))
+		return values.NewMigrateValueQuoted(value), nil
+	}
+	return values.NewMigrateValue(colType, value)
 }
 
 func handleTableSyncModeMigration(
@@ -377,37 +443,6 @@ func migrateColumnType(colType pb.DataType) (dt.ClickHouseType, error) {
 		chType.Type = fmt.Sprintf("Nullable(%s)", chType.Type)
 	}
 	return chType, nil
-}
-
-// formatMigrateValue formats a value for use in SQL UPDATE statements based on the Fivetran DataType.
-// For datetime types, converts ISO 8601 to nanosecond timestamp format.
-func formatMigrateValue(value string, colType pb.DataType) string {
-	switch colType {
-	case pb.DataType_UTC_DATETIME:
-		t, err := time.Parse(time.RFC3339, value)
-		if err != nil {
-			// Try alternative format
-			t, err = time.Parse("2006-01-02T15:04:05Z", value)
-			if err != nil {
-				return value
-			}
-		}
-		return strconv.FormatInt(t.UnixNano(), 10)
-	case pb.DataType_NAIVE_DATETIME:
-		t, err := time.Parse("2006-01-02T15:04:05", value)
-		if err != nil {
-			return value
-		}
-		return t.Format("2006-01-02 15:04:05")
-	case pb.DataType_NAIVE_DATE:
-		t, err := time.Parse("2006-01-02", value)
-		if err != nil {
-			return value
-		}
-		return t.Format("2006-01-02")
-	default:
-		return value
-	}
 }
 
 // parseTimestampToNanos parses an ISO 8601 timestamp string and returns nanoseconds since epoch as a string.

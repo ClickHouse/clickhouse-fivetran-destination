@@ -51,6 +51,13 @@
                "data_type": "STRING",
                "default_value": "Ordered article",
                "operation_timestamp": "2005-05-28T20:57:00Z"
+            },
+            {
+               "table": "transaction_history",
+               "column": "next_review",
+               "data_type": "UTC_DATETIME",
+               "default_value": "2024-01-15T10:30:00.123Z",
+               "operation_timestamp": "2005-05-28T20:57:00Z"
             }
          ],
          "drop_column_in_history_mode": [

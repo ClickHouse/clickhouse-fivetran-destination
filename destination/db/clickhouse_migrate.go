@@ -10,6 +10,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/sql"
+	"fivetran.com/fivetran_sdk/destination/db/values"
 )
 
 const (
@@ -40,7 +41,7 @@ func (conn *ClickHouseConnection) RenameColumn(
 	return conn.ExecStatement(ctx, statement, migrateRenameColumn, false)
 }
 
-// UpdateColumnValue updates all rows in a column to the given value (or NULL if isNull).
+// UpdateColumnValue updates all rows in a column to the given value (which may be SQL NULL).
 // This is a mutation operation. The error handling pattern matches TruncateTable:
 // if ExecStatement returns an incomplete-mutation error, WaitAllMutationsCompleted
 // polls until the mutation finishes — returning nil means the mutation completed successfully.
@@ -49,10 +50,9 @@ func (conn *ClickHouseConnection) UpdateColumnValue(
 	schemaName string,
 	tableName string,
 	column string,
-	value string,
-	isNull bool,
+	value values.MigrateValue,
 ) error {
-	statement, err := sql.GetUpdateColumnValueStatement(schemaName, tableName, column, value, isNull)
+	statement, err := sql.GetUpdateColumnValueStatement(schemaName, tableName, column, value)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnWithDefault(
 	column string,
 	chType string,
 	comment string,
-	defaultValue string,
+	defaultValue values.MigrateValue,
 ) error {
 	// Step 1: Add column
 	addOp := &types.AlterTableOp{
@@ -194,7 +194,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnWithDefault(
 		return err
 	}
 	// Step 2: Set default value
-	return conn.UpdateColumnValue(ctx, schemaName, tableName, column, defaultValue, false)
+	return conn.UpdateColumnValue(ctx, schemaName, tableName, column, defaultValue)
 }
 
 func (conn *ClickHouseConnection) MigrateUpdateRowsAtOperationTimestamp(
@@ -202,12 +202,11 @@ func (conn *ClickHouseConnection) MigrateUpdateRowsAtOperationTimestamp(
 	schemaName string,
 	tableName string,
 	column string,
-	value string,
-	isNull bool,
+	value values.MigrateValue,
 	operationTimestampNanos string,
 ) error {
 	statement, err := sql.GetUpdateRowsAtOperationTimestampStatement(
-		schemaName, tableName, column, value, isNull, operationTimestampNanos)
+		schemaName, tableName, column, value, operationTimestampNanos)
 	if err != nil {
 		return err
 	}
@@ -295,7 +294,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	column string,
 	chType string,
 	comment string,
-	defaultValue string,
+	defaultValue values.MigrateValue,
 	operationTimestampNanos string,
 ) error {
 	// Validate preconditions: table must be non-empty, max(_fivetran_start) <= operation_timestamp
@@ -330,7 +329,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	}
 	// Step 3: INSERT new active rows with default value for the new column
 	insertStmt, err := sql.GetInsertNewActiveVersionsStatement(
-		schemaName, tableName, tableDesc.Columns, column, &defaultValue, operationTimestampNanos)
+		schemaName, tableName, tableDesc.Columns, column, defaultValue, operationTimestampNanos)
 	if err != nil {
 		return err
 	}
@@ -345,7 +344,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	// Step 4: Update rows at operation timestamp.
 	// This follows the helper guide for same-timestamp composability.
 	err = conn.MigrateUpdateRowsAtOperationTimestamp(
-		ctx, schemaName, tableName, column, defaultValue, false, operationTimestampNanos)
+		ctx, schemaName, tableName, column, defaultValue, operationTimestampNanos)
 	if err != nil {
 		return err
 	}
@@ -392,7 +391,7 @@ func (conn *ClickHouseConnection) MigrateDropColumnInHistoryMode(
 	}
 	// Step 2: INSERT new active rows with column = NULL (only for rows where column IS NOT NULL)
 	insertStmt, err := sql.GetInsertNewActiveVersionsStatement(
-		schemaName, tableName, tableDesc.Columns, column, nil, operationTimestampNanos)
+		schemaName, tableName, tableDesc.Columns, column, values.NewMigrateValueNull(), operationTimestampNanos)
 	if err != nil {
 		return err
 	}
@@ -408,7 +407,7 @@ func (conn *ClickHouseConnection) MigrateDropColumnInHistoryMode(
 	// This handles chained migrations with the same timestamp where active rows may already
 	// exist at _fivetran_start = operation_timestamp.
 	err = conn.MigrateUpdateRowsAtOperationTimestamp(
-		ctx, schemaName, tableName, column, "", true, operationTimestampNanos)
+		ctx, schemaName, tableName, column, values.NewMigrateValueNull(), operationTimestampNanos)
 	if err != nil {
 		return err
 	}

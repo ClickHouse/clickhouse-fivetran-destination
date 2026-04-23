@@ -414,16 +414,19 @@ func TestSchemaMigrationsDML(t *testing.T) {
 		{"desc_detailed", "Nullable(String)", ""},
 		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
 
-	// Verify data: amount_renamed should be 202.57, desc should be NULL, desc_detailed should have original values
-	query := "SELECT id, amount_renamed, desc, desc_detailed FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	// Verify data: amount_renamed should be 202.57, desc should be NULL, desc_detailed should have original values.
+	// operation_time checks the Option-B path in handleUpdateColumnValue: a second schema_migration batch
+	// updates it to "2024-01-15T10:30:00.123Z", which must land as 2024-01-15 10:30:00.123000000 in
+	// DateTime64(9, 'UTC') — proving the ISO literal was pre-converted to nanoseconds (not passed raw).
+	query := "SELECT id, amount_renamed, desc, desc_detailed, operation_time FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
 	dbRecordsCSVStr := runQuery(t, query)
 	assertDatabaseRecords(t, [][]string{
-		{"1", "202.57", "\\N", "\\N"},
-		{"2", "202.57", "\\N", "two"},
-		{"3", "202.57", "\\N", "two"},
-		{"4", "202.57", "\\N", "two"},
-		{"10", "202.57", "\\N", "three"},
-		{"20", "202.57", "\\N", "money"},
+		{"1", "202.57", "\\N", "\\N", "2024-01-15 10:30:00.123000000"},
+		{"2", "202.57", "\\N", "two", "2024-01-15 10:30:00.123000000"},
+		{"3", "202.57", "\\N", "two", "2024-01-15 10:30:00.123000000"},
+		{"4", "202.57", "\\N", "two", "2024-01-15 10:30:00.123000000"},
+		{"10", "202.57", "\\N", "three", "2024-01-15 10:30:00.123000000"},
+		{"20", "202.57", "\\N", "money", "2024-01-15 10:30:00.123000000"},
 	}, dbRecordsCSVStr)
 
 	// Verify transaction_renamed exists (was transaction_new, copied from transaction before rename, then table-renamed)
@@ -448,8 +451,10 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 	startServer(t)
 	runSDKTestCommand(t, fileName, true)
 
-	// Verify transaction_history table: desc dropped in history mode, article added in history mode (appears at end)
-	// desc column is preserved (not physically dropped) per the spec — historical values are maintained
+	// Verify transaction_history table: desc dropped in history mode, article + next_review added in history mode
+	// (both appended at end in declaration order). desc column is preserved (not physically dropped) per the
+	// spec — historical values are maintained. next_review is a UTC_DATETIME default and exercises the
+	// MigrateAddColumnInHistoryMode bug-fix path where the ISO default must be pre-converted to nanoseconds.
 	assertTableColumns(t, "transaction_history", [][]string{
 		{"id", "Int32", ""},
 		{"amount", "Nullable(Float64)", ""},
@@ -458,7 +463,8 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
 		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
 		{"_fivetran_active", "Nullable(Bool)", ""},
-		{"article", "Nullable(String)", ""}})
+		{"article", "Nullable(String)", ""},
+		{"next_review", "Nullable(DateTime64(9, 'UTC'))", ""}})
 
 	// Verify transaction table was converted to history mode (soft_delete -> history)
 	assertTableColumns(t, "transaction", [][]string{
@@ -502,25 +508,29 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"20", "50", "false"},
 	}, dbRecordsCSVStr)
 
-	// Verify transaction_history data: history rows with article added and desc dropped.
-	// The add/drop operations use the same operation_timestamp, so this assertion ensures
-	// the drop still mutates active rows at that timestamp (desc must be NULL on active rows).
-	query = "SELECT id, amount, desc, article, _fivetran_active FROM tester.transaction_history FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1"
+	// Verify transaction_history data: history rows with article + next_review added and desc dropped.
+	// All migrations use the same operation_timestamp, so this assertion ensures composability: active
+	// rows at that timestamp receive the latest defaults for every chained migration (article +
+	// next_review) and have desc nulled. next_review specifically proves the history-mode add-column
+	// path converts UTC_DATETIME defaults to nanoseconds rather than forwarding the raw ISO string —
+	// the CSV format "2024-01-15 10:30:00.123000000" is what DateTime64(9,'UTC') prints for the
+	// nanosecond-epoch value of "2024-01-15T10:30:00.123Z".
+	query = "SELECT id, amount, desc, article, next_review, _fivetran_active FROM tester.transaction_history FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1"
 	dbRecordsCSVStr = runQuery(t, query)
 	assertDatabaseRecords(t, [][]string{
-		{"1", "100.45", "\\N", "\\N", "false"},
-		{"1", "100.45", "\\N", "Ordered article", "true"},
-		{"2", "150.33", "two", "\\N", "false"},
-		{"2", "150.33", "\\N", "Ordered article", "true"},
-		{"3", "150.33", "two", "\\N", "false"},
-		{"3", "150.33", "\\N", "Ordered article", "true"},
-		{"4", "150.33", "two", "\\N", "false"},
-		{"4", "150.33", "\\N", "Ordered article", "true"},
-		{"10", "200", "three", "\\N", "false"},
-		{"10", "100", "three", "\\N", "false"},
-		{"10", "100", "\\N", "Ordered article", "true"},
-		{"20", "50", "money", "\\N", "false"},
-		{"20", "50", "\\N", "Ordered article", "true"},
+		{"1", "100.45", "\\N", "\\N", "\\N", "false"},
+		{"1", "100.45", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"2", "150.33", "two", "\\N", "\\N", "false"},
+		{"2", "150.33", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"3", "150.33", "two", "\\N", "\\N", "false"},
+		{"3", "150.33", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"4", "150.33", "two", "\\N", "\\N", "false"},
+		{"4", "150.33", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"10", "200", "three", "\\N", "\\N", "false"},
+		{"10", "100", "three", "\\N", "\\N", "false"},
+		{"10", "100", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"20", "50", "money", "\\N", "\\N", "false"},
+		{"20", "50", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
 	}, dbRecordsCSVStr)
 }
 

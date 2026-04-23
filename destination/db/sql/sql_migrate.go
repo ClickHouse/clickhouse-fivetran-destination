@@ -21,21 +21,14 @@ func GetRenameColumnStatement(schemaName string, tableName string, fromColumn st
 }
 
 // GetUpdateColumnValueStatement generates: ALTER TABLE `schema`.`table` UPDATE `column` = <value> WHERE true
-// If isNull is true, the value is set to NULL (unquoted).
-// Otherwise the value is used as a quoted string literal.
+// The value's SQL literal is embedded as-is (including NULL when value.IsNull()).
 // This is a mutation (background rewrite) in ClickHouse.
-func GetUpdateColumnValueStatement(schemaName string, tableName string, column string, value string, isNull bool) (string, error) {
+func GetUpdateColumnValueStatement(schemaName string, tableName string, column string, value values.MigrateValue) (string, error) {
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
 	}
-	var sqlValue string
-	if isNull {
-		sqlValue = "NULL"
-	} else {
-		sqlValue = fmt.Sprintf("'%s'", escapeSQLString(value))
-	}
-	return fmt.Sprintf("ALTER TABLE %s UPDATE %s = %s WHERE true", fullTableName, identifier(column), sqlValue), nil
+	return fmt.Sprintf("ALTER TABLE %s UPDATE %s = %s WHERE true", fullTableName, identifier(column), value.Literal()), nil
 }
 
 // GetUpdateRowsAtOperationTimestampStatement generates:
@@ -49,25 +42,18 @@ func GetUpdateRowsAtOperationTimestampStatement(
 	schemaName string,
 	tableName string,
 	column string,
-	value string,
-	isNull bool,
+	value values.MigrateValue,
 	operationTimestampNanos string,
 ) (string, error) {
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
 	}
-	var sqlValue string
-	if isNull {
-		sqlValue = "NULL"
-	} else {
-		sqlValue = fmt.Sprintf("'%s'", escapeSQLString(value))
-	}
 	return fmt.Sprintf(
 		"ALTER TABLE %s UPDATE %s = %s WHERE %s = '%s'",
 		fullTableName,
 		identifier(column),
-		sqlValue,
+		value.Literal(),
 		identifier(constants.FivetranStart),
 		operationTimestampNanos,
 	), nil
@@ -154,9 +140,9 @@ func GetCloseActiveRowsStatement(
 // );
 //
 // overrideColumn is the single column being added or dropped:
-//   - For ADD_COLUMN_IN_HISTORY_MODE: override_value is the default value (quoted literal).
-//   - For DROP_COLUMN_IN_HISTORY_MODE: override_value is nil (NULL), and the WHERE clause
-//     adds AND `overrideColumn` IS NOT NULL to skip rows already lacking the column value.
+//   - For ADD_COLUMN_IN_HISTORY_MODE: override_value is the default value (a non-null values.MigrateValue).
+//   - For DROP_COLUMN_IN_HISTORY_MODE: override_value is values.NewMigrateValueNull(), and the WHERE
+//     clause adds AND `overrideColumn` IS NOT NULL to skip rows already lacking the column value.
 //
 // columns is the full ordered column list from DescribeTable (including history columns);
 // Fivetran history metadata columns are filtered out internally.
@@ -167,7 +153,7 @@ func GetInsertNewActiveVersionsStatement(
 	tableName string,
 	columns []*types.ColumnDefinition,
 	overrideColumn string,
-	overrideValue *string,
+	overrideValue values.MigrateValue,
 	operationTimestampNanos string,
 ) (string, error) {
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
@@ -220,15 +206,8 @@ func GetInsertNewActiveVersionsStatement(
 		}
 	}
 
-	var overrideValueText string
-	if overrideValue == nil {
-		overrideValueText = "NULL"
-	} else {
-		overrideValueText = fmt.Sprintf("'%s'", escapeSQLString(*overrideValue))
-	}
-
 	selectParts = append(selectParts,
-		overrideValueText, // expected position for override value.
+		overrideValue.Literal(), // expected position for override value.
 		identifier(constants.FivetranSynced),
 		fmt.Sprintf("'%s'", operationTimestampNanos),   // FivetranStart
 		fmt.Sprintf("'%s'", values.MaxDateTime64Nanos), // FivetranEnd
@@ -247,7 +226,7 @@ func GetInsertNewActiveVersionsStatement(
 
 	wherePart := fmt.Sprintf("WHERE `_fivetran_active` AND `_fivetran_start` < '%s'", operationTimestampNanos)
 
-	if overrideValue == nil {
+	if overrideValue.IsNull() {
 		wherePart += fmt.Sprintf(" AND %s IS NOT NULL", identifier(overrideColumn))
 	}
 

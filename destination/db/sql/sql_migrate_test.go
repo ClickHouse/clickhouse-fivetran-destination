@@ -5,6 +5,7 @@ import (
 
 	constants "fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
+	"fivetran.com/fivetran_sdk/destination/db/values"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,23 +19,23 @@ func TestGetRenameColumnStatement(t *testing.T) {
 }
 
 func TestGetUpdateColumnValueStatement(t *testing.T) {
-	stmt, err := GetUpdateColumnValueStatement("s", "t", "col", "42", false)
+	stmt, err := GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueQuoted("42"))
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = '42' WHERE true", stmt)
 
-	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", "", true)
+	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueNull())
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = NULL WHERE true", stmt)
 }
 
 func TestGetUpdateRowsAtOperationTimestampStatement(t *testing.T) {
-	stmt, err := GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", "42", false, "1117314420000000000")
+	stmt, err := GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", values.NewMigrateValueQuoted("42"), "1117314420000000000")
 	assert.NoError(t, err)
 	assert.Equal(t,
 		"ALTER TABLE `s`.`t` UPDATE `col` = '42' WHERE `_fivetran_start` = '1117314420000000000'",
 		stmt)
 
-	stmt, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", "", true, "1117314420000000000")
+	stmt, err = GetUpdateRowsAtOperationTimestampStatement("s", "t", "col", values.NewMigrateValueNull(), "1117314420000000000")
 	assert.NoError(t, err)
 	assert.Equal(t,
 		"ALTER TABLE `s`.`t` UPDATE `col` = NULL WHERE `_fivetran_start` = '1117314420000000000'",
@@ -69,7 +70,7 @@ func TestGetCloseActiveRowsStatement(t *testing.T) {
 }
 
 func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
-	defaultVal := "Ordered article"
+	defaultVal := values.NewMigrateValueQuoted("Ordered article")
 	dataCols := []*types.ColumnDefinition{
 		{Name: "id"},
 		{Name: "amount"},
@@ -78,7 +79,7 @@ func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
 	// add_column_in_history_mode: override column with default value
 	stmt, err := GetInsertNewActiveVersionsStatement("s", "t",
 		dataCols,
-		"article", &defaultVal,
+		"article", defaultVal,
 		"1117314420000000000",
 	)
 	assert.NoError(t, err)
@@ -96,7 +97,7 @@ func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
 	)
 	stmt, err = GetInsertNewActiveVersionsStatement("s", "t",
 		withHistory,
-		"article", &defaultVal,
+		"article", defaultVal,
 		"1117314420000000000",
 	)
 	assert.NoError(t, err)
@@ -111,7 +112,7 @@ func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
 			{Name: "amount"},
 			{Name: "desc"},
 		},
-		"desc", nil,
+		"desc", values.NewMigrateValueNull(),
 		"1117314420000000000",
 	)
 	assert.NoError(t, err)
@@ -119,7 +120,7 @@ func TestGetInsertNewActiveVersionsStatement(t *testing.T) {
 		"INSERT INTO `s`.`t` (`id`,`amount`,`desc`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) SELECT `id`,`amount`,NULL,`_fivetran_synced`,'1117314420000000000','9223372036000000000',true FROM `s`.`t` FINAL WHERE `_fivetran_active` AND `_fivetran_start` < '1117314420000000000' AND `desc` IS NOT NULL",
 		stmt)
 
-	_, err = GetInsertNewActiveVersionsStatement("s", "t", []*types.ColumnDefinition{}, "article", nil, "1117314420000000000")
+	_, err = GetInsertNewActiveVersionsStatement("s", "t", []*types.ColumnDefinition{}, "article", values.NewMigrateValueNull(), "1117314420000000000")
 	assert.ErrorContains(t, err, "column names list is empty")
 }
 
@@ -191,17 +192,17 @@ func TestSubtractOneMillisecond(t *testing.T) {
 
 func TestGetUpdateColumnValueStatementSpecialChars(t *testing.T) {
 	// Single quote in value should be escaped
-	stmt, err := GetUpdateColumnValueStatement("s", "t", "col", "O'Brien", false)
+	stmt, err := GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueQuoted("O'Brien"))
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = 'O''Brien' WHERE true", stmt)
 
 	// Backslash in value
-	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", "path\\to\\file", false)
+	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueQuoted("path\\to\\file"))
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = 'path\\to\\file' WHERE true", stmt)
 
 	// Empty string value (not null)
-	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", "", false)
+	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueQuoted(""))
 	assert.NoError(t, err)
 	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = '' WHERE true", stmt)
 }
