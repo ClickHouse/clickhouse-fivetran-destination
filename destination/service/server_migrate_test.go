@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -213,6 +214,29 @@ func TestHandleTableSyncModeMigration_DefaultUnknownType(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp.GetTask())
 	assert.Contains(t, resp.GetTask().GetMessage(), "unknown sync mode migration type")
+}
+
+// TableSyncModeMigrationOperation.soft_deleted_column is optional in the proto,
+// so SOFT_DELETE_TO_HISTORY and HISTORY_TO_SOFT_DELETE must fall back to the
+// canonical _fivetran_deleted when the producer leaves it empty. Any non-empty
+// value (including a column name that happens to match the default) is passed
+// through verbatim so custom soft-delete columns keep working.
+func TestResolveSoftDeletedColumn(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty falls back to _fivetran_deleted", "", constants.FivetranDeleted},
+		{"explicit _fivetran_deleted is preserved", constants.FivetranDeleted, constants.FivetranDeleted},
+		{"custom column name is preserved", "is_deleted", "is_deleted"},
+		{"whitespace is not treated as empty", " ", " "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, resolveSoftDeletedColumn(tc.input))
+		})
+	}
 }
 
 // Each Migrate handler validates non-optional proto fields inline, right where the

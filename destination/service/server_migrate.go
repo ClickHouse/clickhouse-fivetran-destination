@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	dt "fivetran.com/fivetran_sdk/destination/common/data_types"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/db"
@@ -392,10 +393,7 @@ func handleTableSyncModeMigration(
 
 	switch migrationType {
 	case pb.TableSyncModeMigrationType_SOFT_DELETE_TO_HISTORY:
-		softDeletedCol := op.GetSoftDeletedColumn()
-		if softDeletedCol == "" {
-			softDeletedCol = "_fivetran_deleted"
-		}
+		softDeletedCol := resolveSoftDeletedColumn(op.GetSoftDeletedColumn())
 		err := conn.MigrateSoftDeleteToHistory(ctx, schema, table, softDeletedCol)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
@@ -404,10 +402,7 @@ func handleTableSyncModeMigration(
 		return SuccessfulMigrateResponse(), nil
 
 	case pb.TableSyncModeMigrationType_HISTORY_TO_SOFT_DELETE:
-		softDeletedCol := op.GetSoftDeletedColumn()
-		if softDeletedCol == "" {
-			softDeletedCol = "_fivetran_deleted"
-		}
+		softDeletedCol := resolveSoftDeletedColumn(op.GetSoftDeletedColumn())
 		keepDeletedRows := op.GetKeepDeletedRows()
 		err := conn.MigrateHistoryToSoftDelete(ctx, schema, table, softDeletedCol, keepDeletedRows)
 		if err != nil {
@@ -427,6 +422,16 @@ func handleTableSyncModeMigration(
 		err := fmt.Errorf("unknown sync mode migration type: %s", migrationType.String())
 		return FailedMigrateResponse(schema, table, err), nil
 	}
+}
+
+// TableSyncModeMigrationOperation.soft_deleted_column is optional in
+// the proto; when the producer omits it, we fall back to the canonical Fivetran
+// metadata column name.
+func resolveSoftDeletedColumn(softDeletedCol string) string {
+	if softDeletedCol == "" {
+		return constants.FivetranDeleted
+	}
+	return softDeletedCol
 }
 
 // migrateColumnType converts a Fivetran DataType to a Nullable ClickHouse type for migration columns.
