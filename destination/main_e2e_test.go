@@ -440,6 +440,20 @@ func TestSchemaMigrationsDML(t *testing.T) {
 		{"desc_detailed", "Nullable(String)", ""},
 		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
 
+	// Verify transaction_renamed data: copy_table runs AFTER copy_column, update_column_value,
+	// add_column_with_default_value, and set_column_to_null, but BEFORE rename_column and the
+	// second schema_migration batch that updates operation_time.
+	query = "SELECT id, amount, desc, desc_detailed, operation_time FROM tester.transaction_renamed FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr = runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "202.57", "\\N", "\\N", "2005-05-28 20:57:00.000000000"},
+		{"2", "202.57", "\\N", "two", "2005-05-28 20:57:00.000000000"},
+		{"3", "202.57", "\\N", "two", "2005-05-28 20:57:00.000000000"},
+		{"4", "202.57", "\\N", "two", "2005-05-28 20:57:00.000000000"},
+		{"10", "202.57", "\\N", "three", "2005-05-28 20:57:00.000000000"},
+		{"20", "202.57", "\\N", "money", "2005-05-28 20:57:00.000000000"},
+	}, dbRecordsCSVStr)
+
 	// Verify transaction_drop was dropped
 	query = "SELECT count() FROM system.tables WHERE database = 'tester' AND name = 'transaction_drop' FORMAT CSV"
 	result := runQuery(t, query)
@@ -484,7 +498,7 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
 		{"_fivetran_deleted", "Bool", ""}})
 
-	// Verify transaction data: converted to history mode, all rows active
+	// Verify transaction data after soft_delete(id=20) + migrate_soft_delete_to_history
 	query := "SELECT id, amount, desc, _fivetran_active FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
 	dbRecordsCSVStr := runQuery(t, query)
 	assertDatabaseRecords(t, [][]string{
@@ -493,10 +507,12 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"3", "150.33", "two", "true"},
 		{"4", "150.33", "two", "true"},
 		{"10", "200", "three", "true"},
-		{"20", "50", "money", "true"},
+		{"20", "50", "money", "false"},
 	}, dbRecordsCSVStr)
 
-	// Verify new_transaction_history data: converted to soft-delete, all rows not deleted
+	// Verify new_transaction_history data: converted from history back to soft-delete with the
+	// default keep_deleted_rows=false (the SDK tester does not expose keep_deleted_rows, so the
+	// proto's optional bool stays at false on the wire).
 	query = "SELECT id, amount, _fivetran_deleted FROM tester.new_transaction_history FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
 	dbRecordsCSVStr = runQuery(t, query)
 	assertDatabaseRecords(t, [][]string{
@@ -505,7 +521,6 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"3", "150.33", "false"},
 		{"4", "150.33", "false"},
 		{"10", "200", "false"},
-		{"20", "50", "false"},
 	}, dbRecordsCSVStr)
 
 	// Verify transaction_history data: history rows with article + next_review added and desc dropped.
@@ -532,6 +547,28 @@ func TestSchemaMigrationsSyncModes(t *testing.T) {
 		{"20", "50", "money", "\\N", "\\N", "false"},
 		{"20", "50", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
 	}, dbRecordsCSVStr)
+}
+
+// TestSchemaMigrationsAddColumnInHistoryModeEmptyTable exercises the empty-table branch of
+// MigrateAddColumnInHistoryMode. The Schema Migration Helper spec says the migration "can be
+// skipped as there are no records to maintain history for" when the target is empty — but
+// that short-circuit applies only to the history-tracking steps (INSERT new active versions,
+// close old rows). The ALTER TABLE ADD COLUMN itself must still run
+func TestSchemaMigrationsAddColumnInHistoryModeEmptyTable(t *testing.T) {
+	fileName := "schema_migrations_input_empty_history_add_column.json"
+	tableName := "empty_history_table"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// The new column (`article`) must exist in the final schema.
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""},
+		{"article", "Nullable(String)", ""}})
 }
 
 // fail on the first mismatch, to prevent long console output

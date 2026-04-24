@@ -40,6 +40,13 @@
                {"id":20, "amount": 50, "desc": "money", "op_time":"2005-05-26T21:57:00Z"}
             ]
          }
+      },
+      {
+         "soft_delete": {
+            "transaction": [
+               {"id": 20}
+            ]
+         }
       }
    ],
    "schema_migration" : [

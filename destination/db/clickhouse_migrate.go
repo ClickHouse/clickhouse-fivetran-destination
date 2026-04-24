@@ -224,10 +224,20 @@ func (conn *ClickHouseConnection) MigrateUpdateRowsAtOperationTimestamp(
 	return nil
 }
 
-// validateHistoryModeTable checks preconditions for history mode operations:
-// 1. Table must not be empty (skip the operation if it is)
-// 2. max(_fivetran_start) for active rows must be <= operation_timestamp
-// Returns (valid, error). If valid is true, the table passes all preconditions and the caller should proceed.
+// validateHistoryModeTable checks preconditions for the history-tracking side of a schema
+// migration — the INSERT new-active-versions + close-old-rows dance that records the DDL as a
+// history entry. It gates those data steps only; callers that perform an unconditional schema
+// change (e.g. ADD COLUMN IN HISTORY MODE) must run that step BEFORE consulting this function,
+// because the spec's empty-table short-circuit applies to history tracking, not to the DDL
+// itself.
+//
+// Returns valid=true when both preconditions hold:
+//  1. Table is non-empty (history tracking has something to record).
+//  2. max(_fivetran_start) for existing rows <= operation_timestamp (no stale operation).
+//
+// Returns valid=false, err=nil when the table is empty — the caller should skip its
+// history-tracking steps. Returns valid=false, err!=nil when preconditions fail with an error
+// (e.g. operation_timestamp is older than max _fivetran_start).
 func (conn *ClickHouseConnection) validateHistoryModeTable(
 	ctx context.Context,
 	schemaName string,
@@ -286,7 +296,9 @@ func (conn *ClickHouseConnection) validateHistoryModeTable(
 	return true, nil
 }
 
-// MigrateAddColumnInHistoryMode adds a column and creates new history versions for all active rows.
+// MigrateAddColumnInHistoryMode adds a column to a history-mode table and, when the table has
+// existing active rows, closes them off and opens new versions carrying the default value so
+// the column addition is reflected in the history.
 func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	ctx context.Context,
 	schemaName string,
@@ -297,15 +309,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	defaultValue values.MigrateValue,
 	operationTimestampNanos string,
 ) error {
-	// Validate preconditions: table must be non-empty, max(_fivetran_start) <= operation_timestamp
-	valid, err := conn.validateHistoryModeTable(ctx, schemaName, tableName, operationTimestampNanos)
-	if err != nil {
-		return err
-	}
-	if !valid {
-		return nil
-	}
-	// Step 1: Add column
+	// Step 1: Add the column. This must happen regardless of whether the table has data.
 	addOp := &types.AlterTableOp{
 		Op:     types.AlterTableAdd,
 		Column: column,
@@ -321,6 +325,15 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	err = conn.ExecStatement(ctx, alterStmt, migrateAddColumnDefault, false)
 	if err != nil {
 		return err
+	}
+	// Validate preconditions for the history-tracking steps below. An empty table has no rows
+	// to maintain history for — we stop here, the schema change alone is the full migration.
+	valid, err := conn.validateHistoryModeTable(ctx, schemaName, tableName, operationTimestampNanos)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return nil
 	}
 	// Step 2: Column list for new active versions (filtering inside SQL builder)
 	tableDesc, err := conn.DescribeTable(ctx, schemaName, tableName)
