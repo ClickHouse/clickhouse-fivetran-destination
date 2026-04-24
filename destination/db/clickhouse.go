@@ -221,6 +221,64 @@ func (conn *ClickHouseConnection) ExecBoolQuery(
 	return result, nil
 }
 
+// execMutation runs a ClickHouse mutation (ALTER UPDATE/DELETE, lightweight DELETE,
+// TRUNCATE, etc.) with the standard envelope: a pre-flight WaitAllNodesAvailable check
+// (warns on failure, non-fatal) followed by ExecStatement, and on failure a
+// WaitAllMutationsCompleted fallback that handles ClickHouse error code 341 (incomplete
+// mutation, typically caused by a replica being unavailable during the ALTER) by waiting
+// for the async mutation to finish.
+func (conn *ClickHouseConnection) execMutation(
+	ctx context.Context,
+	statement string,
+	schemaName string,
+	tableName string,
+	op connectionOpType,
+) error {
+	if err := conn.WaitAllNodesAvailable(ctx, schemaName, tableName); err != nil {
+		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
+	}
+	err := conn.ExecStatement(ctx, statement, op, true)
+	if err != nil {
+		if waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName); waitErr != nil {
+			return waitErr
+		}
+	}
+	return nil
+}
+
+// execAlterTableOps runs an ALTER TABLE composed of the given ops. Used for metadata-only
+// alters (ADD COLUMN, etc.); callers that need the mutation envelope should use
+// execMutation directly.
+func (conn *ClickHouseConnection) execAlterTableOps(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	ops []*types.AlterTableOp,
+	op connectionOpType,
+) error {
+	stmt, err := sql.GetAlterTableStatement(schemaName, tableName, ops)
+	if err != nil {
+		return err
+	}
+	return conn.ExecStatement(ctx, stmt, op, false)
+}
+
+// execInsertFromSelect runs INSERT INTO toTable SELECT cols FROM fromTable.
+func (conn *ClickHouseConnection) execInsertFromSelect(
+	ctx context.Context,
+	schemaName string,
+	fromTable string,
+	toTable string,
+	colNames []string,
+	op connectionOpType,
+) error {
+	stmt, err := sql.GetInsertFromSelectStatement(schemaName, fromTable, toTable, colNames)
+	if err != nil {
+		return err
+	}
+	return conn.ExecStatement(ctx, stmt, op, true)
+}
+
 func (conn *ClickHouseConnection) DescribeTable(
 	ctx context.Context,
 	schemaName string,
@@ -394,11 +452,6 @@ func (conn *ClickHouseConnection) AlterTable(
 	if err != nil {
 		return false, err
 	}
-	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
-	}
 	if hasChangedPK {
 		unixMilli := time.Now().UnixMilli()
 		newTableName := fmt.Sprintf("%s_new_%d", tableName, unixMilli)
@@ -414,12 +467,8 @@ func (conn *ClickHouseConnection) AlterTable(
 			return false, err
 		}
 		if len(unchangedColNames) > 0 {
-			insertStmt, err := sql.GetInsertFromSelectStatement(schemaName, tableName, newTableName, unchangedColNames)
-			if err != nil {
-				return false, err
-			}
-			err = conn.ExecStatement(ctx, insertStmt, alterTablePKInsert, true)
-			if err != nil {
+			if err := conn.execInsertFromSelect(
+				ctx, schemaName, tableName, newTableName, unchangedColNames, alterTablePKInsert); err != nil {
 				return false, err
 			}
 		}
@@ -443,13 +492,8 @@ func (conn *ClickHouseConnection) AlterTable(
 		if err != nil {
 			return false, err
 		}
-		err = conn.ExecStatement(ctx, statement, alterTable, true)
-		if err != nil {
-			waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-			if waitErr != nil {
-				return false, waitErr
-			}
-			return true, nil
+		if err := conn.execMutation(ctx, statement, schemaName, tableName, alterTable); err != nil {
+			return false, err
 		}
 	}
 	return true, nil
@@ -492,20 +536,7 @@ func (conn *ClickHouseConnection) TruncateTable(
 	} else {
 		op = softTruncateTable
 	}
-	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
-	}
-	err = conn.ExecStatement(ctx, statement, op, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return waitErr
-		}
-		return nil
-	}
-	return nil
+	return conn.execMutation(ctx, statement, schemaName, tableName, op)
 }
 
 func (conn *ClickHouseConnection) DropTable(

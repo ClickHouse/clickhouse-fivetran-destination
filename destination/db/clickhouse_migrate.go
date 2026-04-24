@@ -27,6 +27,61 @@ const (
 	migrateSyncModeInsert    connectionOpType = "Migrate(SyncMode, Insert)"
 )
 
+// execInsertNewActiveVersions runs the "insert new active history rows" INSERT used by the
+// history-mode add/drop-column migrations.
+func (conn *ClickHouseConnection) execInsertNewActiveVersions(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	columns []*types.ColumnDefinition,
+	column string,
+	value values.MigrateValue,
+	operationTimestampNanos string,
+) error {
+	stmt, err := sql.GetInsertNewActiveVersionsStatement(
+		schemaName, tableName, columns, column, value, operationTimestampNanos)
+	if err != nil {
+		return err
+	}
+	return conn.ExecStatement(ctx, stmt, migrateHistoryInsert, true)
+}
+
+// execInsertFromSelectWithHistoryColumns runs the INSERT...SELECT used by sync-mode
+// transitions that copy a source table into a history-mode target.
+func (conn *ClickHouseConnection) execInsertFromSelectWithHistoryColumns(
+	ctx context.Context,
+	schemaName string,
+	fromTable string,
+	toTable string,
+	colNames []string,
+	softDeletedColumn string,
+) error {
+	stmt, err := sql.GetInsertFromSelectWithHistoryColumnsStatement(
+		schemaName, fromTable, toTable, colNames, softDeletedColumn)
+	if err != nil {
+		return err
+	}
+	return conn.ExecStatement(ctx, stmt, migrateSyncModeInsert, true)
+}
+
+// closeActiveRows runs the ALTER TABLE UPDATE that closes old active history rows
+// (setting _fivetran_active=FALSE and _fivetran_end=operation_timestamp-1). This is a
+// true mutation, so it uses the full execMutation envelope. Pass column="" to close
+// all active rows, or a column name to only close rows where that column IS NOT NULL.
+func (conn *ClickHouseConnection) closeActiveRows(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	operationTimestampNanos string,
+	column string,
+) error {
+	stmt, err := sql.GetCloseActiveRowsStatement(schemaName, tableName, operationTimestampNanos, column)
+	if err != nil {
+		return err
+	}
+	return conn.execMutation(ctx, stmt, schemaName, tableName, migrateHistoryClose)
+}
+
 func (conn *ClickHouseConnection) RenameColumn(
 	ctx context.Context,
 	schemaName string,
@@ -42,9 +97,6 @@ func (conn *ClickHouseConnection) RenameColumn(
 }
 
 // UpdateColumnValue updates all rows in a column to the given value (which may be SQL NULL).
-// This is a mutation operation. The error handling pattern matches TruncateTable:
-// if ExecStatement returns an incomplete-mutation error, WaitAllMutationsCompleted
-// polls until the mutation finishes — returning nil means the mutation completed successfully.
 func (conn *ClickHouseConnection) UpdateColumnValue(
 	ctx context.Context,
 	schemaName string,
@@ -56,18 +108,7 @@ func (conn *ClickHouseConnection) UpdateColumnValue(
 	if err != nil {
 		return err
 	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, statement, migrateUpdateColumnValue, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return waitErr
-		}
-	}
-	return nil
+	return conn.execMutation(ctx, statement, schemaName, tableName, migrateUpdateColumnValue)
 }
 
 func (conn *ClickHouseConnection) CopyColumnData(
@@ -81,18 +122,7 @@ func (conn *ClickHouseConnection) CopyColumnData(
 	if err != nil {
 		return err
 	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, statement, migrateCopyColumnUpdate, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return waitErr
-		}
-	}
-	return nil
+	return conn.execMutation(ctx, statement, schemaName, tableName, migrateCopyColumnUpdate)
 }
 
 // MigrateCopyTable implements the COPY_TABLE schema migration: create `toTable`
@@ -127,15 +157,7 @@ func (conn *ClickHouseConnection) MigrateCopyTable(
 	if err = conn.ExecStatement(ctx, createStmt, migrateCopyTableCreate, false); err != nil {
 		return err
 	}
-	insertStmt, err := sql.GetInsertFromSelectStatement(schemaName, fromTable, toTable, colNames)
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, toTable)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, toTable, err))
-	}
-	return conn.ExecStatement(ctx, insertStmt, migrateCopyTableInsert, true)
+	return conn.execInsertFromSelect(ctx, schemaName, fromTable, toTable, colNames, migrateCopyTableInsert)
 }
 
 func (conn *ClickHouseConnection) MigrateCopyColumn(
@@ -163,12 +185,7 @@ func (conn *ClickHouseConnection) MigrateCopyColumn(
 	if srcCol.Comment != "" {
 		addOp.Comment = &srcCol.Comment
 	}
-	alterStmt, err := sql.GetAlterTableStatement(schemaName, tableName, []*types.AlterTableOp{addOp})
-	if err != nil {
-		return err
-	}
-	err = conn.ExecStatement(ctx, alterStmt, migrateCopyColumn, false)
-	if err != nil {
+	if err := conn.execAlterTableOps(ctx, schemaName, tableName, []*types.AlterTableOp{addOp}, migrateCopyColumn); err != nil {
 		return err
 	}
 	// Copy data
@@ -195,12 +212,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnWithDefault(
 	if comment != "" {
 		addOp.Comment = &comment
 	}
-	alterStmt, err := sql.GetAlterTableStatement(schemaName, tableName, []*types.AlterTableOp{addOp})
-	if err != nil {
-		return err
-	}
-	err = conn.ExecStatement(ctx, alterStmt, migrateAddColumnDefault, false)
-	if err != nil {
+	if err := conn.execAlterTableOps(ctx, schemaName, tableName, []*types.AlterTableOp{addOp}, migrateAddColumnDefault); err != nil {
 		return err
 	}
 	// Step 2: Set default value
@@ -220,18 +232,7 @@ func (conn *ClickHouseConnection) MigrateUpdateRowsAtOperationTimestamp(
 	if err != nil {
 		return err
 	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, statement, migrateHistoryUpdate, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return waitErr
-		}
-	}
-	return nil
+	return conn.execMutation(ctx, statement, schemaName, tableName, migrateHistoryUpdate)
 }
 
 // validateHistoryModeTable checks preconditions for the history-tracking side of a schema
@@ -328,12 +329,7 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 	if comment != "" {
 		addOp.Comment = &comment
 	}
-	alterStmt, err := sql.GetAlterTableStatement(schemaName, tableName, []*types.AlterTableOp{addOp})
-	if err != nil {
-		return err
-	}
-	err = conn.ExecStatement(ctx, alterStmt, migrateAddColumnDefault, false)
-	if err != nil {
+	if err := conn.execAlterTableOps(ctx, schemaName, tableName, []*types.AlterTableOp{addOp}, migrateAddColumnDefault); err != nil {
 		return err
 	}
 	// Validate preconditions for the history-tracking steps below. An empty table has no rows
@@ -351,43 +347,18 @@ func (conn *ClickHouseConnection) MigrateAddColumnInHistoryMode(
 		return err
 	}
 	// Step 3: INSERT new active rows with default value for the new column
-	insertStmt, err := sql.GetInsertNewActiveVersionsStatement(
-		schemaName, tableName, tableDesc.Columns, column, defaultValue, operationTimestampNanos)
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, insertStmt, migrateHistoryInsert, true)
-	if err != nil {
+	if err := conn.execInsertNewActiveVersions(
+		ctx, schemaName, tableName, tableDesc.Columns, column, defaultValue, operationTimestampNanos); err != nil {
 		return err
 	}
 	// Step 4: Update rows at operation timestamp.
 	// This follows the helper guide for same-timestamp composability.
-	err = conn.MigrateUpdateRowsAtOperationTimestamp(
-		ctx, schemaName, tableName, column, defaultValue, operationTimestampNanos)
-	if err != nil {
+	if err := conn.MigrateUpdateRowsAtOperationTimestamp(
+		ctx, schemaName, tableName, column, defaultValue, operationTimestampNanos); err != nil {
 		return err
 	}
 	// Step 5: Close old active rows
-	closeStmt, err := sql.GetCloseActiveRowsStatement(schemaName, tableName, operationTimestampNanos, "")
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, closeStmt, migrateHistoryClose, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return waitErr
-		}
-	}
-	return nil
+	return conn.closeActiveRows(ctx, schemaName, tableName, operationTimestampNanos, "")
 }
 
 // MigrateDropColumnInHistoryMode creates new history versions for all active rows with the column set to NULL,
@@ -413,46 +384,21 @@ func (conn *ClickHouseConnection) MigrateDropColumnInHistoryMode(
 		return err
 	}
 	// Step 2: INSERT new active rows with column = NULL (only for rows where column IS NOT NULL)
-	insertStmt, err := sql.GetInsertNewActiveVersionsStatement(
-		schemaName, tableName, tableDesc.Columns, column, values.NewMigrateValueNull(), operationTimestampNanos)
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, insertStmt, migrateHistoryInsert, true)
-	if err != nil {
+	if err := conn.execInsertNewActiveVersions(
+		ctx, schemaName, tableName, tableDesc.Columns, column, values.NewMigrateValueNull(), operationTimestampNanos); err != nil {
 		return err
 	}
 	// Step 3: Update rows at operation timestamp.
 	// This handles chained migrations with the same timestamp where active rows may already
 	// exist at _fivetran_start = operation_timestamp.
-	err = conn.MigrateUpdateRowsAtOperationTimestamp(
-		ctx, schemaName, tableName, column, values.NewMigrateValueNull(), operationTimestampNanos)
-	if err != nil {
+	if err := conn.MigrateUpdateRowsAtOperationTimestamp(
+		ctx, schemaName, tableName, column, values.NewMigrateValueNull(), operationTimestampNanos); err != nil {
 		return err
 	}
-	// Step 4: Close old active rows (only where column IS NOT NULL)
-	closeStmt, err := sql.GetCloseActiveRowsStatement(schemaName, tableName, operationTimestampNanos, column)
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, tableName, err))
-	}
-	err = conn.ExecStatement(ctx, closeStmt, migrateHistoryClose, true)
-	if err != nil {
-		waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, tableName)
-		if waitErr != nil {
-			return waitErr
-		}
-	}
-	// Note: per the spec, the column is NOT physically dropped — it is preserved to maintain historical values.
-	// New active rows will have NULL for this column.
-	return nil
+	// Step 4: Close old active rows (only where column IS NOT NULL).
+	// Note: per the spec, the column is NOT physically dropped — it is preserved to maintain
+	// historical values. New active rows will have NULL for this column.
+	return conn.closeActiveRows(ctx, schemaName, tableName, operationTimestampNanos, column)
 }
 
 // MigrateCopyTableToHistoryMode copies a soft-delete table to a new history mode table.
@@ -510,16 +456,8 @@ func (conn *ClickHouseConnection) MigrateCopyTableToHistoryMode(
 		return err
 	}
 	// Step 4: INSERT...SELECT with history columns
-	insertStmt, err := sql.GetInsertFromSelectWithHistoryColumnsStatement(
-		schemaName, fromTable, toTable, colNames, actualSoftDeletedCol)
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, toTable)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, toTable, err))
-	}
-	return conn.ExecStatement(ctx, insertStmt, migrateSyncModeInsert, true)
+	return conn.execInsertFromSelectWithHistoryColumns(
+		ctx, schemaName, fromTable, toTable, colNames, actualSoftDeletedCol)
 }
 
 // MigrateSoftDeleteToHistory converts a soft-delete table to history mode.
@@ -574,22 +512,12 @@ func (conn *ClickHouseConnection) MigrateSoftDeleteToHistory(
 		return err
 	}
 	// Step 4: INSERT...SELECT with computed history columns
-	insertStmt, err := sql.GetInsertFromSelectWithHistoryColumnsStatement(
-		schemaName, tableName, newTableName, colNames, actualSoftDeletedCol)
-	if err != nil {
-		return err
-	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, newTableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, newTableName, err))
-	}
-	err = conn.ExecStatement(ctx, insertStmt, migrateSyncModeInsert, true)
-	if err != nil {
+	if err := conn.execInsertFromSelectWithHistoryColumns(
+		ctx, schemaName, tableName, newTableName, colNames, actualSoftDeletedCol); err != nil {
 		return err
 	}
 	// Step 5: Rename tables
-	err = conn.RenameTable(ctx, schemaName, tableName, backupTableName)
-	if err != nil {
+	if err := conn.RenameTable(ctx, schemaName, tableName, backupTableName); err != nil {
 		return err
 	}
 	return conn.RenameTable(ctx, schemaName, newTableName, tableName)
@@ -646,12 +574,7 @@ func (conn *ClickHouseConnection) MigrateHistoryToSoftDelete(
 	if err != nil {
 		return err
 	}
-	err = conn.WaitAllNodesAvailable(ctx, schemaName, newTableName)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Not all nodes available for %s.%s: %v", schemaName, newTableName, err))
-	}
-	err = conn.ExecStatement(ctx, insertStmt, migrateSyncModeInsert, true)
-	if err != nil {
+	if err := conn.ExecStatement(ctx, insertStmt, migrateSyncModeInsert, true); err != nil {
 		return err
 	}
 	// Step 5: Rename tables
