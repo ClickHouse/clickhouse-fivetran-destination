@@ -393,8 +393,13 @@ func handleTableSyncModeMigration(
 
 	switch migrationType {
 	case pb.TableSyncModeMigrationType_SOFT_DELETE_TO_HISTORY:
-		softDeletedCol := resolveSoftDeletedColumn(op.GetSoftDeletedColumn())
-		err := conn.MigrateSoftDeleteToHistory(ctx, schema, table, softDeletedCol)
+		// Pass soft_deleted_column through as-is. The spec uses
+		// <soft_deleted_column> as a pure placeholder here: the column must
+		// already exist in the source to be read, so an empty value naturally
+		// means "no soft-delete column to reference" (same treatment as
+		// COPY_TABLE_TO_HISTORY_MODE per spec line 307). The existence check
+		// inside MigrateSoftDeleteToHistory handles both cases.
+		err := conn.MigrateSoftDeleteToHistory(ctx, schema, table, op.GetSoftDeletedColumn())
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
@@ -402,9 +407,15 @@ func handleTableSyncModeMigration(
 		return SuccessfulMigrateResponse(), nil
 
 	case pb.TableSyncModeMigrationType_HISTORY_TO_SOFT_DELETE:
-		softDeletedCol := resolveSoftDeletedColumn(op.GetSoftDeletedColumn())
-		keepDeletedRows := op.GetKeepDeletedRows()
-		err := conn.MigrateHistoryToSoftDelete(ctx, schema, table, softDeletedCol, keepDeletedRows)
+		// Per the Schema Migration Helper spec (HISTORY_TO_SOFT_DELETE step 2),
+		// when soft_deleted_column is omitted the target column to create is the
+		// canonical `_fivetran_deleted`. This is the only one of the three
+		// soft-delete-related migrations where an empty value must be resolved:
+		// SOFT_DELETE_TO_HISTORY and COPY_TABLE_TO_HISTORY_MODE read an existing
+		// column (empty = nothing to read), while this operation *creates* the
+		// column, so it needs a name.
+		softDeletedCol := resolveSoftDeletedColumnForHistoryToSoftDelete(op.GetSoftDeletedColumn())
+		err := conn.MigrateHistoryToSoftDelete(ctx, schema, table, softDeletedCol, op.GetKeepDeletedRows())
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
@@ -424,10 +435,13 @@ func handleTableSyncModeMigration(
 	}
 }
 
-// TableSyncModeMigrationOperation.soft_deleted_column is optional in
-// the proto; when the producer omits it, we fall back to the canonical Fivetran
-// metadata column name.
-func resolveSoftDeletedColumn(softDeletedCol string) string {
+// resolveSoftDeletedColumnForHistoryToSoftDelete returns the column name used to
+// create the soft-delete marker when converting a history-mode table. The Schema
+// Migration Helper spec (HISTORY_TO_SOFT_DELETE, step 2) references
+// `_fivetran_deleted` literally as the column to add when it doesn't exist, so
+// we default to that name when the caller omits the optional
+// TableSyncModeMigrationOperation.soft_deleted_column field.
+func resolveSoftDeletedColumnForHistoryToSoftDelete(softDeletedCol string) string {
 	if softDeletedCol == "" {
 		return constants.FivetranDeleted
 	}

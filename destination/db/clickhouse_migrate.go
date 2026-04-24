@@ -445,13 +445,14 @@ func (conn *ClickHouseConnection) MigrateCopyTableToHistoryMode(
 	if err != nil {
 		return err
 	}
-	// Step 2: Build new TableDescription for history mode
-	// Check if softDeletedColumn actually exists in the source table
+	// Step 2: Build new TableDescription for history mode.
+	// Only reference softDeletedColumn if it actually exists in the source — tables
+	// created with history_mode:false may not carry _fivetran_deleted at all, and
+	// the map lookup also handles an empty softDeletedColumn naturally (Mapping[""]
+	// cannot match because ClickHouse column names are never empty).
 	actualSoftDeletedCol := ""
-	if softDeletedColumn != "" {
-		if _, exists := srcDesc.Mapping[softDeletedColumn]; exists {
-			actualSoftDeletedCol = softDeletedColumn
-		}
+	if _, exists := srcDesc.Mapping[softDeletedColumn]; exists {
+		actualSoftDeletedCol = softDeletedColumn
 	}
 	var newCols []*types.ColumnDefinition
 	var colNames []string
@@ -508,13 +509,14 @@ func (conn *ClickHouseConnection) MigrateSoftDeleteToHistory(
 	if err != nil {
 		return err
 	}
-	// Step 2: Build new TableDescription
-	// Check if softDeletedColumn actually exists in the source table
+	// Step 2: Build new TableDescription.
+	// Only reference softDeletedColumn if it actually exists in the source. Per
+	// the Partner SDK spec, this field is optional; a table created with
+	// history_mode:false may not carry it at all, and Mapping[""] cannot match
+	// because ClickHouse column names are never empty.
 	actualSoftDeletedCol := ""
-	if softDeletedColumn != "" {
-		if _, exists := srcDesc.Mapping[softDeletedColumn]; exists {
-			actualSoftDeletedCol = softDeletedColumn
-		}
+	if _, exists := srcDesc.Mapping[softDeletedColumn]; exists {
+		actualSoftDeletedCol = softDeletedColumn
 	}
 	var newCols []*types.ColumnDefinition
 	var colNames []string
@@ -599,10 +601,6 @@ func (conn *ClickHouseConnection) MigrateHistoryToSoftDelete(
 		if col.IsPrimaryKey {
 			pkColNames = append(pkColNames, col.Name)
 		}
-	}
-	// Add _fivetran_deleted
-	if softDeletedColumn == "" {
-		softDeletedColumn = constants.FivetranDeleted
 	}
 	newCols = append(newCols, &types.ColumnDefinition{Name: softDeletedColumn, Type: constants.Bool})
 	newTableDesc := types.MakeTableDescription(newCols)

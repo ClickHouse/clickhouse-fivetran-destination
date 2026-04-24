@@ -216,25 +216,25 @@ func TestHandleTableSyncModeMigration_DefaultUnknownType(t *testing.T) {
 	assert.Contains(t, resp.GetTask().GetMessage(), "unknown sync mode migration type")
 }
 
-// TableSyncModeMigrationOperation.soft_deleted_column is optional in the proto,
-// so SOFT_DELETE_TO_HISTORY and HISTORY_TO_SOFT_DELETE must fall back to the
-// canonical _fivetran_deleted when the producer leaves it empty. Any non-empty
-// value (including a column name that happens to match the default) is passed
-// through verbatim so custom soft-delete columns keep working.
-func TestResolveSoftDeletedColumn(t *testing.T) {
+// HISTORY_TO_SOFT_DELETE is the only sync-mode operation that *creates* a
+// soft-delete column, so the spec's literal reference to `_fivetran_deleted`
+// in step 2 becomes the default target when the caller omits the optional
+// field. Any non-empty value is a caller override and passed through verbatim,
+// including columns that happen to share the canonical name.
+func TestResolveSoftDeletedColumnForHistoryToSoftDelete(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
 		want  string
 	}{
-		{"empty falls back to _fivetran_deleted", "", constants.FivetranDeleted},
+		{"empty defaults to _fivetran_deleted", "", constants.FivetranDeleted},
 		{"explicit _fivetran_deleted is preserved", constants.FivetranDeleted, constants.FivetranDeleted},
 		{"custom column name is preserved", "is_deleted", "is_deleted"},
-		{"whitespace is not treated as empty", " ", " "},
+		{"whitespace is not empty and is preserved", " ", " "},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, resolveSoftDeletedColumn(tc.input))
+			assert.Equal(t, tc.want, resolveSoftDeletedColumnForHistoryToSoftDelete(tc.input))
 		})
 	}
 }
