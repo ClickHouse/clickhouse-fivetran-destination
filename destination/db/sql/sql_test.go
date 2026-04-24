@@ -444,13 +444,13 @@ func TestGetAllMutationsCompletedQuery(t *testing.T) {
 func TestGetInsertFromSelectStatement(t *testing.T) {
 	query, err := GetInsertFromSelectStatement("foo", "bar", "qaz", []string{"a", "b"})
 	assert.NoError(t, err)
-	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`,`b`) SELECT `a`,`b` FROM `foo`.`bar`", query)
+	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`,`b`) SELECT `a`,`b` FROM `foo`.`bar` FINAL", query)
 }
 
 func TestGetInsertFromSelectStatementSingleColumn(t *testing.T) {
 	query, err := GetInsertFromSelectStatement("foo", "bar", "qaz", []string{"a"})
 	assert.NoError(t, err)
-	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`) SELECT `a` FROM `foo`.`bar`", query)
+	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`) SELECT `a` FROM `foo`.`bar` FINAL", query)
 }
 
 func TestGetInsertFromSelectStatementErrors(t *testing.T) {

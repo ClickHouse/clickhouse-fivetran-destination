@@ -640,6 +640,8 @@ func GetAllMutationsCompletedQuery(
 	), nil
 }
 
+// GetInsertFromSelectStatement generates an INSERT ... SELECT FROM ... FINAL statement
+// used to rebuild a table during migrations (PK change in AlterTable, MigrateCopyTable).
 func GetInsertFromSelectStatement(
 	schemaName string,
 	tableName string,
@@ -669,7 +671,7 @@ func GetInsertFromSelectStatement(
 	tableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName))
 	newTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(newTableName))
 	return fmt.Sprintf(
-		"INSERT INTO %s (%s) SELECT %s FROM %s",
+		"INSERT INTO %s (%s) SELECT %s FROM %s FINAL",
 		newTableIdentifier, joinedColNames, joinedColNames, tableIdentifier), nil
 }
 

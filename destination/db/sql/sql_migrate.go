@@ -410,6 +410,6 @@ func GetMaxFivetranStartQuery(schemaName string, tableName string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("SELECT max(%s) FROM %s WHERE %s = true",
+	return fmt.Sprintf("SELECT max(%s) FROM %s FINAL WHERE %s = true",
 		identifier(constants.FivetranStart), fullTableName, identifier(constants.FivetranActive)), nil
 }

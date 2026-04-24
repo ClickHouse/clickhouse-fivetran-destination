@@ -216,7 +216,7 @@ func TestGetTableRowCountQuery(t *testing.T) {
 func TestGetMaxFivetranStartQuery(t *testing.T) {
 	query, err := GetMaxFivetranStartQuery("foo", "bar")
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT max(`_fivetran_start`) FROM `foo`.`bar` WHERE `_fivetran_active` = true", query)
+	assert.Equal(t, "SELECT max(`_fivetran_start`) FROM `foo`.`bar` FINAL WHERE `_fivetran_active` = true", query)
 }
 
 func TestGetCloseActiveRowsStatement_InvalidTimestamp(t *testing.T) {
