@@ -224,7 +224,10 @@ func GetInsertNewActiveVersionsStatement(
 	// Step 3: Build the WHERE part: WHERE _fivetran_active  AND _fivetran_start < {operation_timestamp}
 	// For DROP: only insert new versions for rows where the column actually has a value (AND {column_name} IS NOT NULL)
 
-	wherePart := fmt.Sprintf("WHERE `_fivetran_active` AND `_fivetran_start` < '%s'", operationTimestampNanos)
+	wherePart := fmt.Sprintf("WHERE %s AND %s < '%s'",
+		identifier(constants.FivetranActive),
+		identifier(constants.FivetranStart),
+		operationTimestampNanos)
 
 	if overrideValue.IsNull() {
 		wherePart += fmt.Sprintf(" AND %s IS NOT NULL", identifier(overrideColumn))
