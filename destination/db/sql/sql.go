@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"fivetran.com/fivetran_sdk/destination/common/constants"
+	constants "fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -27,9 +27,12 @@ func GetQualifiedTableName(schemaName string, tableName string) (QualifiedTableN
 // GetAlterTableStatement sample generated query:
 //
 //	ALTER TABLE `foo`.`bar`
-//	ADD COLUMN `c1` String COMMENT 'foobar',
+//	ADD COLUMN IF NOT EXISTS `c1` String COMMENT 'foobar',
 //	DROP COLUMN `c2`,
 //	MODIFY COLUMN `c3` Int32 COMMENT ''
+//
+// ADD COLUMN is always emitted with IF NOT EXISTS so that callers are idempotent
+// by default.
 //
 // Comments are added to distinguish certain Fivetran data types, see data_types.FivetranToClickHouseTypeWithComment.
 func GetAlterTableStatement(schemaName string, tableName string, ops []*types.AlterTableOp) (string, error) {
@@ -49,7 +52,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			if op.Type == nil {
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
-			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", identifier(op.Column), *op.Type))
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN IF NOT EXISTS %s %s", identifier(op.Column), *op.Type))
 			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
@@ -90,7 +93,7 @@ func GetCreateDatabaseStatement(schemaName string) (string, error) {
 }
 
 func GetDropTableStatement(tableName QualifiedTableName) (string, error) {
-	return fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName), nil
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s SYNC", tableName), nil
 }
 
 func GetSelectFromSystemGrantsQuery(username string) (string, error) {
@@ -637,6 +640,8 @@ func GetAllMutationsCompletedQuery(
 	), nil
 }
 
+// GetInsertFromSelectStatement generates an INSERT ... SELECT FROM ... FINAL statement
+// used to rebuild a table during migrations (PK change in AlterTable, MigrateCopyTable).
 func GetInsertFromSelectStatement(
 	schemaName string,
 	tableName string,
@@ -666,7 +671,7 @@ func GetInsertFromSelectStatement(
 	tableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName))
 	newTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(newTableName))
 	return fmt.Sprintf(
-		"INSERT INTO %s (%s) SELECT %s FROM %s",
+		"INSERT INTO %s (%s) SELECT %s FROM %s FINAL",
 		newTableIdentifier, joinedColNames, joinedColNames, tableIdentifier), nil
 }
 
@@ -688,6 +693,32 @@ func GetRenameTableStatement(
 	toTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(toTableName))
 	return fmt.Sprintf("RENAME TABLE %s TO %s",
 		fromTableIdentifier, toTableIdentifier), nil
+}
+
+// GetLocalMutationsCompletedQuery generates a query to check if all mutations on a table are complete.
+// Unlike GetAllMutationsCompletedQuery, this queries system.mutations directly (no clusterAllReplicas)
+// and works on both local Docker ClickHouse and ClickHouse Cloud.
+func GetLocalMutationsCompletedQuery(schemaName string, tableName string) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
+	}
+	return fmt.Sprintf(
+		"SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = %s AND table = %s AND is_done = 0",
+		singleQuoted(schemaName), singleQuoted(tableName),
+	), nil
+}
+
+// escapeSQLString escapes single quotes in a string for use in SQL literals.
+func escapeSQLString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// singleQuoted wraps a string in single quotes with escaping for SQL string literals.
+func singleQuoted(s string) string {
+	return fmt.Sprintf("'%s'", escapeSQLString(s))
 }
 
 func identifier(s string) string {

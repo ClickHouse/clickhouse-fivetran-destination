@@ -1,0 +1,47 @@
+{
+   "create_table" : {
+      "add_col_default_exists": {
+         "columns": {
+            "id": "INT",
+            "amount" : "DOUBLE"
+         },
+         "primary_key": ["id"]
+      }
+   },
+   "ops" : [
+      {
+         "upsert": {
+            "add_col_default_exists": [
+               {"id": 1, "amount": 100.45},
+               {"id": 2, "amount": 150.33},
+               {"id": 3, "amount": 200.00}
+            ]
+         }
+      }
+   ],
+   "schema_migration" : [
+      {
+         "add_column_with_default_value": [
+            {
+               "table": "add_col_default_exists",
+               "column": "note",
+               "data_type": "STRING",
+               "default_value": "first-default"
+            }
+         ]
+      },
+      {
+         "add_column_with_default_value": [
+            {
+               "table": "add_col_default_exists",
+               "column": "note",
+               "data_type": "STRING",
+               "default_value": "second-default"
+            }
+         ]
+      }
+   ],
+   "describe_table" : [
+      "add_col_default_exists"
+   ]
+}

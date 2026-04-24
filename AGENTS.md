@@ -21,7 +21,7 @@ See [README.md](./README.md) for documentation links and [CONTRIBUTING.md](./CON
 The codebase lives under `destination/` and is organized as:
 
 - `cmd/` — entry point; starts the gRPC server on port 50052
-- `service/` — gRPC service implementation (`Server` struct implements `DestinationConnectorServer`). RPC handlers are in `server.go`; the `Migrate` RPC handler is in `migrate.go`
+- `service/` — gRPC service implementation (`Server` struct implements `DestinationConnectorServer`). RPC handlers are in `server.go`; the `Migrate` RPC handler is in `server_migrate.go`
 - `db/` — ClickHouse database operations (connections, queries, mutations). Migration-specific DB methods (e.g., `MigrateCopyTable`, `MigrateSoftDeleteToHistory`) are in `clickhouse.go`
 - `db/sql/` — SQL query building
 - `db/config/` — connection configuration parsing

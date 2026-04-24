@@ -371,7 +371,6 @@ func TestHistoryMode(t *testing.T) {
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
 }
 
-
 func TestSchemaMigrationsDDL(t *testing.T) {
 	fileName := "schema_migrations_input_ddl.json"
 	tableName := "transaction"
@@ -395,6 +394,235 @@ func TestSchemaMigrationsDDL(t *testing.T) {
 		{"4", "150.33", "false", "\\N"},
 		{"10", "200", "false", "\\N"},
 		{"20", "50", "false", "\\N"},
+	}, dbRecordsCSVStr)
+}
+
+func TestSchemaMigrationsDML(t *testing.T) {
+	fileName := "schema_migrations_input_dml.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// Verify transaction table after: copy_column(desc->desc_detailed), update_column_value(amount=202.57),
+	// add_column_with_default_value(operation_time), set_column_to_null(desc), rename_column(amount->amount_renamed)
+	// Note: dynamically added columns (desc_detailed, operation_time) appear after _fivetran_synced
+	assertTableColumns(t, "transaction", [][]string{
+		{"id", "Int32", ""},
+		{"amount_renamed", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"desc_detailed", "Nullable(String)", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify data: amount_renamed should be 202.57, desc should be NULL, desc_detailed should have original values.
+	// operation_time checks the Option-B path in handleUpdateColumnValue: a second schema_migration batch
+	// updates it to "2024-01-15T10:30:00.123Z", which must land as 2024-01-15 10:30:00.123000000 in
+	// DateTime64(9, 'UTC') — proving the ISO literal was pre-converted to nanoseconds (not passed raw).
+	query := "SELECT id, amount_renamed, desc, desc_detailed, operation_time FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "202.57", "\\N", "\\N", "2024-01-15 10:30:00.123000000"},
+		{"2", "202.57", "\\N", "two", "2024-01-15 10:30:00.123000000"},
+		{"3", "202.57", "\\N", "two", "2024-01-15 10:30:00.123000000"},
+		{"4", "202.57", "\\N", "two", "2024-01-15 10:30:00.123000000"},
+		{"10", "202.57", "\\N", "three", "2024-01-15 10:30:00.123000000"},
+		{"20", "202.57", "\\N", "money", "2024-01-15 10:30:00.123000000"},
+	}, dbRecordsCSVStr)
+
+	// Verify transaction_renamed exists (was transaction_new, copied from transaction before rename, then table-renamed)
+	// Note: column is still "amount" because copy_table happened before rename_column
+	assertTableColumns(t, "transaction_renamed", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"desc_detailed", "Nullable(String)", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify transaction_renamed data: copy_table runs AFTER copy_column, update_column_value,
+	// add_column_with_default_value, and set_column_to_null, but BEFORE rename_column and the
+	// second schema_migration batch that updates operation_time.
+	query = "SELECT id, amount, desc, desc_detailed, operation_time FROM tester.transaction_renamed FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr = runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "202.57", "\\N", "\\N", "2005-05-28 20:57:00.000000000"},
+		{"2", "202.57", "\\N", "two", "2005-05-28 20:57:00.000000000"},
+		{"3", "202.57", "\\N", "two", "2005-05-28 20:57:00.000000000"},
+		{"4", "202.57", "\\N", "two", "2005-05-28 20:57:00.000000000"},
+		{"10", "202.57", "\\N", "three", "2005-05-28 20:57:00.000000000"},
+		{"20", "202.57", "\\N", "money", "2005-05-28 20:57:00.000000000"},
+	}, dbRecordsCSVStr)
+
+	// Verify transaction_drop was dropped
+	query = "SELECT count() FROM system.tables WHERE database = 'tester' AND name = 'transaction_drop' FORMAT CSV"
+	result := runQuery(t, query)
+	require.Contains(t, result, "0")
+}
+
+func TestSchemaMigrationsSyncModes(t *testing.T) {
+	fileName := "schema_migrations_input_sync_modes.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// Verify transaction_history table: desc dropped in history mode, article + next_review added in history mode
+	// (both appended at end in declaration order). desc column is preserved (not physically dropped) per the
+	// spec — historical values are maintained. next_review is a UTC_DATETIME default and exercises the
+	// MigrateAddColumnInHistoryMode bug-fix path where the ISO default must be pre-converted to nanoseconds.
+	assertTableColumns(t, "transaction_history", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""},
+		{"article", "Nullable(String)", ""},
+		{"next_review", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify transaction table was converted to history mode (soft_delete -> history)
+	assertTableColumns(t, "transaction", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""}})
+
+	// Verify new_transaction_history was converted to soft-delete mode (history -> soft_delete)
+	assertTableColumns(t, "new_transaction_history", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"desc", "Nullable(String)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+
+	// Verify transaction data after soft_delete(id=20) + migrate_soft_delete_to_history
+	query := "SELECT id, amount, desc, _fivetran_active FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "\\N", "true"},
+		{"2", "150.33", "two", "true"},
+		{"3", "150.33", "two", "true"},
+		{"4", "150.33", "two", "true"},
+		{"10", "200", "three", "true"},
+		{"20", "50", "money", "false"},
+	}, dbRecordsCSVStr)
+
+	// Verify new_transaction_history data: converted from history back to soft-delete with the
+	// default keep_deleted_rows=false (the SDK tester does not expose keep_deleted_rows, so the
+	// proto's optional bool stays at false on the wire).
+	query = "SELECT id, amount, _fivetran_deleted FROM tester.new_transaction_history FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr = runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "false"},
+		{"2", "150.33", "false"},
+		{"3", "150.33", "false"},
+		{"4", "150.33", "false"},
+		{"10", "200", "false"},
+	}, dbRecordsCSVStr)
+
+	// Verify transaction_history data: history rows with article + next_review added and desc dropped.
+	// All migrations use the same operation_timestamp, so this assertion ensures composability: active
+	// rows at that timestamp receive the latest defaults for every chained migration (article +
+	// next_review) and have desc nulled. next_review specifically proves the history-mode add-column
+	// path converts UTC_DATETIME defaults to nanoseconds rather than forwarding the raw ISO string —
+	// the CSV format "2024-01-15 10:30:00.123000000" is what DateTime64(9,'UTC') prints for the
+	// nanosecond-epoch value of "2024-01-15T10:30:00.123Z".
+	query = "SELECT id, amount, desc, article, next_review, _fivetran_active FROM tester.transaction_history FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr = runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "\\N", "\\N", "\\N", "false"},
+		{"1", "100.45", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"2", "150.33", "two", "\\N", "\\N", "false"},
+		{"2", "150.33", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"3", "150.33", "two", "\\N", "\\N", "false"},
+		{"3", "150.33", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"4", "150.33", "two", "\\N", "\\N", "false"},
+		{"4", "150.33", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"10", "200", "three", "\\N", "\\N", "false"},
+		{"10", "100", "three", "\\N", "\\N", "false"},
+		{"10", "100", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+		{"20", "50", "money", "\\N", "\\N", "false"},
+		{"20", "50", "\\N", "Ordered article", "2024-01-15 10:30:00.123000000", "true"},
+	}, dbRecordsCSVStr)
+}
+
+// TestSchemaMigrationsAddColumnInHistoryModeEmptyTable exercises the empty-table branch of
+// MigrateAddColumnInHistoryMode. The Schema Migration Helper spec says the migration "can be
+// skipped as there are no records to maintain history for" when the target is empty — but
+// that short-circuit applies only to the history-tracking steps (INSERT new active versions,
+// close old rows). The ALTER TABLE ADD COLUMN itself must still run
+func TestSchemaMigrationsAddColumnInHistoryModeEmptyTable(t *testing.T) {
+	fileName := "schema_migrations_input_empty_history_add_column.json"
+	tableName := "empty_history_table"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// The new column (`article`) must exist in the final schema.
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_start", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_end", "Nullable(DateTime64(9, 'UTC'))", ""},
+		{"_fivetran_active", "Nullable(Bool)", ""},
+		{"article", "Nullable(String)", ""}})
+}
+
+// TestSchemaMigrationsCopyTableRetry exercises the re-send branch of COPY_TABLE.
+// ClickHouse's CREATE TABLE ... AS ... only clones structure, so MigrateCopyTable
+// has to follow with INSERT ... SELECT ... FINAL — the pair is not atomic, and
+// without a pre-drop of the target a second copy_table request with the same
+// to_table would hit "Table already exists".
+func TestSchemaMigrationsCopyTableRetry(t *testing.T) {
+	fileName := "schema_migrations_input_copy_table_retry.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	assertTableColumns(t, "copy_table_retry_copy", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+
+	query := "SELECT id, amount FROM tester.copy_table_retry_copy FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45"},
+		{"2", "150.33"},
+		{"3", "200"},
+	}, dbRecordsCSVStr)
+}
+
+// TestSchemaMigrationsAddColumnWithDefaultValueExists exercises the re-send branch of
+// ADD_COLUMN_WITH_DEFAULT_VALUE. The Schema Migration Helper spec (Note 2 under that
+// migration) says Fivetran may re-send the request after the column already exists, in
+// which case the destination must skip the ADD COLUMN step but still execute the UPDATE
+// to set the default on every row.
+func TestSchemaMigrationsAddColumnWithDefaultValueExists(t *testing.T) {
+	fileName := "schema_migrations_input_add_column_default_exists.json"
+	tableName := "add_col_default_exists"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// ADD COLUMN appends — the re-sent migration must not have caused a duplicate.
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"note", "Nullable(String)", ""}})
+
+	// Every row must carry the *second* default — proves the UPDATE step ran on the
+	// second call even though the ADD was a no-op.
+	query := "SELECT id, amount, note FROM tester.add_col_default_exists FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "second-default"},
+		{"2", "150.33", "second-default"},
+		{"3", "200", "second-default"},
 	}, dbRecordsCSVStr)
 }
 

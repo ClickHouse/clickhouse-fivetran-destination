@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/db/config"
 	pb "fivetran.com/fivetran_sdk/proto"
 )
@@ -149,6 +150,35 @@ func FailedTruncateTableResponse(schemaName string, tableName string, err error)
 			Task: toTask(fmt.Sprintf("Failed to truncate table `%s`.`%s`, cause: %s", schemaName, tableName, err)),
 		},
 	}
+}
+
+func SuccessfulMigrateResponse() *pb.MigrateResponse {
+	return &pb.MigrateResponse{
+		Response: &pb.MigrateResponse_Success{
+			Success: true,
+		},
+	}
+}
+
+func UnsupportedMigrateResponse() *pb.MigrateResponse {
+	return &pb.MigrateResponse{
+		Response: &pb.MigrateResponse_Unsupported{
+			Unsupported: true,
+		},
+	}
+}
+
+func FailedMigrateResponse(schemaName string, tableName string, err error) *pb.MigrateResponse {
+	logError("Migrate", err)
+	return &pb.MigrateResponse{
+		Response: &pb.MigrateResponse_Task{
+			Task: toTask(fmt.Sprintf("Failed to migrate `%s`.`%s`, cause: %s", schemaName, tableName, err)),
+		},
+	}
+}
+
+func logError(endpoint string, err error) {
+	log.Error(fmt.Errorf("%s failed: %w", endpoint, err))
 }
 
 func toTask(taskMessage string) *pb.Task {

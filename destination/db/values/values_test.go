@@ -7,6 +7,7 @@ import (
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQuoteValue(t *testing.T) {
@@ -341,4 +342,139 @@ func TestParseTruncatedUTCDateTime(t *testing.T) {
 	val, err = Parse("test", pb.DataType_UTC_DATETIME, "9999-12-31T23:59:59.999999999Z")
 	assert.NoError(t, err)
 	assert.Equal(t, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC), val)
+}
+
+func TestMigrateValue(t *testing.T) {
+	// NULL
+	mv := NewMigrateValueNull()
+	assert.True(t, mv.IsNull())
+	assert.Equal(t, "NULL", mv.Literal())
+
+	// Plain value — quoted
+	mv = NewMigrateValueQuoted("hello")
+	assert.False(t, mv.IsNull())
+	assert.Equal(t, "'hello'", mv.Literal())
+
+	// Embedded single quote — escaped (SQL-standard doubling)
+	mv = NewMigrateValueQuoted("O'Brien")
+	assert.False(t, mv.IsNull())
+	assert.Equal(t, "'O''Brien'", mv.Literal())
+
+	// Empty string — valid quoted literal, NOT NULL
+	mv = NewMigrateValueQuoted("")
+	assert.False(t, mv.IsNull())
+	assert.Equal(t, "''", mv.Literal())
+
+	// Zero-value MigrateValue: safe defaults (not NULL, empty literal)
+	// This guards against accidental construction without going through the
+	// constructors — builders must still behave predictably.
+	var zero MigrateValue
+	assert.False(t, zero.IsNull())
+	assert.Equal(t, "", zero.Literal())
+}
+
+// TestNewMigrateValue exercises the migration-path formatter. The invariants
+// covered here include the ones the old service.formatMigrateValue covered plus
+// a few regressions (UTC parse errors now surface; single quotes are escaped).
+//
+// Keep this table in sync with TestQuoteValue / TestQuoteUTCDateTime above —
+// Value (write path) and NewMigrateValue (migration path) must agree on the
+// effective SQL literal they produce so migrations stay consistent with writes
+// for the same DataType + value.
+func TestNewMigrateValue(t *testing.T) {
+	cases := []struct {
+		name    string
+		colType pb.DataType
+		value   string
+		want    string
+	}{
+		// UTC_DATETIME: ISO 8601 -> nanos-since-epoch, quoted.
+		{"UTC_DATETIME, seconds", pb.DataType_UTC_DATETIME, "2005-05-28T20:57:00Z", "'1117313820000000000'"},
+		{"UTC_DATETIME, milliseconds", pb.DataType_UTC_DATETIME, "2024-01-15T10:30:00.123Z", "'1705314600123000000'"},
+		{"UTC_DATETIME, nanoseconds", pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456789Z", "'1646455512123456789'"},
+
+		// NAIVE_DATETIME / NAIVE_DATE: pass-through, quoted. ClickHouse accepts
+		// both T and space separators so there's no reformatting needed.
+		{"NAIVE_DATETIME passthrough", pb.DataType_NAIVE_DATETIME, "2005-05-28T20:57:00", "'2005-05-28T20:57:00'"},
+		{"NAIVE_DATE passthrough", pb.DataType_NAIVE_DATE, "2005-05-28", "'2005-05-28'"},
+
+		// Strings: quoted + escape embedded single quotes (defense in depth —
+		// SDK defaults are user-configurable).
+		{"STRING plain", pb.DataType_STRING, "hello world", "'hello world'"},
+		{"STRING with single quote", pb.DataType_STRING, "O'Brien", "'O''Brien'"},
+		{"STRING empty", pb.DataType_STRING, "", "''"},
+
+		// Numerics: the migration UPDATE path quotes everything and ClickHouse
+		// coerces. Matches the pre-refactor behavior.
+		{"INT", pb.DataType_INT, "42", "'42'"},
+		{"BOOLEAN", pb.DataType_BOOLEAN, "true", "'true'"},
+		{"DOUBLE", pb.DataType_DOUBLE, "3.14", "'3.14'"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewMigrateValue(tc.colType, tc.value)
+			require.NoError(t, err)
+			assert.False(t, got.IsNull())
+			assert.Equal(t, tc.want, got.Literal())
+		})
+	}
+}
+
+func TestNewMigrateValue_InvalidUTCDateTime(t *testing.T) {
+	// Unlike the old formatMigrateValue (which quietly returned the raw string),
+	// NewMigrateValue errors out so the handler can fail fast instead of sending
+	// a malformed literal to ClickHouse.
+	_, err := NewMigrateValue(pb.DataType_UTC_DATETIME, "not-a-date")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "UTC datetime")
+}
+
+func TestNewMigrateValue_InvalidNaiveInputsArePassedThrough(t *testing.T) {
+	// NAIVE_DATE and NAIVE_DATETIME are not parsed here — ClickHouse does the
+	// parsing at execution time. Malformed strings pass through quoted; if they
+	// are actually invalid, ClickHouse surfaces the error at UPDATE time.
+	got, err := NewMigrateValue(pb.DataType_NAIVE_DATE, "not-a-date")
+	require.NoError(t, err)
+	assert.Equal(t, "'not-a-date'", got.Literal())
+
+	got, err = NewMigrateValue(pb.DataType_NAIVE_DATETIME, "not-a-date")
+	require.NoError(t, err)
+	assert.Equal(t, "'not-a-date'", got.Literal())
+}
+
+// TestParseUTCTimestampToNanos covers the usage of ParseUTCTimestampToNanos
+// to transform Fivetran UTC_DATETIME format to CH style per the SDK spec:
+// literal `Z` suffix, 0–9 fractional-second digits, no timezone offsets.
+func TestParseUTCTimestampToNanos(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"no fractional seconds", "2005-05-28T20:57:00Z", "1117313820000000000"},
+		{"milliseconds", "2024-01-15T10:30:00.123Z", "1705314600123000000"},
+		{"microseconds", "2022-03-05T04:45:12.123456Z", "1646455512123456000"},
+		{"nanoseconds", "2022-03-05T04:45:12.123456789Z", "1646455512123456789"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseUTCTimestampToNanos(tc.value)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	// Non-UTC offset is outside the Fivetran UTC_DATETIME spec ("always in UTC
+	// timezone") — must be rejected. Guards against regressing to the RFC3339
+	// parse that silently accepted offsets like +05:00.
+	_, err := ParseUTCTimestampToNanos("2024-01-15T10:30:00+05:00")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "UTC datetime")
+
+	// Garbage input and empty string both surface a parse error.
+	_, err = ParseUTCTimestampToNanos("not-a-timestamp")
+	require.Error(t, err)
+	_, err = ParseUTCTimestampToNanos("")
+	require.Error(t, err)
 }
