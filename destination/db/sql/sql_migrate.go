@@ -80,7 +80,7 @@ func GetCreateTableAsStatement(schemaName string, fromTable string, toTable stri
 // GetCloseActiveRowsStatement generates:
 //
 //		ALTER TABLE `schema`.`table`
-//	   UPDATE `_fivetran_active` = FALSE,
+//	   UPDATE `_fivetran_active` = false,
 //	          `_fivetran_end` = '<timestamp - 1ms>'
 //		WHERE `_fivetran_active` = true
 //	   AND `_fivetran_start` < '<timestamp>'
@@ -108,7 +108,7 @@ func GetCloseActiveRowsStatement(
 		whereSuffix = fmt.Sprintf(" AND %s IS NOT NULL", identifier(columnFilter))
 	}
 	return fmt.Sprintf(
-		"ALTER TABLE %s UPDATE %s = FALSE, %s = '%s' WHERE %s = true AND %s < '%s'%s",
+		"ALTER TABLE %s UPDATE %s = false, %s = '%s' WHERE %s = true AND %s < '%s'%s",
 		fullTableName,
 		identifier(constants.FivetranActive),
 		identifier(constants.FivetranEnd),
@@ -270,7 +270,7 @@ func GetInsertFromSelectWithHistoryColumnsStatement(
 	// Build the _fivetran_active expression
 	var activeExpr string
 	if softDeletedColumn != "" {
-		activeExpr = fmt.Sprintf("if(%s = 0, true, false)", identifier(softDeletedColumn))
+		activeExpr = fmt.Sprintf("if(%s = false, true, false)", identifier(softDeletedColumn))
 	} else {
 		activeExpr = "true"
 	}

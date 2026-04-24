@@ -56,7 +56,7 @@ func TestGetCreateTableAsStatement(t *testing.T) {
 
 func TestGetCloseActiveRowsStatement(t *testing.T) {
 	// 1117314420000000000 - 1000000 = 1117314419999000000 (minus 1ms)
-	unfiltered := "ALTER TABLE `s`.`t` UPDATE `_fivetran_active` = FALSE, `_fivetran_end` = '1117314419999000000' WHERE `_fivetran_active` = true AND `_fivetran_start` < '1117314420000000000'"
+	unfiltered := "ALTER TABLE `s`.`t` UPDATE `_fivetran_active` = false, `_fivetran_end` = '1117314419999000000' WHERE `_fivetran_active` = true AND `_fivetran_start` < '1117314420000000000'"
 
 	stmt, err := GetCloseActiveRowsStatement("s", "t", "1117314420000000000", "")
 	assert.NoError(t, err)
@@ -129,7 +129,7 @@ func TestGetInsertFromSelectWithHistoryColumnsStatement(t *testing.T) {
 		[]string{"id", "amount"}, "_fivetran_deleted")
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"INSERT INTO `s`.`to_t` (`id`,`amount`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) SELECT `id`,`amount`,`_fivetran_synced`,`_fivetran_synced`,'9223372036000000000',if(`_fivetran_deleted` = 0, true, false) FROM `s`.`from_t` FINAL",
+		"INSERT INTO `s`.`to_t` (`id`,`amount`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) SELECT `id`,`amount`,`_fivetran_synced`,`_fivetran_synced`,'9223372036000000000',if(`_fivetran_deleted` = false, true, false) FROM `s`.`from_t` FINAL",
 		stmt)
 
 	stmt, err = GetInsertFromSelectWithHistoryColumnsStatement("s", "from_t", "to_t",
