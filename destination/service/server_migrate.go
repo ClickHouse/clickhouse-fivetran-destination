@@ -112,9 +112,9 @@ func handleCopyOperation(
 	conn *db.ClickHouseConnection,
 	schema string,
 	table string,
-	copy *pb.CopyOperation,
+	copyOp *pb.CopyOperation,
 ) (*pb.MigrateResponse, error) {
-	switch entity := copy.GetEntity().(type) {
+	switch entity := copyOp.GetEntity().(type) {
 	case *pb.CopyOperation_CopyTable:
 		fromTable := entity.CopyTable.GetFromTable()
 		toTable := entity.CopyTable.GetToTable()
@@ -171,7 +171,7 @@ func handleCopyOperation(
 		return SuccessfulMigrateResponse(), nil
 
 	default:
-		err := fmt.Errorf("unsupported copy operation entity: %T", copy.GetEntity())
+		err := fmt.Errorf("unsupported copy operation entity: %T", copyOp.GetEntity())
 		return FailedMigrateResponse(schema, table, err), nil
 	}
 }
