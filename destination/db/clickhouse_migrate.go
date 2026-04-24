@@ -95,22 +95,16 @@ func (conn *ClickHouseConnection) CopyColumnData(
 	return nil
 }
 
+// MigrateCopyTable implements the COPY_TABLE schema migration: create `toTable`
+// with the same structure as `fromTable` and populate it from the source.
+// This may use just CLONE in the future once these this is fixed:
+// https://github.com/ClickHouse/ClickHouse/issues/78870
 func (conn *ClickHouseConnection) MigrateCopyTable(
 	ctx context.Context,
 	schemaName string,
 	fromTable string,
 	toTable string,
 ) error {
-	// Create target table with same structure
-	createStmt, err := sql.GetCreateTableAsStatement(schemaName, fromTable, toTable)
-	if err != nil {
-		return err
-	}
-	err = conn.ExecStatement(ctx, createStmt, migrateCopyTableCreate, false)
-	if err != nil {
-		return err
-	}
-	// Get column names for the INSERT...SELECT
 	tableDesc, err := conn.DescribeTable(ctx, schemaName, fromTable)
 	if err != nil {
 		return err
@@ -118,6 +112,20 @@ func (conn *ClickHouseConnection) MigrateCopyTable(
 	colNames := make([]string, len(tableDesc.Columns))
 	for i, col := range tableDesc.Columns {
 		colNames[i] = col.Name
+	}
+	toTableQualified, err := sql.GetQualifiedTableName(schemaName, toTable)
+	if err != nil {
+		return err
+	}
+	if err = conn.DropTable(ctx, toTableQualified); err != nil {
+		return err
+	}
+	createStmt, err := sql.GetCreateTableAsStatement(schemaName, fromTable, toTable)
+	if err != nil {
+		return err
+	}
+	if err = conn.ExecStatement(ctx, createStmt, migrateCopyTableCreate, false); err != nil {
+		return err
 	}
 	insertStmt, err := sql.GetInsertFromSelectStatement(schemaName, fromTable, toTable, colNames)
 	if err != nil {
@@ -489,7 +497,14 @@ func (conn *ClickHouseConnection) MigrateCopyTableToHistoryMode(
 		&types.ColumnDefinition{Name: constants.FivetranActive, Type: fmt.Sprintf("%s(%s)", constants.Nullable, constants.Bool)},
 	)
 	newTableDesc := types.MakeTableDescription(newCols)
-	// Step 3: Create target table
+	// Step 3: Pre-drop any leftover and create the target table.
+	toTableQualified, err := sql.GetQualifiedTableName(schemaName, toTable)
+	if err != nil {
+		return err
+	}
+	if err = conn.DropTable(ctx, toTableQualified); err != nil {
+		return err
+	}
 	err = conn.CreateTable(ctx, schemaName, toTable, newTableDesc)
 	if err != nil {
 		return err

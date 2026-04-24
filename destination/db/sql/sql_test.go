@@ -168,6 +168,15 @@ func TestGetCreateTableStatement(t *testing.T) {
 	assert.ErrorContains(t, err, "no _fivetran_synced column")
 }
 
+func TestGetDropTableStatement(t *testing.T) {
+	qualified, err := GetQualifiedTableName("foo", "bar")
+	assert.NoError(t, err)
+
+	stmt, err := GetDropTableStatement(qualified)
+	assert.NoError(t, err)
+	assert.Equal(t, "DROP TABLE IF EXISTS `foo`.`bar` SYNC", stmt)
+}
+
 func TestGetTruncateTableStatement(t *testing.T) {
 	emptyStr := ""
 	syncedColumn := "_fivetran_synced"

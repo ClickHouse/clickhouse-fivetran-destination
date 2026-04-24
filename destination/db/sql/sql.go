@@ -93,7 +93,7 @@ func GetCreateDatabaseStatement(schemaName string) (string, error) {
 }
 
 func GetDropTableStatement(tableName QualifiedTableName) (string, error) {
-	return fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName), nil
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s SYNC", tableName), nil
 }
 
 func GetSelectFromSystemGrantsQuery(username string) (string, error) {

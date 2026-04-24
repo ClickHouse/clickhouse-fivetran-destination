@@ -571,6 +571,31 @@ func TestSchemaMigrationsAddColumnInHistoryModeEmptyTable(t *testing.T) {
 		{"article", "Nullable(String)", ""}})
 }
 
+// TestSchemaMigrationsCopyTableRetry exercises the re-send branch of COPY_TABLE.
+// ClickHouse's CREATE TABLE ... AS ... only clones structure, so MigrateCopyTable
+// has to follow with INSERT ... SELECT ... FINAL — the pair is not atomic, and
+// without a pre-drop of the target a second copy_table request with the same
+// to_table would hit "Table already exists".
+func TestSchemaMigrationsCopyTableRetry(t *testing.T) {
+	fileName := "schema_migrations_input_copy_table_retry.json"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	assertTableColumns(t, "copy_table_retry_copy", [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""}})
+
+	query := "SELECT id, amount FROM tester.copy_table_retry_copy FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45"},
+		{"2", "150.33"},
+		{"3", "200"},
+	}, dbRecordsCSVStr)
+}
+
 // TestSchemaMigrationsAddColumnWithDefaultValueExists exercises the re-send branch of
 // ADD_COLUMN_WITH_DEFAULT_VALUE. The Schema Migration Helper spec (Note 2 under that
 // migration) says Fivetran may re-send the request after the column already exists, in
