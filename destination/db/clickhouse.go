@@ -465,7 +465,7 @@ func (conn *ClickHouseConnection) RenameTable(
 	if err != nil {
 		return err
 	}
-	err = conn.ExecStatement(ctx, renameStmt, alterTablePKRename, false)
+	err = conn.ExecStatement(ctx, renameStmt, renameTable, false)
 	if err != nil {
 		return err
 	}
@@ -1156,7 +1156,7 @@ const (
 	alterTable                 connectionOpType = "AlterTable"
 	alterTablePKCreateTable    connectionOpType = "AlterTable(PK, Create table)"
 	alterTablePKInsert         connectionOpType = "AlterTable(PK, Insert from select)"
-	alterTablePKRename         connectionOpType = "AlterTable(PK, Rename tables)"
+	renameTable                connectionOpType = "RenameTable"
 	softTruncateTable          connectionOpType = "SoftTruncateTable"
 	hardTruncateTable          connectionOpType = "HardTruncateTable"
 	dropTable                  connectionOpType = "DropTable"
