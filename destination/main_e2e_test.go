@@ -571,6 +571,36 @@ func TestSchemaMigrationsAddColumnInHistoryModeEmptyTable(t *testing.T) {
 		{"article", "Nullable(String)", ""}})
 }
 
+// TestSchemaMigrationsAddColumnWithDefaultValueExists exercises the re-send branch of
+// ADD_COLUMN_WITH_DEFAULT_VALUE. The Schema Migration Helper spec (Note 2 under that
+// migration) says Fivetran may re-send the request after the column already exists, in
+// which case the destination must skip the ADD COLUMN step but still execute the UPDATE
+// to set the default on every row.
+func TestSchemaMigrationsAddColumnWithDefaultValueExists(t *testing.T) {
+	fileName := "schema_migrations_input_add_column_default_exists.json"
+	tableName := "add_col_default_exists"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+
+	// ADD COLUMN appends — the re-sent migration must not have caused a duplicate.
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float64)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"note", "Nullable(String)", ""}})
+
+	// Every row must carry the *second* default — proves the UPDATE step ran on the
+	// second call even though the ADD was a no-op.
+	query := "SELECT id, amount, note FROM tester.add_col_default_exists FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "second-default"},
+		{"2", "150.33", "second-default"},
+		{"3", "200", "second-default"},
+	}, dbRecordsCSVStr)
+}
+
 // fail on the first mismatch, to prevent long console output
 func assertDatabaseRecordsFailFast(t *testing.T, expectedRecords [][]string, dbRecordsCSVStr string) {
 	csvReader := csv.NewReader(strings.NewReader(dbRecordsCSVStr))

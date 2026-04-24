@@ -176,7 +176,9 @@ func (conn *ClickHouseConnection) MigrateAddColumnWithDefault(
 	comment string,
 	defaultValue values.MigrateValue,
 ) error {
-	// Step 1: Add column
+	// Step 1: Add column. GetAlterTableStatement always emits ADD COLUMN IF NOT EXISTS,
+	// which matches the Schema Migration Helper spec's requirement that re-sent
+	// ADD_COLUMN_WITH_DEFAULT_VALUE requests skip the ADD but still run the UPDATE below.
 	addOp := &types.AlterTableOp{
 		Op:     types.AlterTableAdd,
 		Column: column,

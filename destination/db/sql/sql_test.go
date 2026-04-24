@@ -26,23 +26,26 @@ func TestGetAlterTableStatement(t *testing.T) {
 	strType := "String"
 	comment := "foobar"
 	emptyComment := ""
+	// ADD COLUMN is always emitted with IF NOT EXISTS so re-sent
+	// ADD_COLUMN_WITH_DEFAULT_VALUE migrations don't error when the column
+	// already exists (see Schema Migration Helper spec, Note 2).
 	statement, err := GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` Int32", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` Int32", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType, Comment: &emptyComment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` Int32 COMMENT ''", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` Int32 COMMENT ''", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType, Comment: &comment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` Int32 COMMENT 'foobar'", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` Int32 COMMENT 'foobar'", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableDrop, Column: "qaz"},
@@ -83,7 +86,7 @@ func TestGetAlterTableStatement(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` String COMMENT 'foobar',DROP COLUMN `qux`,MODIFY COLUMN `zaq` Int32 COMMENT '',MODIFY COLUMN `qwe` String",
+		"ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` String COMMENT 'foobar',DROP COLUMN `qux`,MODIFY COLUMN `zaq` Int32 COMMENT '',MODIFY COLUMN `qwe` String",
 		statement)
 
 	_, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{})

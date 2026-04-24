@@ -27,9 +27,12 @@ func GetQualifiedTableName(schemaName string, tableName string) (QualifiedTableN
 // GetAlterTableStatement sample generated query:
 //
 //	ALTER TABLE `foo`.`bar`
-//	ADD COLUMN `c1` String COMMENT 'foobar',
+//	ADD COLUMN IF NOT EXISTS `c1` String COMMENT 'foobar',
 //	DROP COLUMN `c2`,
 //	MODIFY COLUMN `c3` Int32 COMMENT ''
+//
+// ADD COLUMN is always emitted with IF NOT EXISTS so that callers are idempotent
+// by default.
 //
 // Comments are added to distinguish certain Fivetran data types, see data_types.FivetranToClickHouseTypeWithComment.
 func GetAlterTableStatement(schemaName string, tableName string, ops []*types.AlterTableOp) (string, error) {
@@ -49,7 +52,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			if op.Type == nil {
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
-			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", identifier(op.Column), *op.Type))
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN IF NOT EXISTS %s %s", identifier(op.Column), *op.Type))
 			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
@@ -690,7 +693,6 @@ func GetRenameTableStatement(
 		fromTableIdentifier, toTableIdentifier), nil
 }
 
-
 // GetLocalMutationsCompletedQuery generates a query to check if all mutations on a table are complete.
 // Unlike GetAllMutationsCompletedQuery, this queries system.mutations directly (no clusterAllReplicas)
 // and works on both local Docker ClickHouse and ClickHouse Cloud.
@@ -716,7 +718,6 @@ func escapeSQLString(s string) string {
 func singleQuoted(s string) string {
 	return fmt.Sprintf("'%s'", escapeSQLString(s))
 }
-
 
 func identifier(s string) string {
 	return fmt.Sprintf("`%s`", s)
