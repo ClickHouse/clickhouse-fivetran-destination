@@ -46,27 +46,6 @@ func TestMigrateColumnType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown datatype")
 }
 
-func TestParseTimestampToNanos(t *testing.T) {
-	// RFC3339 format
-	nanos, err := parseTimestampToNanos("2005-05-28T20:57:00Z")
-	require.NoError(t, err)
-	assert.Equal(t, "1117313820000000000", nanos)
-
-	// With timezone offset
-	nanos, err = parseTimestampToNanos("2024-01-15T10:30:00+00:00")
-	require.NoError(t, err)
-	assert.Equal(t, "1705314600000000000", nanos)
-
-	// Invalid format
-	_, err = parseTimestampToNanos("not-a-timestamp")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to parse operation timestamp")
-
-	// Empty string
-	_, err = parseTimestampToNanos("")
-	assert.Error(t, err)
-}
-
 func TestHandleDropOperation_DefaultEntity(t *testing.T) {
 	resp, err := handleDropOperation(context.Background(), nil, "schema", "table", &pb.DropOperation{})
 	require.NoError(t, err)
@@ -85,7 +64,9 @@ func TestHandleDropOperation_InvalidTimestamp(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotNil(t, resp.GetTask())
-	assert.Contains(t, resp.GetTask().GetMessage(), "failed to parse operation timestamp")
+	msg := resp.GetTask().GetMessage()
+	assert.Contains(t, msg, "UTC datetime")
+	assert.Contains(t, msg, "not-a-timestamp")
 }
 
 func TestHandleCopyOperation_DefaultEntity(t *testing.T) {
@@ -153,7 +134,9 @@ func TestHandleAddOperation_HistoryMode_InvalidTimestamp(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotNil(t, resp.GetTask())
-	assert.Contains(t, resp.GetTask().GetMessage(), "failed to parse operation timestamp")
+	msg := resp.GetTask().GetMessage()
+	assert.Contains(t, msg, "UTC datetime")
+	assert.Contains(t, msg, "not-a-timestamp")
 }
 
 // values.NewMigrateValue surfaces UTC_DATETIME parse failures to the caller; make sure

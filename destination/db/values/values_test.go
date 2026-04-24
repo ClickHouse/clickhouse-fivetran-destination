@@ -442,3 +442,39 @@ func TestNewMigrateValue_InvalidNaiveInputsArePassedThrough(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "'not-a-date'", got.Literal())
 }
+
+// TestParseUTCTimestampToNanos covers the usage of ParseUTCTimestampToNanos
+// to transform Fivetran UTC_DATETIME format to CH style per the SDK spec:
+// literal `Z` suffix, 0–9 fractional-second digits, no timezone offsets.
+func TestParseUTCTimestampToNanos(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"no fractional seconds", "2005-05-28T20:57:00Z", "1117313820000000000"},
+		{"milliseconds", "2024-01-15T10:30:00.123Z", "1705314600123000000"},
+		{"microseconds", "2022-03-05T04:45:12.123456Z", "1646455512123456000"},
+		{"nanoseconds", "2022-03-05T04:45:12.123456789Z", "1646455512123456789"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseUTCTimestampToNanos(tc.value)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	// Non-UTC offset is outside the Fivetran UTC_DATETIME spec ("always in UTC
+	// timezone") — must be rejected. Guards against regressing to the RFC3339
+	// parse that silently accepted offsets like +05:00.
+	_, err := ParseUTCTimestampToNanos("2024-01-15T10:30:00+05:00")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "UTC datetime")
+
+	// Garbage input and empty string both surface a parse error.
+	_, err = ParseUTCTimestampToNanos("not-a-timestamp")
+	require.Error(t, err)
+	_, err = ParseUTCTimestampToNanos("")
+	require.Error(t, err)
+}

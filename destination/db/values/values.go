@@ -89,14 +89,26 @@ func (v MigrateValue) Literal() string { return v.literal }
 func NewMigrateValue(colType pb.DataType, value string) (MigrateValue, error) {
 	switch colType {
 	case pb.DataType_UTC_DATETIME:
-		t, err := time.Parse(constants.UTCDateTimeFormat, value)
+		nanos, err := ParseUTCTimestampToNanos(value)
 		if err != nil {
-			return MigrateValue{}, fmt.Errorf("can't parse %q as UTC datetime: %w", value, err)
+			return MigrateValue{}, err
 		}
-		return NewMigrateValueQuoted(strconv.FormatInt(t.UnixNano(), 10)), nil
+		return NewMigrateValueQuoted(nanos), nil
 	default:
 		return NewMigrateValueQuoted(value), nil
 	}
+}
+
+// ParseUTCTimestampToNanos parses a Fivetran UTC_DATETIME value (ISO 8601 with
+// a literal `Z` suffix and 0–9 fractional-second digits) and returns the
+// nanosecond-since-epoch value as a string, ready for interpolation into a
+// DateTime64(9,'UTC') literal.
+func ParseUTCTimestampToNanos(value string) (string, error) {
+	t, err := time.Parse(constants.UTCDateTimeFormat, value)
+	if err != nil {
+		return "", fmt.Errorf("can't parse %q as UTC datetime: %w", value, err)
+	}
+	return strconv.FormatInt(t.UnixNano(), 10), nil
 }
 
 func Parse(colName string, colType pb.DataType, val string) (any, error) {

@@ -3,9 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
 	dt "fivetran.com/fivetran_sdk/destination/common/data_types"
@@ -92,7 +90,7 @@ func handleDropOperation(
 		if col == "" {
 			return FailedMigrateResponse(schema, table, fmt.Errorf("drop_column_in_history_mode.column is required")), nil
 		}
-		tsNanos, err := parseTimestampToNanos(opTS)
+		tsNanos, err := values.ParseUTCTimestampToNanos(opTS)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
@@ -275,7 +273,7 @@ func handleAddOperation(
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
-		tsNanos, err := parseTimestampToNanos(opTS)
+		tsNanos, err := values.ParseUTCTimestampToNanos(opTS)
 		if err != nil {
 			return FailedMigrateResponse(schema, table, err), nil
 		}
@@ -462,16 +460,4 @@ func migrateColumnType(colType pb.DataType) (dt.ClickHouseType, error) {
 		chType.Type = fmt.Sprintf("Nullable(%s)", chType.Type)
 	}
 	return chType, nil
-}
-
-// parseTimestampToNanos parses an ISO 8601 timestamp string and returns nanoseconds since epoch as a string.
-func parseTimestampToNanos(ts string) (string, error) {
-	t, err := time.Parse(time.RFC3339, ts)
-	if err != nil {
-		t, err = time.Parse("2006-01-02T15:04:05Z", ts)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse operation timestamp %s: %w", ts, err)
-		}
-	}
-	return strconv.FormatInt(t.UnixNano(), 10), nil
 }
