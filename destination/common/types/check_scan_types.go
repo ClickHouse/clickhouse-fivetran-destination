@@ -49,7 +49,7 @@ func CheckScanTypes(
 }
 
 func joinColNames[Value any](cols map[string]Value) string {
-	var names []string
+	names := make([]string, 0, len(cols))
 	for name := range cols {
 		names = append(names, name)
 	}

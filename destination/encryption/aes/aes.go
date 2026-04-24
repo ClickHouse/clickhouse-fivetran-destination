@@ -33,19 +33,19 @@ func (r *Decoder) Read(dest []byte) (readBytes int, err error) {
 	}
 	offset := 0
 	if len(r.buf) > 0 {
-		if len(dest) < len(r.buf) {
+		switch {
+		case len(dest) < len(r.buf):
 			copy(dest, r.buf[:len(dest)])
 			r.buf = r.buf[len(dest):]
 			return len(dest), nil
-		} else if len(dest) == len(r.buf) {
+		case len(dest) == len(r.buf):
 			copy(dest, r.buf)
 			r.buf = nil
 			if r.fileLen == 0 {
 				return len(dest), io.EOF
-			} else {
-				return len(dest), nil
 			}
-		} else {
+			return len(dest), nil
+		default:
 			offset = copy(dest, r.buf)
 			if r.fileLen == 0 {
 				return offset, io.EOF
