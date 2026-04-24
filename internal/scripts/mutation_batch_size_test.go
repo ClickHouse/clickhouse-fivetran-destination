@@ -104,10 +104,8 @@ func runBatchSizeTest(t *testing.T, cfg batchSizeTestConfig) {
 			},
 		},
 		{
-			name: "DELETE",
-			generate: func(csv [][]string, cols *types.CSVColumns, table sql.QualifiedTableName) (string, error) {
-				return sql.GetHardDeleteStatement(csv, cols, table)
-			},
+			name:     "DELETE",
+			generate: sql.GetHardDeleteStatement,
 		},
 		{
 			name: "DELETE+Timestamp",
@@ -186,7 +184,7 @@ func runMutationSweep(
 
 func generateSimpleCSV(rowCount uint) [][]string {
 	csv := make([][]string, rowCount)
-	for i := uint(0); i < rowCount; i++ {
+	for i := range rowCount {
 		csv[i] = []string{
 			fmt.Sprintf("%d", i),
 			fmt.Sprintf("name_%d", i),
@@ -220,7 +218,7 @@ func makeSimpleCSVColumns() *types.CSVColumns {
 
 func generateRealisticCSV(rowCount uint) [][]string {
 	csv := make([][]string, rowCount)
-	for i := uint(0); i < rowCount; i++ {
+	for i := range rowCount {
 		csv[i] = []string{
 			fmt.Sprintf("%d", 160112174822+i),
 			fmt.Sprintf("%d", 361397856850+i),

@@ -46,16 +46,16 @@ func GroupSlices(fileLen uint, batchSize uint, maxParallelOperations uint) ([][]
 	if fileLen == 0 {
 		return nil, nil
 	}
-	groupsCount := uint(0)
+	var groupsCount uint
 	if fileLen%(batchSize*maxParallelOperations) > 0 {
 		groupsCount = (fileLen / batchSize / maxParallelOperations) + 1
 	} else {
 		groupsCount = fileLen / batchSize / maxParallelOperations
 	}
 	groups := make([][]Slice, groupsCount)
-	for i := uint(0); i < groupsCount; i++ {
+	for i := range groupsCount {
 		groups[i] = make([]Slice, 0, maxParallelOperations)
-		for j := uint(0); j < maxParallelOperations; j++ {
+		for j := range maxParallelOperations {
 			start := i*maxParallelOperations*batchSize + j*batchSize
 			if start >= fileLen {
 				break
