@@ -371,6 +371,33 @@ func TestHistoryMode(t *testing.T) {
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
 }
 
+
+func TestSchemaMigrationsDDL(t *testing.T) {
+	fileName := "schema_migrations_input_ddl.json"
+	tableName := "transaction"
+	startServer(t)
+	runSDKTestCommand(t, fileName, true)
+	// After DDL migrations: add_column (operation_time UTC_DATETIME), change_column_data_type (amount DOUBLE->FLOAT), drop_column (desc)
+	assertTableColumns(t, tableName, [][]string{
+		{"id", "Int32", ""},
+		{"amount", "Nullable(Float32)", ""},
+		{"_fivetran_synced", "DateTime64(9, 'UTC')", ""},
+		{"_fivetran_deleted", "Bool", ""},
+		{"operation_time", "Nullable(DateTime64(9, 'UTC'))", ""}})
+
+	// Verify data: amounts were cast from Float64 to Float32, desc column was dropped, operation_time is NULL (added without default)
+	query := "SELECT * EXCEPT _fivetran_synced FROM tester.transaction FINAL ORDER BY id FORMAT CSV SETTINGS select_sequential_consistency=1"
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "100.45", "false", "\\N"},
+		{"2", "150.33", "false", "\\N"},
+		{"3", "150.33", "false", "\\N"},
+		{"4", "150.33", "false", "\\N"},
+		{"10", "200", "false", "\\N"},
+		{"20", "50", "false", "\\N"},
+	}, dbRecordsCSVStr)
+}
+
 // fail on the first mismatch, to prevent long console output
 func assertDatabaseRecordsFailFast(t *testing.T, expectedRecords [][]string, dbRecordsCSVStr string) {
 	csvReader := csv.NewReader(strings.NewReader(dbRecordsCSVStr))
