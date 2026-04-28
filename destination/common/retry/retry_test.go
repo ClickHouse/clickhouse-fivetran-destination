@@ -3,8 +3,10 @@ package retry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 
@@ -13,10 +15,30 @@ import (
 )
 
 func TestIsNetError(t *testing.T) {
+	assert.False(t, IsNetError(nil))
 	assert.True(t, IsNetError(makeNetError()))
 	assert.True(t, IsNetError(io.EOF))
 	assert.True(t, IsNetError(errors.New("EOF")))
 	assert.False(t, IsNetError(errors.New("not a net.Error")))
+
+	// ch-go wraps the underlying io.EOF as "read: EOF" via go-faster/errors,
+	// which preserves Unwrap() so errors.Is(io.EOF) still matches. This is the
+	// shape we used to miss before the fix.
+	wrappedReadEOF := fmt.Errorf("read: %w", io.EOF)
+	assert.True(t, IsNetError(wrappedReadEOF))
+
+	// Multiple layers of wrapping (benchmark + ExecStatement) must still resolve.
+	deeplyWrapped := fmt.Errorf("error while executing DELETE FROM x [query_id=abc]: %w",
+		fmt.Errorf("InsertBatch(Hard delete task) failed after 0 ms: %w",
+			fmt.Errorf("read: %w", io.EOF)))
+	assert.True(t, IsNetError(deeplyWrapped))
+
+	// Connection-broken paths.
+	assert.True(t, IsNetError(syscall.EPIPE))
+	assert.True(t, IsNetError(fmt.Errorf("write: %w", syscall.EPIPE)))
+	assert.True(t, IsNetError(syscall.ECONNRESET))
+	assert.True(t, IsNetError(fmt.Errorf("send data: connection broken (EPIPE) to 1.2.3.4: %w", syscall.EPIPE)))
+	assert.True(t, IsNetError(net.ErrClosed))
 }
 
 func TestGetBackoffDelay(t *testing.T) {
