@@ -75,18 +75,19 @@ func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*C
 		// support ISO DateTime formats from CSV
 		// https://clickhouse.com/docs/en/operations/settings/formats#date_time_input_format
 		"date_time_input_format": "best_effort",
+		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
+		// https://github.com/ClickHouse/clickhouse-private/pull/12617
+		"alter_sync": 3,
+		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
+		// https://github.com/ClickHouse/clickhouse-private/pull/12617
+		"mutations_sync": 3,
+		// https://clickhouse.com/docs/en/operations/settings/settings#lightweight_deletes_sync
+		"lightweight_deletes_sync": 3,
 	}
 	var tlsConfig *tls.Config = nil
 	if !connConfig.Local {
 		tlsConfig = &tls.Config{InsecureSkipVerify: false}
-		// https://clickhouse.com/docs/en/operations/settings/settings#alter-sync
-		// https://github.com/ClickHouse/clickhouse-private/pull/12617
-		settings["alter_sync"] = 3
-		// https://clickhouse.com/docs/en/operations/settings/settings#mutations_sync
-		// https://github.com/ClickHouse/clickhouse-private/pull/12617
-		settings["mutations_sync"] = 3
-		// https://clickhouse.com/docs/en/operations/settings/settings#lightweight_deletes_sync
-		settings["lightweight_deletes_sync"] = 3
+
 		// https://clickhouse.com/docs/en/operations/settings/settings#select_sequential_consistency
 		settings["select_sequential_consistency"] = 1
 	}

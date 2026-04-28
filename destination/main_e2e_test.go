@@ -610,7 +610,7 @@ func waitPortIsReady(t *testing.T, port uint) {
 
 func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool) {
 	if recreateDatabase {
-		runQuery(t, "DROP DATABASE IF EXISTS tester")
+		runQuery(t, "DROP DATABASE IF EXISTS tester SYNC")
 		runQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
 	}
 	projectRootDir := getProjectRootDir(t)
