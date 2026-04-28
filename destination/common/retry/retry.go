@@ -132,9 +132,19 @@ func OnFalseWithFixedDelay(
 	}
 }
 
+// IsNetError returns true if err looks like a transient/recoverable network failure
+// from the ClickHouse Go driver and should be retried.
+//
+// errors.As(net.Error) already covers most cases — including syscall.EPIPE /
+// syscall.ECONNRESET (syscall.Errno has Timeout/Temporary methods) and net.ErrClosed
+// (its underlying type does too). The explicit io.EOF branch is required because
+// both ch-go and clickhouse-go wrap io.EOF in additional
 func IsNetError(err error) bool {
+	if err == nil {
+		return false
+	}
 	var netErr net.Error
-	return errors.As(err, &netErr) || err == io.EOF || err.Error() == "EOF"
+	return errors.As(err, &netErr) || errors.Is(err, io.EOF)
 }
 
 func GetDelayConfig() (initial time.Duration, max time.Duration) {
