@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"syscall"
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
@@ -134,37 +133,18 @@ func OnFalseWithFixedDelay(
 }
 
 // IsNetError returns true if err looks like a transient/recoverable network failure
-// from the ClickHouse Go driver and should be retried. We must walk the wrapped chain
-// because both ch-go (errors.Wrap from go-faster/errors) and clickhouse-go (fmt.Errorf
-// with %w, see https://github.com/ClickHouse/clickhouse-go/pull/1723) wrap the underlying
-// io.EOF / syscall errors with additional context such as
-// "send data: unexpected EOF to <addr> (conn_id=N, ...): write: EOF".
+// from the ClickHouse Go driver and should be retried.
+//
+// errors.As(net.Error) already covers most cases — including syscall.EPIPE /
+// syscall.ECONNRESET (syscall.Errno has Timeout/Temporary methods) and net.ErrClosed
+// (its underlying type does too). The explicit io.EOF branch is required because
+// both ch-go and clickhouse-go wrap io.EOF in additional
 func IsNetError(err error) bool {
 	if err == nil {
 		return false
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	// io.EOF surfaces when the server (or an intermediary) closed a pooled connection
-	// that was idle between syncs and the broken socket was handed back to us before
-	// the driver's connCheck could mark it bad.
-	if errors.Is(err, io.EOF) {
-		return true
-	}
-	// EPIPE / ECONNRESET show up when the peer closes the connection during a write,
-	// e.g. ClickHouse Cloud rolling a server-side replica.
-	if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
-		return true
-	}
-	// net.ErrClosed is returned by the Go runtime when something has called Close on the
-	// underlying net.Conn (the driver does this on EPIPE / EOF in sendData).
-	if errors.Is(err, net.ErrClosed) {
-		return true
-	}
-	// Defensive fallback for an unwrapped EOF coming from older driver code paths.
-	return err.Error() == "EOF"
+	return errors.As(err, &netErr) || errors.Is(err, io.EOF) || err.Error() == "EOF"
 }
 
 func GetDelayConfig() (initial time.Duration, max time.Duration) {
