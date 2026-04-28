@@ -18,7 +18,7 @@ func TestIsNetError(t *testing.T) {
 	assert.False(t, IsNetError(nil))
 	assert.True(t, IsNetError(makeNetError()))
 	assert.True(t, IsNetError(io.EOF))
-	assert.True(t, IsNetError(errors.New("EOF")))
+	assert.False(t, IsNetError(errors.New("EOF")))
 	assert.False(t, IsNetError(errors.New("not a net.Error")))
 
 	// ch-go wraps the underlying io.EOF as "read: EOF" via go-faster/errors,

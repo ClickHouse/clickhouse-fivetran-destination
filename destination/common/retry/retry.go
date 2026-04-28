@@ -144,7 +144,7 @@ func IsNetError(err error) bool {
 		return false
 	}
 	var netErr net.Error
-	return errors.As(err, &netErr) || errors.Is(err, io.EOF) || err.Error() == "EOF"
+	return errors.As(err, &netErr) || errors.Is(err, io.EOF)
 }
 
 func GetDelayConfig() (initial time.Duration, max time.Duration) {
