@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
@@ -26,7 +27,8 @@ func StartServer() {
 		log.Error(fmt.Errorf("failed to initialize logger: %w", err))
 		os.Exit(1)
 	}
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *flags.Port))
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", fmt.Sprintf(":%d", *flags.Port))
 	if err != nil {
 		log.Error(fmt.Errorf("failed to listen: %w", err))
 		os.Exit(1)

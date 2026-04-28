@@ -36,27 +36,27 @@ func TestGetRetryDelayConfig(t *testing.T) {
 
 	*flags.InitialRetryDelayMilliseconds = 0
 	*flags.MaxRetryDelayMilliseconds = 10
-	initial, max := GetDelayConfig()
+	initial, maxDelay := GetDelayConfig()
 	assert.Equal(t, time.Second, initial)
-	assert.Equal(t, time.Millisecond*10, max)
+	assert.Equal(t, time.Millisecond*10, maxDelay)
 
 	*flags.InitialRetryDelayMilliseconds = 50
 	*flags.MaxRetryDelayMilliseconds = 0
-	initial, max = GetDelayConfig()
+	initial, maxDelay = GetDelayConfig()
 	assert.Equal(t, time.Millisecond*50, initial)
-	assert.Equal(t, time.Millisecond*50, max)
+	assert.Equal(t, time.Millisecond*50, maxDelay)
 
 	*flags.InitialRetryDelayMilliseconds = 42
 	*flags.MaxRetryDelayMilliseconds = 144
-	initial, max = GetDelayConfig()
+	initial, maxDelay = GetDelayConfig()
 	assert.Equal(t, time.Millisecond*42, initial)
-	assert.Equal(t, time.Millisecond*144, max)
+	assert.Equal(t, time.Millisecond*144, maxDelay)
 
 	*flags.InitialRetryDelayMilliseconds = 144
 	*flags.MaxRetryDelayMilliseconds = 42
-	initial, max = GetDelayConfig()
+	initial, maxDelay = GetDelayConfig()
 	assert.Equal(t, time.Millisecond*144, initial)
-	assert.Equal(t, time.Millisecond*144, max)
+	assert.Equal(t, time.Millisecond*144, maxDelay)
 }
 
 func TestRetryNetError(t *testing.T) {

@@ -2,6 +2,7 @@ package csv
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -86,7 +87,7 @@ func NewCSVFileReader(
 	r.csvReader = csv.NewReader(decompressedReader)
 
 	header, err := r.csvReader.Read()
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		r.Close()
 		return nil, fmt.Errorf("received an empty CSV file %s without a header", fileName)
 	}

@@ -134,10 +134,10 @@ func OnFalseWithFixedDelay(
 
 func IsNetError(err error) bool {
 	var netErr net.Error
-	return errors.As(err, &netErr) || err == io.EOF || err.Error() == "EOF"
+	return errors.As(err, &netErr) || errors.Is(err, io.EOF) || err.Error() == "EOF"
 }
 
-func GetDelayConfig() (initial time.Duration, max time.Duration) {
+func GetDelayConfig() (initial time.Duration, maxDelay time.Duration) {
 	if *flags.InitialRetryDelayMilliseconds == 0 {
 		initial = time.Second
 	} else {

@@ -1,6 +1,35 @@
 version: "2"
 
 linters:
+  enable:
+    # Tier 1: correctness / safety nets
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - errname
+    - errorlint
+    - fatcontext
+    - gocheckcompilerdirectives
+    - mirror
+    - misspell
+    - nilerr
+    - nilnesserr
+    - predeclared
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - usestdlibvars
+    # Tier 2: moderate value, small cleanups
+    - gocritic
+    - intrange
+    - noctx
+    - prealloc
+    - unparam
+    - wastedassign
   settings:
     staticcheck:
       checks:
