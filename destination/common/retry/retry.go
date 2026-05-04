@@ -11,10 +11,18 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/log"
+	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-// OnNetError retries the given operation only if it returns a net.Error using exponential backoff strategy.
-// Any other error will be returned immediately.
+// chCodeKeeperException is the ClickHouse server error code KEEPER_EXCEPTION.
+// It surfaces transient ZooKeeper/Keeper failures such as "Session expired",
+// connection loss, and operation timeouts — all worth retrying.
+// Reference: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp
+const chCodeKeeperException = 999
+
+// OnNetError retries the given operation if it returns a transient error
+// (network failure or a ClickHouse Keeper exception) using an exponential
+// backoff strategy. Any other error will be returned immediately.
 // Execution time of all operations is measured and logged as notice.
 func OnNetError(
 	op func() error,
@@ -33,7 +41,7 @@ func OnNetError(
 		if err == nil {
 			return nil
 		}
-		if !IsNetError(err) {
+		if !IsRetryable(err) {
 			return err
 		}
 		failCount++
@@ -56,8 +64,9 @@ func OnNetError(
 	return nil
 }
 
-// OnNetErrorWithData retries the given operation only if it returns a net.Error using exponential backoff strategy.
-// Any other error will be returned immediately.
+// OnNetErrorWithData retries the given operation if it returns a transient
+// error (network failure or a ClickHouse Keeper exception) using an
+// exponential backoff strategy. Any other error will be returned immediately.
 // Execution time of all operations is measured and logged as notice.
 func OnNetErrorWithData[T any](
 	op func() (T, error),
@@ -76,7 +85,7 @@ func OnNetErrorWithData[T any](
 		if err == nil {
 			return data, nil
 		}
-		if !IsNetError(err) {
+		if !IsRetryable(err) {
 			var empty T
 			return empty, err
 		}
@@ -145,6 +154,24 @@ func IsNetError(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr) || errors.Is(err, io.EOF)
+}
+
+// IsKeeperException returns true if err is (or wraps) a ClickHouse server
+// exception with code 999 (KEEPER_EXCEPTION). These are transient failures of
+// the underlying ZooKeeper/Keeper layer — most commonly "Session expired",
+// connection loss, or operation timeout — and should be retried.
+func IsKeeperException(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ex *clickhouse.Exception
+	return errors.As(err, &ex) && ex.Code == chCodeKeeperException
+}
+
+// IsRetryable returns true if err represents a transient failure that the
+// retry loops should back off on and retry
+func IsRetryable(err error) bool {
+	return IsNetError(err) || IsKeeperException(err)
 }
 
 func GetDelayConfig() (initial time.Duration, max time.Duration) {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -39,6 +40,32 @@ func TestIsNetError(t *testing.T) {
 	assert.True(t, IsNetError(syscall.ECONNRESET))
 	assert.True(t, IsNetError(fmt.Errorf("send data: connection broken (EPIPE) to 1.2.3.4: %w", syscall.EPIPE)))
 	assert.True(t, IsNetError(net.ErrClosed))
+
+	// ClickHouse Keeper exceptions are NOT net errors — they are server-side
+	// exceptions handled by IsKeeperException / IsRetryable.
+	assert.False(t, IsNetError(&clickhouse.Exception{Code: 999, Message: "Session expired"}))
+}
+
+func TestIsKeeperException(t *testing.T) {
+	assert.False(t, IsKeeperException(nil))
+	assert.False(t, IsKeeperException(errors.New("plain error")))
+	assert.False(t, IsKeeperException(io.EOF))
+
+	// Code 999 (KEEPER_EXCEPTION)
+	assert.True(t, IsKeeperException(&clickhouse.Exception{Code: 999, Message: "Session expired"}))
+
+	// Wrapped, as it would arrive from ExecStatement / benchmark layers.
+	wrapped := fmt.Errorf("ExecStatement(ALTER TABLE x) failed: %w",
+		&clickhouse.Exception{Code: 999, Message: "Session expired"})
+	assert.True(t, IsKeeperException(wrapped))
+
+	// Other ClickHouse codes must not match.
+	assert.False(t, IsKeeperException(&clickhouse.Exception{Code: 516, Message: "Authentication failed"}))
+}
+
+func TestIsRetryable(t *testing.T) {
+	assert.True(t, IsRetryable(makeNetError()))
+	assert.True(t, IsRetryable(&clickhouse.Exception{Code: 999, Message: "Session expired"}))
 }
 
 func TestGetBackoffDelay(t *testing.T) {
@@ -108,6 +135,34 @@ func TestRetryNetError(t *testing.T) {
 		return makeNetError()
 	}, context.Background(), "TestRetryNetError", false)
 	assert.ErrorContains(t, err, "TestRetryNetError failed after 2 attempts")
+}
+
+func TestRetryKeeperException(t *testing.T) {
+	defer setupSuite()(t)
+
+	// A code 999 / "Session expired" eventually succeeds after one retry.
+	count := 0
+	err := OnNetError(func() error {
+		count++
+		if count == 2 {
+			return nil
+		}
+		return &clickhouse.Exception{Code: 999, Message: "Session expired"}
+	}, context.Background(), "TestRetryKeeperException", false)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	// Non-retryable ClickHouse exceptions surface immediately.
+	count = 0
+	err = OnNetError(func() error {
+		count++
+		return &clickhouse.Exception{Code: 497, Message: "Not enough privileges"}
+	}, context.Background(), "TestRetryKeeperException", false)
+	assert.Error(t, err)
+	assert.Equal(t, 1, count)
+	var ex *clickhouse.Exception
+	assert.True(t, errors.As(err, &ex))
+	assert.EqualValues(t, 497, ex.Code)
 }
 
 func TestRetryNetErrorWithData(t *testing.T) {
