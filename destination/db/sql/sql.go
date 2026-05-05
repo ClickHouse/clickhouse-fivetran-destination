@@ -27,9 +27,9 @@ func GetQualifiedTableName(schemaName string, tableName string) (QualifiedTableN
 // GetAlterTableStatement sample generated query:
 //
 //	ALTER TABLE `foo`.`bar`
-//	ADD COLUMN `c1` String COMMENT 'foobar',
-//	DROP COLUMN `c2`,
-//	MODIFY COLUMN `c3` Int32 COMMENT ''
+//	ADD COLUMN IF NOT EXISTS `c1` String COMMENT 'foobar',
+//	DROP COLUMN IF EXISTS `c2`,
+//	MODIFY COLUMN IF EXISTS `c3` Int32 COMMENT ''
 //
 // Comments are added to distinguish certain Fivetran data types, see data_types.FivetranToClickHouseTypeWithComment.
 func GetAlterTableStatement(schemaName string, tableName string, ops []*types.AlterTableOp) (string, error) {
@@ -49,7 +49,7 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			if op.Type == nil {
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
-			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN %s %s", identifier(op.Column), *op.Type))
+			statementsBuilder.WriteString(fmt.Sprintf("ADD COLUMN IF NOT EXISTS %s %s", identifier(op.Column), *op.Type))
 			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
@@ -57,12 +57,12 @@ func GetAlterTableStatement(schemaName string, tableName string, ops []*types.Al
 			if op.Type == nil {
 				return "", fmt.Errorf("type for column %s is not specified", op.Column)
 			}
-			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN %s %s", identifier(op.Column), *op.Type))
+			statementsBuilder.WriteString(fmt.Sprintf("MODIFY COLUMN IF EXISTS %s %s", identifier(op.Column), *op.Type))
 			if op.Comment != nil {
 				statementsBuilder.WriteString(fmt.Sprintf(" COMMENT '%s'", *op.Comment))
 			}
 		case types.AlterTableDrop:
-			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN %s", identifier(op.Column)))
+			statementsBuilder.WriteString(fmt.Sprintf("DROP COLUMN IF EXISTS %s", identifier(op.Column)))
 		}
 		if count < len(ops)-1 {
 			statementsBuilder.WriteString(",")
@@ -79,7 +79,15 @@ func GetCheckDatabaseExistsStatement(schemaName string) (string, error) {
 	if schemaName == "" {
 		return "", fmt.Errorf("schema name is empty")
 	}
-	return fmt.Sprintf("SELECT COUNT(*) FROM system.databases WHERE `name` = '%s'", schemaName), nil
+	return fmt.Sprintf("EXISTS DATABASE %s", identifier(schemaName)), nil
+}
+
+func GetCheckTableExistsStatement(schemaName string, tableName string) (string, error) {
+	fullName, err := GetQualifiedTableName(schemaName, tableName)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("EXISTS TABLE %s", fullName), nil
 }
 
 func GetCreateDatabaseStatement(schemaName string) (string, error) {
@@ -105,7 +113,7 @@ func GetSelectFromSystemGrantsQuery(username string) (string, error) {
 
 // GetCreateTableStatement sample generated query:
 //
-//	CREATE TABLE `foo`.`bar`
+//	CREATE TABLE IF NOT EXISTS `foo`.`bar`
 //	(`id` Int64, `c2` Nullable(String), `_fivetran_synced` DateTime64(9, 'UTC'), `_fivetran_deleted` Bool)
 //	ENGINE = ReplacingMergeTree(`_fivetran_synced`)
 //	ORDER BY (`id`)
@@ -146,7 +154,7 @@ func GetCreateTableStatement(
 	columns := columnsBuilder.String()
 
 	query := fmt.Sprintf(
-		"CREATE TABLE %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
+		"CREATE TABLE IF NOT EXISTS %s (%s) ENGINE = ReplacingMergeTree(%s) ORDER BY (%s)",
 		fullName, columns, identifier(constants.FivetranSynced), strings.Join(orderByCols, ","))
 	return query, nil
 }
