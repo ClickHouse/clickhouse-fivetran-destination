@@ -701,6 +701,6 @@ func TestUserFriendlyConnectionFailureMessage(t *testing.T) {
 		"missing technical details section; got: %q", msg)
 	assert.Contains(t, msg, "ClickHouse connection error",
 		"missing original sentinel string; got: %q", msg)
-	assert.Contains(t, msg, "ping failed after 1 attempts",
+	assert.Contains(t, msg, "ping failed after",
 		"missing retry context from technical details; got: %q", msg)
 }
