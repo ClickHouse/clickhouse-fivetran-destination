@@ -174,7 +174,7 @@ const (
 	chCodeAuthenticationFailed = 516
 )
 
-// addUserReadableHintsToError produces the user-facing Task message that Fivetran:
+// addUserReadableHintsToError produces the user-facing Task message that Fivetran will display:
 //
 //	"<operation>: <friendly message> Technical details: <err>."
 func addUserReadableHintsToError(operation string, err error) string {
