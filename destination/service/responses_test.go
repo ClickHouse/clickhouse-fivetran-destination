@@ -31,7 +31,7 @@ func TestAddUserReadableHintsToError(t *testing.T) {
 		{
 			name:             "context_canceled",
 			err:              fmt.Errorf("query: %w", context.Canceled),
-			expectedFriendly: "The ClickHouse operation took too long to complete. Retry the sync. If the problem persists, check the performance of the SQL executed. You may need to optimize batch sizes or scale up the ClickHouse service.",
+			expectedFriendly: "The operation was cancelled before ClickHouse could complete it. Retry the sync.",
 		},
 		{
 			name:             "ch_unknown_table",
@@ -106,7 +106,7 @@ func TestAddUserReadableHintsToError(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			want := fmt.Sprintf("%s: %s Technical details: %s.", op, tc.expectedFriendly, tc.err)
+			want := fmt.Sprintf("%s: %s Technical details: %s", op, tc.expectedFriendly, tc.err)
 			assert.Equal(t, want, addUserReadableHintsToError(op, tc.err))
 		})
 	}

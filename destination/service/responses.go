@@ -176,14 +176,16 @@ const (
 
 // addUserReadableHintsToError produces the user-facing Task message that Fivetran will display:
 //
-//	"<operation>: <friendly message> Technical details: <err>."
+//	"<operation>: <friendly message> Technical details: <err>"
 func addUserReadableHintsToError(operation string, err error) string {
 	friendly := "Unexpected error in the ClickHouse destination. Please contact Fivetran support and include the technical details below."
 
 	var ex *clickhouse.Exception
 	switch {
-	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+	case errors.Is(err, context.DeadlineExceeded):
 		friendly = "The ClickHouse operation took too long to complete. Retry the sync. If the problem persists, check the performance of the SQL executed. You may need to optimize batch sizes or scale up the ClickHouse service."
+	case errors.Is(err, context.Canceled):
+		friendly = "The operation was cancelled before ClickHouse could complete it. Retry the sync."
 	case errors.As(err, &ex):
 		switch ex.Code {
 		case chCodeAuthenticationFailed, chCodeUnknownUser:
@@ -199,5 +201,5 @@ func addUserReadableHintsToError(operation string, err error) string {
 		friendly = "Could not reach the ClickHouse service. Verify the ClickHouse Cloud service is running and reachable from Fivetran (host, port, IP allowlist)."
 	}
 
-	return fmt.Sprintf("%s: %s Technical details: %s.", operation, friendly, err)
+	return fmt.Sprintf("%s: %s Technical details: %s", operation, friendly, err)
 }
