@@ -324,19 +324,43 @@ func (conn *ClickHouseConnection) CheckDatabaseExists(
 	if err != nil {
 		return false, err
 	}
-	rows, err := conn.ExecQuery(ctx, statement, checkDatabaseExists, false)
+	return conn.scanExistsResult(ctx, statement, checkDatabaseExists)
+}
+
+// CheckTableExists returns true if the table exists in the given schema.
+func (conn *ClickHouseConnection) CheckTableExists(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+) (bool, error) {
+	statement, err := sql.GetCheckTableExistsStatement(schemaName, tableName)
+	if err != nil {
+		return false, err
+	}
+	return conn.scanExistsResult(ctx, statement, checkTableExists)
+}
+
+// scanExistsResult runs an `EXISTS …` statement and returns whether the
+// object was reported to exist. ClickHouse returns a single UInt8 column
+// (1 if present, 0 otherwise) for these statements.
+func (conn *ClickHouseConnection) scanExistsResult(
+	ctx context.Context,
+	statement string,
+	op connectionOpType,
+) (bool, error) {
+	rows, err := conn.ExecQuery(ctx, statement, op, false)
 	if err != nil {
 		return false, err
 	}
 	defer rows.Close() //nolint:errcheck
-	var count uint64
 	if !rows.Next() {
 		return false, fmt.Errorf("unexpected empty result from %s", statement)
 	}
-	if err = rows.Scan(&count); err != nil {
+	var result uint8
+	if err = rows.Scan(&result); err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return result == 1, nil
 }
 
 func (conn *ClickHouseConnection) CreateDatabase(
@@ -467,9 +491,30 @@ func (conn *ClickHouseConnection) RenameTable(
 		return err
 	}
 	err = conn.ExecStatement(ctx, renameStmt, alterTablePKRename, false)
-	if err != nil {
+	if err == nil {
+		return nil
+	}
+
+	// this method makes the operation safe to retry by recovering from the specific case where
+	// a previous attempt completed at the server but the response was lost on the
+	// wire. After a successful first attempt the source table is gone and the
+	// destination table exists; the retry then fails with code 57
+	// (TABLE_ALREADY_EXISTS) because ClickHouse checks the destination collision
+	// before resolving the missing source.
+	if !isTableAlreadyExistsErr(err) {
 		return err
 	}
+	sourceExists, checkErr := conn.CheckTableExists(ctx, schemaName, fromTableName)
+	if checkErr != nil {
+		return fmt.Errorf("error checking if source table %s.%s exists after rename failure: %w; initial cause: %w",
+			schemaName, fromTableName, checkErr, err)
+	}
+	if sourceExists {
+		return err
+	}
+	log.Info(fmt.Sprintf(
+		"RenameTable: source %s.%s is gone and destination %s.%s exists; treating rename as already applied",
+		schemaName, fromTableName, schemaName, toTableName))
 	return nil
 }
 
@@ -1147,11 +1192,23 @@ func isDatabaseBeingCreatedErr(err error) bool {
 	return true
 }
 
+// isTableAlreadyExistsErr reports whether err is (or wraps) a ClickHouse
+// server exception with code 57 (TABLE_ALREADY_EXISTS).
+func isTableAlreadyExistsErr(err error) bool {
+	var exception *clickhouse.Exception
+	ok := errors.As(err, &exception)
+	if !ok || exception.Code != 57 {
+		return false
+	}
+	return true
+}
+
 type connectionOpType string
 
 const (
 	createDatabase             connectionOpType = "CreateDatabase"
 	checkDatabaseExists        connectionOpType = "CheckDatabaseExists"
+	checkTableExists           connectionOpType = "CheckTableExists"
 	createTable                connectionOpType = "CreateTable"
 	describeTable              connectionOpType = "DescribeTable"
 	alterTable                 connectionOpType = "AlterTable"
