@@ -665,6 +665,15 @@ func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool
 // verifies that the resulting Task.Message contains both the friendly headline
 // and the underlying technical details
 func TestUserFriendlyConnectionFailureMessage(t *testing.T) {
+	// Discover a port we know nothing is listening on: bind to :0 so the kernel
+	// allocates a free ephemeral port, capture it, then close the listener.
+	// More reliable than hard-coding a port (which may be in use on some
+	// dev/CI machines) and produces a deterministic "connection refused".
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	unusedPort := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+
 	prevMaxRetries := *flags.MaxRetries
 	prevDelay := *flags.InitialRetryDelayMilliseconds
 	*flags.MaxRetries = 1
@@ -677,8 +686,8 @@ func TestUserFriendlyConnectionFailureMessage(t *testing.T) {
 	s := &service.Server{}
 	resp, err := s.DescribeTable(context.Background(), &pb.DescribeTableRequest{
 		Configuration: map[string]string{
-			"host":     "localhost",
-			"port":     "9999",
+			"host":     "127.0.0.1",
+			"port":     fmt.Sprint(unusedPort),
 			"username": "default",
 			"local":    "true",
 		},
