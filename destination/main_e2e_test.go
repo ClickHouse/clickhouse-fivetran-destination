@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,9 @@ import (
 	"fivetran.com/fivetran_sdk/destination/cmd"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/db/config"
+	"fivetran.com/fivetran_sdk/destination/service"
+	pb "fivetran.com/fivetran_sdk/proto"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -371,7 +375,6 @@ func TestHistoryMode(t *testing.T) {
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
 }
 
-
 func TestSchemaMigrationsDDL(t *testing.T) {
 	fileName := "schema_migrations_input_ddl.json"
 	tableName := "transaction"
@@ -655,4 +658,58 @@ func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool
 		t.Error(string(exitError.Stderr))
 	}
 	require.NoError(t, err)
+}
+
+// TestUserFriendlyConnectionFailureMessage drives the gRPC handler with a
+// destination configuration pointing at a non-existent ClickHouse instance and
+// verifies that the resulting Task.Message contains both the friendly headline
+// and the underlying technical details
+func TestUserFriendlyConnectionFailureMessage(t *testing.T) {
+	// Discover a port we know nothing is listening on: bind to :0 so the kernel
+	// allocates a free ephemeral port, capture it, then close the listener.
+	// More reliable than hard-coding a port (which may be in use on some
+	// dev/CI machines) and produces a deterministic "connection refused".
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	unusedPort := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+
+	prevMaxRetries := *flags.MaxRetries
+	prevDelay := *flags.InitialRetryDelayMilliseconds
+	*flags.MaxRetries = 1
+	*flags.InitialRetryDelayMilliseconds = 1
+	defer func() {
+		*flags.MaxRetries = prevMaxRetries
+		*flags.InitialRetryDelayMilliseconds = prevDelay
+	}()
+
+	s := &service.Server{}
+	resp, err := s.DescribeTable(context.Background(), &pb.DescribeTableRequest{
+		Configuration: map[string]string{
+			"host":     "127.0.0.1",
+			"port":     fmt.Sprint(unusedPort),
+			"username": "default",
+			"local":    "true",
+		},
+		SchemaName: "any_schema",
+		TableName:  "any_table",
+	})
+	require.NoError(t, err)
+
+	task := resp.GetTask()
+	require.NotNil(t, task, "expected DescribeTable to return a Task on connection failure, got: %+v", resp)
+
+	msg := task.GetMessage()
+	t.Logf("Task message: %s", msg)
+
+	assert.True(t, strings.HasPrefix(msg, "Failed to describe table `any_schema`.`any_table`: Could not reach the ClickHouse service."),
+		"missing operation/headline prefix; got: %q", msg)
+	assert.Contains(t, msg, "Verify the ClickHouse Cloud service is running and reachable",
+		"missing actionable hint; got: %q", msg)
+	assert.Contains(t, msg, "Technical details:",
+		"missing technical details section; got: %q", msg)
+	assert.Contains(t, msg, "ClickHouse connection error",
+		"missing original sentinel string; got: %q", msg)
+	assert.Contains(t, msg, "ping failed after",
+		"missing retry context from technical details; got: %q", msg)
 }
