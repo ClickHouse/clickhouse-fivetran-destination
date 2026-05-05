@@ -33,7 +33,7 @@ func TestAllDataTypes(t *testing.T) {
 	fileName := "input_all_data_types.json"
 	tableName := "all_data_types"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithFivetranID(t, tableName, [][]string{
 		{"true", "42", "144", "100500", "100.5", "200.5", "42.42",
 			"2024-05-07", "2024-04-05 15:33:14", "2024-02-03 12:44:22.123456789",
@@ -66,7 +66,7 @@ func TestMutateAfterAlter(t *testing.T) {
 	fileName := "input_mutate_after_alter.json"
 	tableName := "mutate_after_alter"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "200", "asd", "zxc", "\\N", "\\N", "false"},
 		{"2", "50", "\\N", "\\N", "<c>99</c>", "DD", "false"},
@@ -86,7 +86,7 @@ func TestUpdateAndHardDelete(t *testing.T) {
 	fileName := "input_update_and_hard_delete.json"
 	tableName := "update_and_delete"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "1111", "false"},
 		{"2", "two", "false"}})
@@ -101,7 +101,7 @@ func TestSoftDelete(t *testing.T) {
 	fileName := "input_soft_delete.json"
 	tableName := "soft_delete_table"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "\\N", "false"},
 		{"2", "two", "false"},
@@ -119,7 +119,7 @@ func TestUTCDateTimePrimaryKey(t *testing.T) {
 	fileName := "input_utc_datetime_pk.json"
 	tableName := "utc_datetime_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"144", "2024-01-14 15:13:12.000000000", "false"},
 		{"2", "2024-01-14 15:13:12.123000000", "false"}},
@@ -135,7 +135,7 @@ func TestNaiveDateTimePK(t *testing.T) {
 	fileName := "input_naive_datetime_pk.json"
 	tableName := "naive_datetime_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"144", "2022-06-01 18:44:13", "false"}},
 		"dt")
@@ -150,7 +150,7 @@ func TestNaiveDatePK(t *testing.T) {
 	fileName := "input_naive_date_pk.json"
 	tableName := "naive_date_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"144", "2022-06-01", "false"}},
 		"d")
@@ -165,7 +165,7 @@ func TestCompositeFloatPK(t *testing.T) {
 	fileName := "input_composite_floats_pk.json"
 	tableName := "composite_floats_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"144", "300.3", "3.3", "4.4", "false"}},
 		"dec, f32, f64")
@@ -182,7 +182,7 @@ func TestStringPK(t *testing.T) {
 	fileName := "input_string_pk.json"
 	tableName := "string_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"144", "qaz", "false"}},
 		"s")
@@ -197,7 +197,7 @@ func TestCompositePKWithBoolean(t *testing.T) {
 	fileName := "input_composite_pk_with_boolean.json"
 	tableName := "composite_pk_with_boolean"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"144", "3", "true", "false"}}, "l, b")
 	assertTableColumns(t, tableName, [][]string{
@@ -212,7 +212,7 @@ func TestNonExistentRecordUpdatesAndDeletes(t *testing.T) {
 	fileName := "input_non_existent_updates.json"
 	tableName := "non_existent_updates"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "\\N", "false"}})
 	assertTableColumns(t, tableName, [][]string{
@@ -226,7 +226,7 @@ func TestSoftTruncateBefore(t *testing.T) {
 	fileName := "input_soft_truncate_before.json"
 	tableName := "table_to_truncate"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "foo", "true"},
 		{"2", "bar", "false"},
@@ -242,7 +242,7 @@ func TestHardTruncateBefore(t *testing.T) {
 	fileName := "input_hard_truncate_before.json"
 	tableName := "table_to_truncate"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"2", "bar", "false"},
 		{"3", "qaz", "false"}})
@@ -256,14 +256,14 @@ func TestHardTruncateBefore(t *testing.T) {
 func TestTableNotFound(t *testing.T) {
 	fileName := "input_table_not_found.json"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true) // verify at least no SDK tester errors
+	runSDKTestCommand(t, fileName) // verify at least no SDK tester errors
 }
 
 func TestChangePK(t *testing.T) {
 	fileName := "input_change_pk.json"
 	tableName := "change_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"1", "200", "foo", "false"},
 		{"2", "50", "bar", "false"},
@@ -281,7 +281,7 @@ func TestDropPK(t *testing.T) {
 	fileName := "input_drop_pk.json"
 	tableName := "drop_pk"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"1", "200", "foo", "false"},
 		{"2", "50", "bar", "false"},
@@ -299,7 +299,7 @@ func TestChangePKAndAllColumns(t *testing.T) {
 	fileName := "input_change_pk_and_all_columns.json"
 	tableName := "change_pk_and_all_columns"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPKColumns(t, tableName, [][]string{
 		{"1", "foo", "false"},
 		{"2", "bar", "false"},
@@ -316,7 +316,7 @@ func TestTruncateDateValues(t *testing.T) {
 	fileName := "input_truncate_date_values.json"
 	tableName := "truncate_date_values"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	assertTableRowsWithPK(t, tableName, [][]string{
 		{"1", "1900-01-01", "1900-01-01 00:00:00", "1900-01-01 00:00:00.000000000", "false"},
 		{"2", "2299-12-31", "2262-04-11 23:47:16", "2262-04-11 23:47:16.000000000", "false"}})
@@ -335,7 +335,7 @@ func TestLargeInputFile(t *testing.T) {
 	startServer(t)
 
 	expectedCSV := generateAndWriteInputFile(t, tableName, 150_000)
-	runSDKTestCommand(t, fmt.Sprintf("%s.json", tableName), true)
+	runSDKTestCommand(t, fmt.Sprintf("%s.json", tableName))
 
 	dbRecordsCSVStr := runQuery(t, fmt.Sprintf("SELECT * EXCEPT _fivetran_synced FROM tester.%s FINAL ORDER BY id FORMAT CSV", tableName))
 	assertDatabaseRecordsFailFast(t, expectedCSV, dbRecordsCSVStr)
@@ -350,7 +350,7 @@ func TestHistoryMode(t *testing.T) {
 	fileName := "input_history_mode.json"
 	tableName := "users"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	// Verify table columns include history mode columns
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
@@ -379,7 +379,7 @@ func TestSchemaMigrationsDDL(t *testing.T) {
 	fileName := "schema_migrations_input_ddl.json"
 	tableName := "transaction"
 	startServer(t)
-	runSDKTestCommand(t, fileName, true)
+	runSDKTestCommand(t, fileName)
 	// After DDL migrations: add_column (operation_time UTC_DATETIME), change_column_data_type (amount DOUBLE->FLOAT), drop_column (desc)
 	assertTableColumns(t, tableName, [][]string{
 		{"id", "Int32", ""},
@@ -476,7 +476,7 @@ func generateAndWriteInputFile(t *testing.T, tableName string, n uint) [][]strin
 	deleteRows := make([]Row, n/50)
 	assertRows := make([][]string, n) // should exactly match ClickHouse CSV format output after input.json is processed
 	createdAt := time.Date(2021, 2, 15, 14, 13, 12, 0, time.UTC)
-	for i := uint(0); i < n; i++ {
+	for i := range n {
 		rowCreatedAt := createdAt.Add(time.Duration(i) * time.Second)
 		createdAtStr := rowCreatedAt.Format("2006-01-02T15:04:05")
 		data := fmt.Sprintf("original for %d", i)
@@ -603,7 +603,7 @@ func runQuery(t *testing.T, query string) string {
 	if !conf.Local {
 		cmdArgs = append(cmdArgs, "--secure")
 	}
-	command := exec.Command("docker", cmdArgs...)
+	command := exec.CommandContext(t.Context(), "docker", cmdArgs...)
 	out, err := command.Output()
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
@@ -616,7 +616,8 @@ func runQuery(t *testing.T, query string) string {
 
 func isPortReady(t *testing.T, port uint) (isOpen bool) {
 	address := net.JoinHostPort("localhost", fmt.Sprintf("%d", port))
-	conn, _ := net.DialTimeout("tcp", address, dialTimeout)
+	dialer := net.Dialer{Timeout: dialTimeout}
+	conn, _ := dialer.DialContext(t.Context(), "tcp", address)
 	if conn != nil {
 		err := conn.Close()
 		require.NoError(t, err)
@@ -638,14 +639,12 @@ func waitPortIsReady(t *testing.T, port uint) {
 	t.Fatalf("Port is not ready after %d retries", maxDialRetries)
 }
 
-func runSDKTestCommand(t *testing.T, inputFileName string, recreateDatabase bool) {
-	if recreateDatabase {
-		runQuery(t, "DROP DATABASE IF EXISTS tester SYNC")
-		runQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
-	}
+func runSDKTestCommand(t *testing.T, inputFileName string) {
+	runQuery(t, "DROP DATABASE IF EXISTS tester SYNC")
+	runQuery(t, "CREATE DATABASE IF NOT EXISTS tester")
 	projectRootDir := getProjectRootDir(t)
 
-	command := exec.Command("make", "sdk-test")
+	command := exec.CommandContext(t.Context(), "make", "sdk-test")
 	command.Dir = projectRootDir
 	command.Env = os.Environ()
 	command.Env = append(command.Env, fmt.Sprintf("TEST_ARGS=--input-file=%s", inputFileName))
