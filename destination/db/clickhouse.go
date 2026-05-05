@@ -504,14 +504,6 @@ func (conn *ClickHouseConnection) RenameTable(
 	if !isTableAlreadyExistsErr(err) {
 		return err
 	}
-	destExists, checkErr := conn.CheckTableExists(ctx, schemaName, toTableName)
-	if checkErr != nil {
-		return fmt.Errorf("error checking if destination table %s.%s exists after rename failure: %w; initial cause: %w",
-			schemaName, toTableName, checkErr, err)
-	}
-	if !destExists {
-		return err
-	}
 	sourceExists, checkErr := conn.CheckTableExists(ctx, schemaName, fromTableName)
 	if checkErr != nil {
 		return fmt.Errorf("error checking if source table %s.%s exists after rename failure: %w; initial cause: %w",
