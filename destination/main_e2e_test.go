@@ -668,7 +668,8 @@ func TestUserFriendlyConnectionFailureMessage(t *testing.T) {
 	// allocates a free ephemeral port, capture it, then close the listener.
 	// More reliable than hard-coding a port (which may be in use on some
 	// dev/CI machines) and produces a deterministic "connection refused".
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	unusedPort := listener.Addr().(*net.TCPAddr).Port
 	require.NoError(t, listener.Close())
