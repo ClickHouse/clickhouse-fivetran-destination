@@ -174,7 +174,7 @@ func IsRetryable(err error) bool {
 	return IsNetError(err) || IsKeeperException(err)
 }
 
-func GetDelayConfig() (initial time.Duration, max time.Duration) {
+func GetDelayConfig() (initial time.Duration, maxDelay time.Duration) {
 	if *flags.InitialRetryDelayMilliseconds == 0 {
 		initial = time.Second
 	} else {
