@@ -34,11 +34,7 @@ func Value(colType pb.DataType, value string) (string, error) {
 		return fmt.Sprintf("'%s'", value), nil
 	// keep these values as DateTime64(9, 'UTC') as defined in constants.DateTimeUTC
 	case pb.DataType_UTC_DATETIME:
-		utcDateTime, err := time.Parse(constants.UTCDateTimeFormat, value)
-		if err != nil {
-			return "", fmt.Errorf("can't parse value %s as UTC datetime: %w", value, err)
-		}
-		return fmt.Sprintf("fromUnixTimestamp64Nano(%d, 'UTC')", utcDateTime.UnixNano()), nil
+		return fmt.Sprintf("parseDateTime64BestEffort('%s', 9, 'UTC')", value), nil
 	default:
 		return value, nil
 	}
