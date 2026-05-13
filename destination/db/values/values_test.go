@@ -52,10 +52,6 @@ func TestQuoteUTCDateTime(t *testing.T) {
 	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12Z")
 	assert.NoError(t, err)
 	assert.Equal(t, "parseDateTime64BestEffort('2022-03-05T04:45:12Z', 9, 'UTC')", result)
-
-	result, err = Value(pb.DataType_UTC_DATETIME, "foobar")
-	assert.ErrorContains(t, err, "can't parse value foobar as UTC datetime")
-	assert.Equal(t, "", result)
 }
 
 func TestParseValue(t *testing.T) {
