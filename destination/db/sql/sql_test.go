@@ -410,7 +410,7 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	}, fullTableName)
 	assert.NoError(t, err)
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN((parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC')),(parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC')))", statement)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN((parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC')),(parseDateTime64BestEffort('2023-04-06T12:30:00.234567890Z', 9, 'UTC')))", statement)
 }
 
 func TestGetAllReplicasActiveQuery(t *testing.T) {
