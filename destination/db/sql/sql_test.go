@@ -30,50 +30,50 @@ func TestGetAlterTableStatement(t *testing.T) {
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` Int32", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` Int32", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType, Comment: &emptyComment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` Int32 COMMENT ''", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` Int32 COMMENT ''", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType, Comment: &comment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` Int32 COMMENT 'foobar'", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` Int32 COMMENT 'foobar'", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableDrop, Column: "qaz"},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN `qaz`", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN IF EXISTS `qaz`", statement)
 
 	// Type and Comment are ignored with AlterTableDrop
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableDrop, Column: "qaz", Type: &strType, Comment: &comment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN `qaz`", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` DROP COLUMN IF EXISTS `qaz`", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "qaz", Type: &strType},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN `qaz` String", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN IF EXISTS `qaz` String", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "qaz", Type: &strType, Comment: &emptyComment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN `qaz` String COMMENT ''", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN IF EXISTS `qaz` String COMMENT ''", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableModify, Column: "qaz", Type: &strType, Comment: &comment},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN `qaz` String COMMENT 'foobar'", statement)
+	assert.Equal(t, "ALTER TABLE `foo`.`bar` MODIFY COLUMN IF EXISTS `qaz` String COMMENT 'foobar'", statement)
 
 	statement, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &strType, Comment: &comment},
@@ -83,7 +83,7 @@ func TestGetAlterTableStatement(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t,
-		"ALTER TABLE `foo`.`bar` ADD COLUMN `qaz` String COMMENT 'foobar',DROP COLUMN `qux`,MODIFY COLUMN `zaq` Int32 COMMENT '',MODIFY COLUMN `qwe` String",
+		"ALTER TABLE `foo`.`bar` ADD COLUMN IF NOT EXISTS `qaz` String COMMENT 'foobar',DROP COLUMN IF EXISTS `qux`,MODIFY COLUMN IF EXISTS `zaq` Int32 COMMENT '',MODIFY COLUMN IF EXISTS `qwe` String",
 		statement)
 
 	_, err = GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{})
@@ -111,7 +111,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: "Boolean"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32,`qux` String,`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qux`)", statement)
+	assert.Equal(t, "CREATE TABLE IF NOT EXISTS `foo`.`bar` (`qaz` Int32,`qux` String,`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qux`)", statement)
 
 	statement, err = GetCreateTableStatement("foo", "bar",
 		types.MakeTableDescription([]*types.ColumnDefinition{
@@ -121,7 +121,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: "Boolean"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`qaz` Int32,`qux` String,`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qaz`,`qux`)", statement)
+	assert.Equal(t, "CREATE TABLE IF NOT EXISTS `foo`.`bar` (`qaz` Int32,`qux` String,`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`qaz`,`qux`)", statement)
 
 	statement, err = GetCreateTableStatement("foo", "bar",
 		types.MakeTableDescription([]*types.ColumnDefinition{
@@ -132,7 +132,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_deleted", Type: "Boolean"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32,`x` String COMMENT 'XML',`bin` String COMMENT 'BINARY',`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
+	assert.Equal(t, "CREATE TABLE IF NOT EXISTS `foo`.`bar` (`i` Int32,`x` String COMMENT 'XML',`bin` String COMMENT 'BINARY',`_fivetran_synced` DateTime64(9, 'UTC'),`_fivetran_deleted` Boolean) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
 	// works without _fivetran_deleted column
 	statement, err = GetCreateTableStatement("foo", "bar",
@@ -142,7 +142,7 @@ func TestGetCreateTableStatement(t *testing.T) {
 			{Name: "_fivetran_synced", Type: "DateTime64(9, 'UTC')"},
 		}))
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `foo`.`bar` (`i` Int32,`x` String,`_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
+	assert.Equal(t, "CREATE TABLE IF NOT EXISTS `foo`.`bar` (`i` Int32,`x` String,`_fivetran_synced` DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(`_fivetran_synced`) ORDER BY (`i`)", statement)
 
 	_, err = GetCreateTableStatement("foo", "", nil)
 	assert.ErrorContains(t, err, "table name is empty")
@@ -305,10 +305,22 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 func TestGetCheckDatabaseExistsStatement(t *testing.T) {
 	statement, err := GetCheckDatabaseExistsStatement("foo")
 	assert.NoError(t, err)
-	assert.Equal(t, "SELECT COUNT(*) FROM system.databases WHERE `name` = 'foo'", statement)
+	assert.Equal(t, "EXISTS DATABASE `foo`", statement)
 
 	_, err = GetCheckDatabaseExistsStatement("")
 	assert.ErrorContains(t, err, "schema name is empty")
+}
+
+func TestGetCheckTableExistsStatement(t *testing.T) {
+	statement, err := GetCheckTableExistsStatement("foo", "bar")
+	assert.NoError(t, err)
+	assert.Equal(t, "EXISTS TABLE `foo`.`bar`", statement)
+
+	_, err = GetCheckTableExistsStatement("", "bar")
+	assert.ErrorContains(t, err, "schema name for table bar is empty")
+
+	_, err = GetCheckTableExistsStatement("foo", "")
+	assert.ErrorContains(t, err, "table name is empty")
 }
 
 func TestGetCreateDatabaseStatement(t *testing.T) {

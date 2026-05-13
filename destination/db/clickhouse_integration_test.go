@@ -154,6 +154,130 @@ func TestGrants(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRenameTable(t *testing.T) {
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	dbName := "fivetran_test"
+	err := conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
+	require.NoError(t, err)
+
+	suffix := strings.ReplaceAll(uuid.New().String(), "-", "_")
+	sourceTable := fmt.Sprintf("test_rename_happy_src_%s", suffix)
+	destTable := fmt.Sprintf("test_rename_happy_dst_%s", suffix)
+
+	err = conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, sourceTable))
+	require.NoError(t, err)
+	err = conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, destTable))
+	require.NoError(t, err)
+	err = conn.Exec(ctx, fmt.Sprintf(
+		"CREATE TABLE %s.%s (id Int64) ENGINE = MergeTree ORDER BY id", dbName, sourceTable))
+	require.NoError(t, err)
+	defer func() {
+		// Whichever name the table currently has after the test, drop it.
+		err := conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, sourceTable))
+		assert.NoError(t, err)
+		err = conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, destTable))
+		assert.NoError(t, err)
+	}()
+
+	// Pre-condition: source exists, destination does not.
+	sourceExists, err := conn.CheckTableExists(ctx, dbName, sourceTable)
+	require.NoError(t, err)
+	require.True(t, sourceExists)
+	destExists, err := conn.CheckTableExists(ctx, dbName, destTable)
+	require.NoError(t, err)
+	require.False(t, destExists)
+
+	err = conn.RenameTable(ctx, dbName, sourceTable, destTable)
+	require.NoError(t, err)
+
+	// Post-condition: source is gone, destination exists.
+	sourceExists, err = conn.CheckTableExists(ctx, dbName, sourceTable)
+	require.NoError(t, err)
+	assert.False(t, sourceExists)
+	destExists, err = conn.CheckTableExists(ctx, dbName, destTable)
+	require.NoError(t, err)
+	assert.True(t, destExists)
+}
+
+func TestRenameTableIdempotentOnRetry(t *testing.T) {
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	dbName := "fivetran_test"
+	err := conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
+	require.NoError(t, err)
+
+	createTable := func(t *testing.T, table string) {
+		t.Helper()
+		err := conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, table))
+		require.NoError(t, err)
+		err = conn.Exec(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.%s (id Int64) ENGINE = MergeTree ORDER BY id", dbName, table))
+		require.NoError(t, err)
+	}
+	dropTable := func(t *testing.T, table string) {
+		t.Helper()
+		err := conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, table))
+		assert.NoError(t, err)
+	}
+
+	t.Run("rename_already_applied_is_a_no_op", func(t *testing.T) {
+		// Simulate the post-success retry state: the rename has already been
+		// applied, so only the destination table exists. RenameTable should
+		// recognize this and not return an error.
+		suffix := strings.ReplaceAll(uuid.New().String(), "-", "_")
+		sourceTable := fmt.Sprintf("test_rename_src_%s", suffix)
+		destTable := fmt.Sprintf("test_rename_dst_%s", suffix)
+		createTable(t, destTable)
+		defer dropTable(t, destTable)
+
+		err := conn.RenameTable(ctx, dbName, sourceTable, destTable)
+		require.NoError(t, err)
+	})
+
+	t.Run("missing_source_and_destination_returns_error", func(t *testing.T) {
+		// When neither side exists, RenameTable must still surface the
+		// underlying error (it would mask a real bug otherwise).
+		suffix := strings.ReplaceAll(uuid.New().String(), "-", "_")
+		missingSource := fmt.Sprintf("test_rename_missing_src_%s", suffix)
+		missingDest := fmt.Sprintf("test_rename_missing_dst_%s", suffix)
+
+		err := conn.RenameTable(ctx, dbName, missingSource, missingDest)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "code: 60")
+	})
+
+	t.Run("source_and_destination_both_exist_returns_error", func(t *testing.T) {
+		// A real conflict (someone created the destination independently
+		// while the source still exists) must not be silently swallowed.
+		suffix := strings.ReplaceAll(uuid.New().String(), "-", "_")
+		sourceTable := fmt.Sprintf("test_rename_conflict_src_%s", suffix)
+		destTable := fmt.Sprintf("test_rename_conflict_dst_%s", suffix)
+		createTable(t, sourceTable)
+		createTable(t, destTable)
+		defer dropTable(t, sourceTable)
+		defer dropTable(t, destTable)
+
+		err := conn.RenameTable(ctx, dbName, sourceTable, destTable)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "code: 57")
+	})
+}
+
 func TestDescribeTable(t *testing.T) {
 	conn := getTestConnection(t, context.Background(), map[string]string{
 		"host":     "localhost",
