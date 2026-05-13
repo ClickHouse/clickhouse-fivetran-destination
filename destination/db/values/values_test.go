@@ -39,19 +39,19 @@ func TestQuoteValue(t *testing.T) {
 func TestQuoteUTCDateTime(t *testing.T) {
 	result, err := Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456789Z")
 	assert.NoError(t, err)
-	assert.Equal(t, "'1646455512123456789'", result)
+	assert.Equal(t, "fromUnixTimestamp64Nano(1646455512123456789, 'UTC')", result)
 
 	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456Z")
 	assert.NoError(t, err)
-	assert.Equal(t, "'1646455512123456000'", result)
+	assert.Equal(t, "fromUnixTimestamp64Nano(1646455512123456000, 'UTC')", result)
 
 	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123Z")
 	assert.NoError(t, err)
-	assert.Equal(t, "'1646455512123000000'", result)
+	assert.Equal(t, "fromUnixTimestamp64Nano(1646455512123000000, 'UTC')", result)
 
 	result, err = Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12Z")
 	assert.NoError(t, err)
-	assert.Equal(t, "'1646455512000000000'", result)
+	assert.Equal(t, "fromUnixTimestamp64Nano(1646455512000000000, 'UTC')", result)
 
 	result, err = Value(pb.DataType_UTC_DATETIME, "foobar")
 	assert.ErrorContains(t, err, "can't parse value foobar as UTC datetime")

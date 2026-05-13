@@ -357,9 +357,9 @@ func GetHardDeleteStatement(
 // GetHardDeleteWithTimestampStatement generates statements such as:
 //
 //	DELETE FROM `foo`.`bar` WHERE
-//	    (`id` = 1 AND `_fivetran_start` >= '1646455512123456789')
-//	    OR (`id` = 2 AND `_fivetran_start` >= '1680784200234567890')
-//	    OR (`id` = 3 AND `_fivetran_start` >= '1680784300234567890')
+//	    (`id` = 1 AND `_fivetran_start` >= fromUnixTimestamp64Nano(1646455512123456789, 'UTC'))
+//	    OR (`id` = 2 AND `_fivetran_start` >= fromUnixTimestamp64Nano(1680784200234567890, 'UTC'))
+//	    OR (`id` = 3 AND `_fivetran_start` >= fromUnixTimestamp64Nano(1680784300234567890, 'UTC'))
 //
 // This function combines primary key equality checks with a timestamp comparison for each row,
 // matching the behavior of the Java writeDelete method which uses AND conditions between
@@ -442,9 +442,9 @@ func GetHardDeleteWithTimestampStatement(
 //	UPDATE
 //	    `_fivetran_active` = FALSE,
 //	    `_fivetran_end` = CASE
-//	        WHEN `id` = 1 THEN '1646455512123456788'
-//	        WHEN `id` = 2 THEN '1680784200234567889'
-//	        WHEN `id` = 3 THEN '1680786000345678900'
+//	        WHEN `id` = 1 THEN fromUnixTimestamp64Nano(1646455512123456788, 'UTC')
+//	        WHEN `id` = 2 THEN fromUnixTimestamp64Nano(1680784200234567889, 'UTC')
+//	        WHEN `id` = 3 THEN fromUnixTimestamp64Nano(1680786000345678900, 'UTC')
 //	    END
 //	WHERE `id` IN (1, 2, 3)
 //	    AND `_fivetran_active` = TRUE

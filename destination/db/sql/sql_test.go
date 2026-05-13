@@ -299,7 +299,7 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 	}, fullTableName, false)
 	assert.NoError(t, err)
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))ORDER BY(`ts`)LIMIT 2", statement)
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`ts`)IN((fromUnixTimestamp64Nano(1646455512123456789, 'UTC')),(fromUnixTimestamp64Nano(1680784200234567890, 'UTC')))ORDER BY(`ts`)LIMIT 2", statement)
 }
 
 func TestGetCheckDatabaseExistsStatement(t *testing.T) {
@@ -410,7 +410,7 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	}, fullTableName)
 	assert.NoError(t, err)
 	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))", statement)
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN((fromUnixTimestamp64Nano(1646455512123456789, 'UTC')),(fromUnixTimestamp64Nano(1680784200234567890, 'UTC')))", statement)
 }
 
 func TestGetAllReplicasActiveQuery(t *testing.T) {
