@@ -298,8 +298,8 @@ func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
 			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
 	}, fullTableName, false)
 	assert.NoError(t, err)
-	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))ORDER BY(`ts`)LIMIT 2", statement)
+	// DateTime64(9, 'UTC') values are emitted via toDateTime64 with the ISO timestamp (Z stripped).
+	assert.Equal(t, "SELECT * FROM `foo`.`bar` FINAL WHERE(`ts`)IN((toDateTime64('2022-03-05T04:45:12.123456789',9,'UTC')),(toDateTime64('2023-04-06T12:30:00.234567890',9,'UTC')))ORDER BY(`ts`)LIMIT 2", statement)
 }
 
 func TestGetCheckDatabaseExistsStatement(t *testing.T) {
@@ -409,8 +409,77 @@ func TestGetHardDeleteStatement(t *testing.T) {
 			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
 	}, fullTableName)
 	assert.NoError(t, err)
-	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))", statement)
+	// DateTime64(9, 'UTC') values are emitted via toDateTime64 with the ISO timestamp (Z stripped).
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN((toDateTime64('2022-03-05T04:45:12.123456789',9,'UTC')),(toDateTime64('2023-04-06T12:30:00.234567890',9,'UTC')))", statement)
+}
+
+func TestGetHardDeleteWithTimestampStatement(t *testing.T) {
+	fullTableName := QualifiedTableName("`foo`.`bar`")
+
+	// Single user-PK + _fivetran_start (history mode). _fivetran_start must appear
+	// only once per row as the `>=` filter, NOT also as a `=` equality (that would
+	// turn a range filter into an exact-match and double the SQL size).
+	csvCols := &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING},
+			{Index: 2, Name: "_fivetran_start", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true},
+		},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 2, Name: "_fivetran_start", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true},
+		},
+	}
+	batch := [][]string{
+		{"42", "foo", "2022-03-05T04:45:12.123456789Z"},
+		{"43", "bar", "2023-04-06T12:30:00.234567890Z"},
+	}
+
+	statement, err := GetHardDeleteWithTimestampStatement(batch, csvCols, fullTableName, "_fivetran_start", 2, pb.DataType_UTC_DATETIME)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"DELETE FROM `foo`.`bar` WHERE"+
+			"(`id`=42 AND`_fivetran_start`>=toDateTime64('2022-03-05T04:45:12.123456789',9,'UTC'))OR"+
+			"(`id`=43 AND`_fivetran_start`>=toDateTime64('2023-04-06T12:30:00.234567890',9,'UTC'))",
+		statement)
+
+	// Composite user PKs + _fivetran_start: only the user PKs should appear as `=`,
+	// and _fivetran_start should only appear once per row as `>=`.
+	compositeCSVCols := &types.CSVColumns{
+		All: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true},
+			{Index: 2, Name: "_fivetran_start", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true},
+		},
+		PrimaryKeys: []*types.CSVColumn{
+			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
+			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true},
+			{Index: 2, Name: "_fivetran_start", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true},
+		},
+	}
+	statement, err = GetHardDeleteWithTimestampStatement(batch, compositeCSVCols, fullTableName, "_fivetran_start", 2, pb.DataType_UTC_DATETIME)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"DELETE FROM `foo`.`bar` WHERE"+
+			"(`id`=42 AND`name`='foo' AND`_fivetran_start`>=toDateTime64('2022-03-05T04:45:12.123456789',9,'UTC'))OR"+
+			"(`id`=43 AND`name`='bar' AND`_fivetran_start`>=toDateTime64('2023-04-06T12:30:00.234567890',9,'UTC'))",
+		statement)
+
+	// Validation errors.
+	_, err = GetHardDeleteWithTimestampStatement(batch, csvCols, "", "_fivetran_start", 2, pb.DataType_UTC_DATETIME)
+	assert.ErrorContains(t, err, "table name is empty")
+
+	_, err = GetHardDeleteWithTimestampStatement([][]string{}, csvCols, fullTableName, "_fivetran_start", 2, pb.DataType_UTC_DATETIME)
+	assert.ErrorContains(t, err, "expected non-empty CSV slice")
+
+	_, err = GetHardDeleteWithTimestampStatement(batch, &types.CSVColumns{}, fullTableName, "_fivetran_start", 2, pb.DataType_UTC_DATETIME)
+	assert.ErrorContains(t, err, "expected non-empty primary keys")
+
+	_, err = GetHardDeleteWithTimestampStatement(batch, csvCols, fullTableName, "", 2, pb.DataType_UTC_DATETIME)
+	assert.ErrorContains(t, err, "timestamp column name is empty")
+
+	_, err = GetHardDeleteWithTimestampStatement(batch, csvCols, fullTableName, "_fivetran_start", 99, pb.DataType_UTC_DATETIME)
+	assert.ErrorContains(t, err, "can't find matching value for timestamp column with index 99")
 }
 
 func TestGetAllReplicasActiveQuery(t *testing.T) {

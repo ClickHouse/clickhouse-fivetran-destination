@@ -3,6 +3,7 @@ package values
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/constants"
@@ -32,13 +33,12 @@ func Value(colType pb.DataType, value string) (string, error) {
 		pb.DataType_XML,
 		pb.DataType_JSON:
 		return fmt.Sprintf("'%s'", value), nil
-	// specify DateTime64(9) as nanos instead
+	// keep these values as DateTime64(9, 'UTC') as defined in constants.DateTimeUTC.
+	// The trailing 'Z' from Fivetran's ISO 8601 format (constants.UTCDateTimeFormat) is
+	// stripped because some toDateTime64 rejects it.
 	case pb.DataType_UTC_DATETIME:
-		utcDateTime, err := time.Parse(constants.UTCDateTimeFormat, value)
-		if err != nil {
-			return "", fmt.Errorf("can't parse value %s as UTC datetime: %w", value, err)
-		}
-		return fmt.Sprintf("'%d'", utcDateTime.UnixNano()), nil
+		trimmed := strings.TrimSuffix(value, "Z")
+		return fmt.Sprintf("toDateTime64('%s',9,'UTC')", trimmed), nil
 	default:
 		return value, nil
 	}

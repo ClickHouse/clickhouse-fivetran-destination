@@ -80,15 +80,14 @@ func validatePort(port string) (uint, error) {
 
 // ParseAll parses both the connection config and the optional advanced config
 // from the Fivetran configuration map. If destination configurations are present,
-// they are validated and applied to the global flags.
+// they are applied to the global flags (clamped into range with a warning rather
+// than rejected).
 func ParseAll(configuration map[string]string) (*Config, error) {
 	advancedCfg, err := ParseAdvancedConfig(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse advanced config: %w", err)
 	}
-	if err := ValidateAndOverwriteFlags(advancedCfg.DestinationConfigurations); err != nil {
-		return nil, fmt.Errorf("invalid destination configurations: %w", err)
-	}
+	ValidateAndOverwriteFlags(advancedCfg.DestinationConfigurations)
 	jsonBytes, _ := json.Marshal(advancedCfg)
 	log.Info(fmt.Sprintf("Destination configurations applied: %s", string(jsonBytes)))
 	return Parse(configuration)
@@ -147,34 +146,33 @@ func warnOnUnknownFields(jsonBytes []byte) {
 
 // ValidateAndOverwriteFlags overrides the global flag values with values from the
 // parsed DestinationConfigurations. Nil fields are left at their flag defaults.
-// Returns an error if any value is outside its allowed range.
-func ValidateAndOverwriteFlags(ds *DestinationConfigurations) error {
+// Values outside the allowed range for each setting are clamped to the nearest
+// bound (with a warning logged) rather than rejected, so a stale or aggressive
+// advanced_config never breaks startup.
+func ValidateAndOverwriteFlags(ds *DestinationConfigurations) {
 	if ds == nil {
-		return nil
+		return
 	}
-	if err := applySetting(&flags.WriteBatchSizeSetting, ds.WriteBatchSize); err != nil {
-		return err
-	}
-	if err := applySetting(&flags.SelectBatchSizeSetting, ds.SelectBatchSize); err != nil {
-		return err
-	}
-	if err := applySetting(&flags.MutationBatchSizeSetting, ds.MutationBatchSize); err != nil {
-		return err
-	}
-	if err := applySetting(&flags.HardDeleteBatchSizeSetting, ds.HardDeleteBatchSize); err != nil {
-		return err
-	}
-	return nil
+	applySetting(&flags.WriteBatchSizeSetting, ds.WriteBatchSize)
+	applySetting(&flags.SelectBatchSizeSetting, ds.SelectBatchSize)
+	applySetting(&flags.MutationBatchSizeSetting, ds.MutationBatchSize)
+	applySetting(&flags.HardDeleteBatchSizeSetting, ds.HardDeleteBatchSize)
 }
 
-func applySetting(setting *flags.ConfigDefinition, val *uint) error {
+func applySetting(setting *flags.ConfigDefinition, val *uint) {
 	if val == nil {
 		*setting.Flag = setting.DefaultValue
-		return nil
+		return
 	}
-	if *val < setting.MinValue || *val > setting.MaxValue {
-		return fmt.Errorf("%s: value %d out of allowed range [%d, %d]", setting.Name, *val, setting.MinValue, setting.MaxValue)
+	if *val < setting.MinValue {
+		log.Warn(fmt.Sprintf("%s: value %d is below minimum %d; clamping to %d", setting.Name, *val, setting.MinValue, setting.MinValue))
+		*setting.Flag = setting.MinValue
+		return
+	}
+	if *val > setting.MaxValue {
+		log.Warn(fmt.Sprintf("%s: value %d exceeds maximum %d; clamping to %d", setting.Name, *val, setting.MaxValue, setting.MaxValue))
+		*setting.Flag = setting.MaxValue
+		return
 	}
 	*setting.Flag = *val
-	return nil
 }
