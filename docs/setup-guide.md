@@ -122,11 +122,11 @@ These configurations affect how the connector processes data before sending it t
 |---------|------|---------|---------------|-------------|
 | `write_batch_size` | integer | `100000` | 5,000 – 100,000 | Number of rows per batch for insert, update, and replace operations. |
 | `select_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for SELECT queries used during updates. |
-| `mutation_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for ALTER TABLE UPDATE mutations in history mode. Lower it if you are experiencing large SQL statements. |
+| `mutation_batch_size` | integer | `1000` | 200 – 1,000 | Number of rows per batch for ALTER TABLE UPDATE mutations in history mode. Lower it if you are experiencing large SQL statements. |
 | `hard_delete_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for hard delete operations in history mode. Lower it if you are experiencing large SQL statements. |
 
 All fields are optional. If a field is not specified, the default value is used.
-If a value is outside the allowed range, the destination will report an error during sync.
+Values outside the allowed range are clamped to the nearest bound (a warning is logged) rather than rejected, so a stale or aggressive `advanced_config` never breaks startup.
 Unknown fields are silently ignored (a warning is logged) and do not cause errors, which allows forward compatibility when new settings are added.
 
 Example:

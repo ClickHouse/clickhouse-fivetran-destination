@@ -261,7 +261,7 @@ func TestParseAdvancedConfigFloatValue(t *testing.T) {
 
 func TestValidateAndOverwriteFlagsNilLeftsFlagsUnchanged(t *testing.T) {
 	originalWriteBatch := *flags.WriteBatchSize
-	assert.NoError(t, ValidateAndOverwriteFlags(nil))
+	ValidateAndOverwriteFlags(nil)
 	assert.Equal(t, originalWriteBatch, *flags.WriteBatchSize)
 }
 
@@ -288,7 +288,7 @@ func TestValidateAndOverwriteFlagsOverridesFlags(t *testing.T) {
 		MutationBatchSize:   &mutationBatch,
 		HardDeleteBatchSize: &hardDelete,
 	}
-	assert.NoError(t, ValidateAndOverwriteFlags(ds))
+	ValidateAndOverwriteFlags(ds)
 
 	assert.Equal(t, writeBatch, *flags.WriteBatchSize)
 	assert.Equal(t, selectBatch, *flags.SelectBatchSize)
@@ -308,7 +308,7 @@ func TestValidateAndOverwriteFlagsPartialOverride(t *testing.T) {
 	ds := &DestinationConfigurations{
 		WriteBatchSize: &writeBatch,
 	}
-	assert.NoError(t, ValidateAndOverwriteFlags(ds))
+	ValidateAndOverwriteFlags(ds)
 
 	assert.Equal(t, writeBatch, *flags.WriteBatchSize)
 	assert.Equal(t, flags.SelectBatchSizeSetting.DefaultValue, *flags.SelectBatchSize)
@@ -316,14 +316,36 @@ func TestValidateAndOverwriteFlagsPartialOverride(t *testing.T) {
 
 func uintPtr(v uint) *uint { return &v }
 
-func TestValidateAndOverwriteFlagsRejectsOutOfRange(t *testing.T) {
+func TestValidateAndOverwriteFlagsClampsOutOfRange(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	originalSelectBatch := *flags.SelectBatchSize
+	originalMutationBatch := *flags.MutationBatchSize
+	originalHardDeleteBatch := *flags.HardDeleteBatchSize
+	defer func() {
+		*flags.WriteBatchSize = originalWriteBatch
+		*flags.SelectBatchSize = originalSelectBatch
+		*flags.MutationBatchSize = originalMutationBatch
+		*flags.HardDeleteBatchSize = originalHardDeleteBatch
+	}()
+
 	belowMin := flags.WriteBatchSizeSetting.MinValue - 1
-	err := ValidateAndOverwriteFlags(&DestinationConfigurations{WriteBatchSize: &belowMin})
-	assert.ErrorContains(t, err, "out of allowed range")
+	ValidateAndOverwriteFlags(&DestinationConfigurations{WriteBatchSize: &belowMin})
+	assert.Equal(t, flags.WriteBatchSizeSetting.MinValue, *flags.WriteBatchSize)
 
 	aboveMax := flags.WriteBatchSizeSetting.MaxValue + 1
-	err = ValidateAndOverwriteFlags(&DestinationConfigurations{WriteBatchSize: &aboveMax})
-	assert.ErrorContains(t, err, "out of allowed range")
+	ValidateAndOverwriteFlags(&DestinationConfigurations{WriteBatchSize: &aboveMax})
+	assert.Equal(t, flags.WriteBatchSizeSetting.MaxValue, *flags.WriteBatchSize)
+
+	// Legacy MutationBatchSize values above the (lowered) ceiling clamp down rather
+	// than breaking startup, so existing advanced_config from before the cap change
+	// keeps working.
+	legacyMutation := uint(1_500)
+	ValidateAndOverwriteFlags(&DestinationConfigurations{MutationBatchSize: &legacyMutation})
+	assert.Equal(t, flags.MutationBatchSizeSetting.MaxValue, *flags.MutationBatchSize)
+
+	zero := uint(0)
+	ValidateAndOverwriteFlags(&DestinationConfigurations{HardDeleteBatchSize: &zero})
+	assert.Equal(t, flags.HardDeleteBatchSizeSetting.MinValue, *flags.HardDeleteBatchSize)
 }
 
 func TestValidateAndOverwriteFlagsAcceptsBoundaryValues(t *testing.T) {
@@ -341,31 +363,10 @@ func TestValidateAndOverwriteFlagsAcceptsBoundaryValues(t *testing.T) {
 		SelectBatchSize:     uintPtr(flags.SelectBatchSizeSetting.MaxValue),
 		HardDeleteBatchSize: uintPtr(flags.HardDeleteBatchSizeSetting.MaxValue),
 	}
-	assert.NoError(t, ValidateAndOverwriteFlags(ds))
+	ValidateAndOverwriteFlags(ds)
 	assert.Equal(t, flags.WriteBatchSizeSetting.MinValue, *flags.WriteBatchSize)
 	assert.Equal(t, flags.SelectBatchSizeSetting.MaxValue, *flags.SelectBatchSize)
 	assert.Equal(t, flags.HardDeleteBatchSizeSetting.MaxValue, *flags.HardDeleteBatchSize)
-}
-
-func TestValidateAndOverwriteFlagsDoesNotModifyFlagsOnError(t *testing.T) {
-	originalWriteBatch := *flags.WriteBatchSize
-	originalSelectBatch := *flags.SelectBatchSize
-	defer func() {
-		*flags.WriteBatchSize = originalWriteBatch
-		*flags.SelectBatchSize = originalSelectBatch
-	}()
-
-	validWrite := flags.WriteBatchSizeSetting.MinValue + 1
-	invalidSelect := flags.SelectBatchSizeSetting.MaxValue + 1
-	ds := &DestinationConfigurations{
-		WriteBatchSize:  &validWrite,
-		SelectBatchSize: &invalidSelect,
-	}
-	err := ValidateAndOverwriteFlags(ds)
-	assert.Error(t, err)
-
-	assert.Equal(t, validWrite, *flags.WriteBatchSize)
-	assert.Equal(t, originalSelectBatch, *flags.SelectBatchSize)
 }
 
 // --- ParseAll tests ---
@@ -423,15 +424,18 @@ func TestParseAllInvalidAdvancedConfigJSON(t *testing.T) {
 	assert.ErrorContains(t, err, "failed to parse advanced config")
 }
 
-func TestParseAllOutOfRangeFlag(t *testing.T) {
+func TestParseAllClampsOutOfRangeFlag(t *testing.T) {
+	originalWriteBatch := *flags.WriteBatchSize
+	defer func() { *flags.WriteBatchSize = originalWriteBatch }()
+
 	input := configWithAdvancedJSON(
 		map[string]string{"host": "my.host"},
 		`{"destination_configurations": {"write_batch_size": 1}}`,
 	)
 	cfg, err := ParseAll(input)
-	assert.Nil(t, cfg)
-	assert.ErrorContains(t, err, "invalid destination configurations")
-	assert.ErrorContains(t, err, "out of allowed range")
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.Equal(t, flags.WriteBatchSizeSetting.MinValue, *flags.WriteBatchSize)
 }
 
 func TestParseAllInvalidConnectionConfig(t *testing.T) {

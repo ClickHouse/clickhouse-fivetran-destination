@@ -357,9 +357,9 @@ func GetHardDeleteStatement(
 // GetHardDeleteWithTimestampStatement generates statements such as:
 //
 //	DELETE FROM `foo`.`bar` WHERE
-//	    (`id` = 1 AND `_fivetran_start` >= parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC'))
-//	    OR (`id` = 2 AND `_fivetran_start` >= parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC'))
-//	    OR (`id` = 3 AND `_fivetran_start` >= parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC'))
+//	    (`id` = 1 AND `_fivetran_start` >= toDateTime64('2022-03-05T04:45:12.123456789',9,'UTC'))
+//	    OR (`id` = 2 AND `_fivetran_start` >= toDateTime64('2023-04-06T12:30:00.234567890',9,'UTC'))
+//	    OR (`id` = 3 AND `_fivetran_start` >= toDateTime64('2023-04-06T13:00:00.345678901',9,'UTC'))
 //
 // This function combines primary key equality checks with a timestamp comparison for each row,
 // matching the behavior of the Java writeDelete method which uses AND conditions between
@@ -403,6 +403,11 @@ func GetHardDeleteWithTimestampStatement(
 
 		// Build primary key equality conditions with AND between them
 		for _, col := range csvColumns.PrimaryKeys {
+			// timestampColumn is emitted once below as `>=`, so don't repeat it as `=` here.
+			// See: https://github.com/fivetran/fivetran_partner_sdk/blob/3037ce4e941af0226bbe3c2de8068f9a7af7c199/how-to-handle-history-mode-batch-files.md#earliest_start_files
+			if col.Name == timestampColumn {
+				continue
+			}
 			if col.Index >= uint(len(csvRow)) {
 				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
 			}
@@ -442,9 +447,9 @@ func GetHardDeleteWithTimestampStatement(
 //	UPDATE
 //	    `_fivetran_active` = FALSE,
 //	    `_fivetran_end` = CASE
-//	        WHEN `id` = 1 THEN parseDateTime64BestEffort('2022-03-05T04:45:12.123456788Z', 9, 'UTC')
-//	        WHEN `id` = 2 THEN parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC')
-//	        WHEN `id` = 3 THEN parseDateTime64BestEffort('2022-03-05T04:45:12.123456789Z', 9, 'UTC')
+//	        WHEN `id` = 1 THEN toDateTime64('2022-03-05T04:45:12.123456788',9,'UTC')
+//	        WHEN `id` = 2 THEN toDateTime64('2023-04-06T12:30:00.234567889',9,'UTC')
+//	        WHEN `id` = 3 THEN toDateTime64('2023-04-06T13:00:00.345678900',9,'UTC')
 //	    END
 //	WHERE `id` IN (1, 2, 3)
 //	    AND `_fivetran_active` = TRUE

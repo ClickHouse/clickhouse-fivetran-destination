@@ -39,7 +39,7 @@ var SelectBatchSizeSetting = ConfigDefinition{
 var SelectBatchSize = SelectBatchSizeSetting.RegisterFlag()
 
 var MutationBatchSizeSetting = ConfigDefinition{
-	Name: "mutation_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
+	Name: "mutation_batch_size", DefaultValue: 1_000, MinValue: 200, MaxValue: 1_000,
 	Description: "Batch size for ALTER TABLE UPDATE mutations (builds SQL strings, keep low to avoid large queries)"}
 var MutationBatchSize = MutationBatchSizeSetting.RegisterFlag()
 
