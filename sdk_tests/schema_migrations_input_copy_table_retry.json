@@ -1,0 +1,44 @@
+{
+   "create_table" : {
+      "copy_table_retry": {
+         "columns": {
+            "id": "INT",
+            "amount" : "DOUBLE"
+         },
+         "primary_key": ["id"]
+      }
+   },
+   "ops" : [
+      {
+         "upsert": {
+            "copy_table_retry": [
+               {"id": 1, "amount": 100.45},
+               {"id": 2, "amount": 150.33},
+               {"id": 3, "amount": 200.00}
+            ]
+         }
+      }
+   ],
+   "schema_migration" : [
+      {
+         "copy_table": [
+            {
+               "from_table": "copy_table_retry",
+               "to_table": "copy_table_retry_copy"
+            }
+         ]
+      },
+      {
+         "copy_table": [
+            {
+               "from_table": "copy_table_retry",
+               "to_table": "copy_table_retry_copy"
+            }
+         ]
+      }
+   ],
+   "describe_table" : [
+      "copy_table_retry",
+      "copy_table_retry_copy"
+   ]
+}

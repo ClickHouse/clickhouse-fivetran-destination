@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"fivetran.com/fivetran_sdk/destination/common/constants"
+	constants "fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -98,7 +98,7 @@ func GetCreateDatabaseStatement(schemaName string) (string, error) {
 }
 
 func GetDropTableStatement(tableName QualifiedTableName) (string, error) {
-	return fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName), nil
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s SYNC", tableName), nil
 }
 
 func GetSelectFromSystemGrantsQuery(username string) (string, error) {
@@ -645,6 +645,8 @@ func GetAllMutationsCompletedQuery(
 	), nil
 }
 
+// GetInsertFromSelectStatement generates an INSERT ... SELECT FROM ... FINAL statement
+// used to rebuild a table during migrations (PK change in AlterTable, MigrateCopyTable).
 func GetInsertFromSelectStatement(
 	schemaName string,
 	tableName string,
@@ -674,7 +676,7 @@ func GetInsertFromSelectStatement(
 	tableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(tableName))
 	newTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(newTableName))
 	return fmt.Sprintf(
-		"INSERT INTO %s (%s) SELECT %s FROM %s",
+		"INSERT INTO %s (%s) SELECT %s FROM %s FINAL",
 		newTableIdentifier, joinedColNames, joinedColNames, tableIdentifier), nil
 }
 
@@ -696,6 +698,32 @@ func GetRenameTableStatement(
 	toTableIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(toTableName))
 	return fmt.Sprintf("RENAME TABLE %s TO %s",
 		fromTableIdentifier, toTableIdentifier), nil
+}
+
+// GetLocalMutationsCompletedQuery generates a query to check if all mutations on a table are complete.
+// Unlike GetAllMutationsCompletedQuery, this queries system.mutations directly (no clusterAllReplicas)
+// and works on both local Docker ClickHouse and ClickHouse Cloud.
+func GetLocalMutationsCompletedQuery(schemaName string, tableName string) (string, error) {
+	if tableName == "" {
+		return "", fmt.Errorf("table name is empty")
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("schema name for table %s is empty", tableName)
+	}
+	return fmt.Sprintf(
+		"SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = %s AND table = %s AND is_done = 0",
+		singleQuoted(schemaName), singleQuoted(tableName),
+	), nil
+}
+
+// escapeSQLString escapes single quotes in a string for use in SQL literals.
+func escapeSQLString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// singleQuoted wraps a string in single quotes with escaping for SQL string literals.
+func singleQuoted(s string) string {
+	return fmt.Sprintf("'%s'", escapeSQLString(s))
 }
 
 func identifier(s string) string {
