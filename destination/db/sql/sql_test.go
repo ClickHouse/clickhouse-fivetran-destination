@@ -26,6 +26,9 @@ func TestGetAlterTableStatement(t *testing.T) {
 	strType := "String"
 	comment := "foobar"
 	emptyComment := ""
+	// ADD COLUMN is always emitted with IF NOT EXISTS so re-sent
+	// ADD_COLUMN_WITH_DEFAULT_VALUE migrations don't error when the column
+	// already exists (see Schema Migration Helper spec, Note 2).
 	statement, err := GetAlterTableStatement("foo", "bar", []*types.AlterTableOp{
 		{Op: types.AlterTableAdd, Column: "qaz", Type: &intType},
 	})
@@ -163,6 +166,15 @@ func TestGetCreateTableStatement(t *testing.T) {
 	_, err = GetCreateTableStatement("foo", "bar",
 		types.MakeTableDescription([]*types.ColumnDefinition{{Name: "qaz", Type: "Int32", IsPrimaryKey: true}}))
 	assert.ErrorContains(t, err, "no _fivetran_synced column")
+}
+
+func TestGetDropTableStatement(t *testing.T) {
+	qualified, err := GetQualifiedTableName("foo", "bar")
+	assert.NoError(t, err)
+
+	stmt, err := GetDropTableStatement(qualified)
+	assert.NoError(t, err)
+	assert.Equal(t, "DROP TABLE IF EXISTS `foo`.`bar` SYNC", stmt)
 }
 
 func TestGetTruncateTableStatement(t *testing.T) {
@@ -453,13 +465,13 @@ func TestGetAllMutationsCompletedQuery(t *testing.T) {
 func TestGetInsertFromSelectStatement(t *testing.T) {
 	query, err := GetInsertFromSelectStatement("foo", "bar", "qaz", []string{"a", "b"})
 	assert.NoError(t, err)
-	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`,`b`) SELECT `a`,`b` FROM `foo`.`bar`", query)
+	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`,`b`) SELECT `a`,`b` FROM `foo`.`bar` FINAL", query)
 }
 
 func TestGetInsertFromSelectStatementSingleColumn(t *testing.T) {
 	query, err := GetInsertFromSelectStatement("foo", "bar", "qaz", []string{"a"})
 	assert.NoError(t, err)
-	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`) SELECT `a` FROM `foo`.`bar`", query)
+	assert.Equal(t, "INSERT INTO `foo`.`qaz` (`a`) SELECT `a` FROM `foo`.`bar` FINAL", query)
 }
 
 func TestGetInsertFromSelectStatementErrors(t *testing.T) {
@@ -491,4 +503,28 @@ func TestGetRenameTablesStatementErrors(t *testing.T) {
 
 	_, err = GetRenameTableStatement("", "table", "new")
 	assert.ErrorContains(t, err, "schema name for tables table/new is empty")
+}
+
+func TestGetLocalMutationsCompletedQuery(t *testing.T) {
+	query, err := GetLocalMutationsCompletedQuery("foo", "bar")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = 'foo' AND table = 'bar' AND is_done = 0", query)
+
+	_, err = GetLocalMutationsCompletedQuery("", "bar")
+	assert.ErrorContains(t, err, "schema name for table bar is empty")
+
+	_, err = GetLocalMutationsCompletedQuery("foo", "")
+	assert.ErrorContains(t, err, "table name is empty")
+
+	// Test SQL escaping of schema/table names with single quotes
+	query, err = GetLocalMutationsCompletedQuery("test'db", "test'table")
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = 'test''db' AND table = 'test''table' AND is_done = 0", query)
+}
+
+func TestEscapeSQLString(t *testing.T) {
+	assert.Equal(t, "hello", escapeSQLString("hello"))
+	assert.Equal(t, "O''Brien", escapeSQLString("O'Brien"))
+	assert.Equal(t, "it''s a ''test''", escapeSQLString("it's a 'test'"))
+	assert.Equal(t, "", escapeSQLString(""))
 }

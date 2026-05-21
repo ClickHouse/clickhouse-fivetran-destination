@@ -1,0 +1,28 @@
+{
+   "create_table" : {
+      "empty_history_table": {
+         "columns": {
+            "id": "INT",
+            "amount" : "DOUBLE"
+         },
+         "primary_key": ["id"],
+         "history_mode": true
+      }
+   },
+   "schema_migration" : [
+      {
+         "add_column_in_history_mode": [
+            {
+               "table": "empty_history_table",
+               "column": "article",
+               "data_type": "STRING",
+               "default_value": "Ordered article",
+               "operation_timestamp": "2005-05-28T20:57:00Z"
+            }
+         ]
+      }
+   ],
+   "describe_table" : [
+      "empty_history_table"
+   ]
+}
