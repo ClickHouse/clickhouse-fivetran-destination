@@ -10,14 +10,14 @@ import (
 	"fivetran.com/fivetran_sdk/destination/db/values"
 )
 
-// GetRenameColumnStatement generates: ALTER TABLE `schema`.`table` RENAME COLUMN `from` TO `to`
+// GetRenameColumnStatement generates: ALTER TABLE `schema`.`table` RENAME COLUMN IF EXISTS `from` TO `to`
 // This is an instant metadata-only operation in ClickHouse.
 func GetRenameColumnStatement(schemaName string, tableName string, fromColumn string, toColumn string) (string, error) {
 	fullTableName, err := GetQualifiedTableName(schemaName, tableName)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", fullTableName, identifier(fromColumn), identifier(toColumn)), nil
+	return fmt.Sprintf("ALTER TABLE %s RENAME COLUMN IF EXISTS %s TO %s", fullTableName, identifier(fromColumn), identifier(toColumn)), nil
 }
 
 // GetUpdateColumnValueStatement generates: ALTER TABLE `schema`.`table` UPDATE `column` = <value> WHERE true
@@ -69,12 +69,12 @@ func GetCopyColumnUpdateStatement(schemaName string, tableName string, toColumn 
 	return fmt.Sprintf("ALTER TABLE %s UPDATE %s = %s WHERE true", fullTableName, identifier(toColumn), identifier(fromColumn)), nil
 }
 
-// GetCreateTableAsStatement generates: CREATE TABLE `schema`.`toTable` AS `schema`.`fromTable`
+// GetCreateTableAsStatement generates: CREATE TABLE IF NOT EXISTS `schema`.`toTable` AS `schema`.`fromTable`
 // Clones the table structure and engine settings.
 func GetCreateTableAsStatement(schemaName string, fromTable string, toTable string) (string, error) {
 	fromIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(fromTable))
 	toIdentifier := fmt.Sprintf("%s.%s", identifier(schemaName), identifier(toTable))
-	return fmt.Sprintf("CREATE TABLE %s AS %s", toIdentifier, fromIdentifier), nil
+	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s AS %s", toIdentifier, fromIdentifier), nil
 }
 
 // GetCloseActiveRowsStatement generates:

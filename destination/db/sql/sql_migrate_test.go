@@ -12,7 +12,7 @@ import (
 func TestGetRenameColumnStatement(t *testing.T) {
 	stmt, err := GetRenameColumnStatement("s", "t", "old", "new")
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `s`.`t` RENAME COLUMN `old` TO `new`", stmt)
+	assert.Equal(t, "ALTER TABLE `s`.`t` RENAME COLUMN IF EXISTS `old` TO `new`", stmt)
 
 	_, err = GetRenameColumnStatement("", "t", "old", "new")
 	assert.ErrorContains(t, err, "schema name for table t is empty")
@@ -51,7 +51,7 @@ func TestGetCopyColumnUpdateStatement(t *testing.T) {
 func TestGetCreateTableAsStatement(t *testing.T) {
 	stmt, err := GetCreateTableAsStatement("s", "from_t", "to_t")
 	assert.NoError(t, err)
-	assert.Equal(t, "CREATE TABLE `s`.`to_t` AS `s`.`from_t`", stmt)
+	assert.Equal(t, "CREATE TABLE IF NOT EXISTS `s`.`to_t` AS `s`.`from_t`", stmt)
 }
 
 func TestGetCloseActiveRowsStatement(t *testing.T) {
