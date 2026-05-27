@@ -125,7 +125,7 @@ For each issue, provide: file and line reference, rationale, and a suggested fix
 - Backwards-compatible change?
 - Existing tests still pass?
 - New tests added for new behavior?
-- Documentation updated if user-facing behavior changed? Canonical user-facing docs live in the clickhouse-docs repo under `docs/integrations/data-ingestion/etl-tools/fivetran/` (see also the the [technical reference](https://clickhouse.com/docs/integrations/fivetran/reference) and [troubleshooting & best practices](https://clickhouse.com/docs/integrations/fivetran/troubleshooting) pages).
+- Documentation updated if user-facing behavior changed? Canonical user-facing docs live in the clickhouse-docs repo under `docs/integrations/data-ingestion/etl-tools/fivetran/` (see also the [technical reference](https://clickhouse.com/docs/integrations/fivetran/reference) and [troubleshooting & best practices](https://clickhouse.com/docs/integrations/fivetran/troubleshooting) pages).
 
 ## Documentation
 
