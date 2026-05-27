@@ -94,55 +94,7 @@ level.
 
 ## Advanced Configuration
 
-The ClickHouse Cloud destination supports an optional JSON configuration file for advanced use cases. This file allows you to fine-tune destination behavior by overriding the default settings that control batch sizes, parallelism, connection pools, and request timeouts.
-
-> NOTE: This configuration is entirely optional. If no file is uploaded, the destination uses
-> sensible defaults that work well for most use cases.
-
----
-
-### Uploading the configuration file
-
-The file must be valid JSON and conform to the schema described below.
-
-If you need to modify the configuration after the initial setup, you can edit the destination configurations in the Fivetran dashboard and upload an updated file.
-
-The configuration file has a top-level section:
-
-```json
-{
-  "destination_configurations": { ... }
-}
-```
-
-Inside of it you can specify the following configurations that control the internal behavior of the ClickHouse destination connector itself.
-These configurations affect how the connector processes data before sending it to ClickHouse.
-
-| Setting | Type | Default | Allowed Range | Description |
-|---------|------|---------|---------------|-------------|
-| `write_batch_size` | integer | `100000` | 5,000 – 100,000 | Number of rows per batch for insert, update, and replace operations. |
-| `select_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for SELECT queries used during updates. |
-| `mutation_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for ALTER TABLE UPDATE mutations in history mode. Lower it if you are experiencing large SQL statements. |
-| `hard_delete_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for hard delete operations in history mode. Lower it if you are experiencing large SQL statements. |
-
-All fields are optional. If a field is not specified, the default value is used.
-If a value is outside the allowed range, the destination will report an error during sync.
-Unknown fields are silently ignored (a warning is logged) and do not cause errors, which allows forward compatibility when new settings are added.
-
-Example:
-
-```json
-{
-  "destination_configurations": {
-    "write_batch_size": 50000,
-    "select_batch_size": 200
-  }
-}
-```
-
----
-
-### Limitations
-
-- The configuration file applies to all syncs for the destination. It cannot vary per sync or per connector.
-- The maximum file size allowed for the configuration file is 1 MB.
+The ClickHouse Cloud destination supports an optional JSON configuration file to fine-tune batch sizes
+and other internal behavior. See the
+[ClickHouse documentation — advanced configuration](https://clickhouse.com/docs/integrations/fivetran/reference#advanced-configuration)
+for the schema, defaults, allowed ranges, and examples.
