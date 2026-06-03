@@ -29,6 +29,9 @@ func TestQuoteValue(t *testing.T) {
 		{pb.DataType_JSON, "{\"foo\": \"bar\"}", "'{\"foo\": \"bar\"}'"},
 		{pb.DataType_NAIVE_DATE, "2022-03-05", "'2022-03-05'"},
 		{pb.DataType_NAIVE_DATETIME, "2022-03-05T04:45:12", "'2022-03-05T04:45:12'"},
+		// Make sure the values are escaped (all reamining variations tested in TestQuoteAndEscapeString)
+		{pb.DataType_STRING, "a'b", "'a''b'"},
+		{pb.DataType_STRING, "a\nb", "'a\\nb'"},
 	}
 	for _, arg := range args {
 		result, err := Value(arg.colType, arg.value)
