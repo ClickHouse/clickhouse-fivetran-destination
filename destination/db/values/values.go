@@ -70,6 +70,8 @@ func NewMigrateValueQuoted(value string) MigrateValue {
 
 var sqlStringEscaper = strings.NewReplacer(`\`, `\\`, `'`, `''`)
 
+// QuoteAndEscapeString wraps value in single quotes and escapes it for safe
+// use inside a ClickHouse SQL string literal.
 func QuoteAndEscapeString(value string) string {
 	return "'" + sqlStringEscaper.Replace(value) + "'"
 }
