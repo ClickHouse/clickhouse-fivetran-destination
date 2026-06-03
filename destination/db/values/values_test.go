@@ -37,6 +37,20 @@ func TestQuoteValue(t *testing.T) {
 	}
 }
 
+func TestQuoteAndEscapeString(t *testing.T) {
+	assert.Equal(t, "'hello'", QuoteAndEscapeString("hello"))
+	assert.Equal(t, "''", QuoteAndEscapeString(""))
+	// Single quotes are SQL-standard doubled.
+	assert.Equal(t, "'O''Brien'", QuoteAndEscapeString("O'Brien"))
+	assert.Equal(t, "'it''s a ''test'''", QuoteAndEscapeString("it's a 'test'"))
+	assert.Equal(t, `'{"branchName":"s-later-then-w2''s-year"}'`, QuoteAndEscapeString(`{"branchName":"s-later-then-w2's-year"}`))
+	// Backslashes are doubled (ClickHouse treats backslash as an escape char), so
+	// the literal round-trips back to the original value instead of being corrupted.
+	assert.Equal(t, `'a\\nb'`, QuoteAndEscapeString(`a\nb`))
+	assert.Equal(t, `'trailing\\'`, QuoteAndEscapeString(`trailing\`))
+	assert.Equal(t, `'a\\''b'`, QuoteAndEscapeString(`a\'b`))
+}
+
 func TestQuoteUTCDateTime(t *testing.T) {
 	result, err := Value(pb.DataType_UTC_DATETIME, "2022-03-05T04:45:12.123456789Z")
 	assert.NoError(t, err)

@@ -712,18 +712,8 @@ func GetLocalMutationsCompletedQuery(schemaName string, tableName string) (strin
 	}
 	return fmt.Sprintf(
 		"SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = %s AND table = %s AND is_done = 0",
-		singleQuoted(schemaName), singleQuoted(tableName),
+		values.QuoteAndEscapeString(schemaName), values.QuoteAndEscapeString(tableName),
 	), nil
-}
-
-// escapeSQLString escapes single quotes in a string for use in SQL literals.
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
-
-// singleQuoted wraps a string in single quotes with escaping for SQL string literals.
-func singleQuoted(s string) string {
-	return fmt.Sprintf("'%s'", escapeSQLString(s))
 }
 
 func identifier(s string) string {

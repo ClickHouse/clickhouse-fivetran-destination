@@ -521,10 +521,3 @@ func TestGetLocalMutationsCompletedQuery(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT toBool(count(*) = 0) FROM system.mutations WHERE database = 'test''db' AND table = 'test''table' AND is_done = 0", query)
 }
-
-func TestEscapeSQLString(t *testing.T) {
-	assert.Equal(t, "hello", escapeSQLString("hello"))
-	assert.Equal(t, "O''Brien", escapeSQLString("O'Brien"))
-	assert.Equal(t, "it''s a ''test''", escapeSQLString("it's a 'test'"))
-	assert.Equal(t, "", escapeSQLString(""))
-}
