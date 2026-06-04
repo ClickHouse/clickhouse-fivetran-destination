@@ -199,7 +199,7 @@ func TestGetUpdateColumnValueStatementSpecialChars(t *testing.T) {
 	// Backslash in value
 	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueQuoted("path\\to\\file"))
 	assert.NoError(t, err)
-	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = 'path\\to\\file' WHERE true", stmt)
+	assert.Equal(t, "ALTER TABLE `s`.`t` UPDATE `col` = 'path\\\\to\\\\file' WHERE true", stmt)
 
 	// Empty string value (not null)
 	stmt, err = GetUpdateColumnValueStatement("s", "t", "col", values.NewMigrateValueQuoted(""))

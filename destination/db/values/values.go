@@ -23,10 +23,6 @@ var MaxDateTime64Nanos = strconv.FormatInt(MaxDateTime64.UnixNano(), 10)
 // Value formats a CSV-sourced value into a SQL literal for the write path.
 // Paired with NewMigrateValue (migration path); the two must agree on the
 // effective literal produced for a given (DataType, value).
-//
-// Contract: Value quotes but does NOT escape embedded single quotes — safe
-// because CSV-sourced data never contains raw ones. NewMigrateValue does
-// escape, because SDK default values are user-configurable.
 func Value(colType pb.DataType, value string) (string, error) {
 	switch colType {
 	case // quote types that we can pass as a string
@@ -39,7 +35,7 @@ func Value(colType pb.DataType, value string) (string, error) {
 		pb.DataType_BINARY,
 		pb.DataType_XML,
 		pb.DataType_JSON:
-		return fmt.Sprintf("'%s'", value), nil
+		return QuoteAndEscapeString(value), nil
 	// specify DateTime64(9) as nanos instead
 	case pb.DataType_UTC_DATETIME:
 		utcDateTime, err := time.Parse(constants.UTCDateTimeFormat, value)
@@ -65,14 +61,19 @@ func NewMigrateValueNull() MigrateValue {
 	return MigrateValue{literal: "NULL", isNull: true}
 }
 
-// NewMigrateValueQuoted single-quotes value and escapes any embedded quotes
-// (SQL-standard doubling). Use this when there is no DataType to work with,
+// NewMigrateValueQuoted single-quotes value and escapes it for use inside a
+// ClickHouse string literal. Use this when there is no DataType to work with,
 // or when the type-aware conversion has already happened.
 func NewMigrateValueQuoted(value string) MigrateValue {
-	// Inlined rather than reusing sql.escapeSQLString: values → sql would
-	// cycle (sql already imports values for MaxDateTime64Nanos).
-	escaped := strings.ReplaceAll(value, "'", "''")
-	return MigrateValue{literal: fmt.Sprintf("'%s'", escaped)}
+	return MigrateValue{literal: QuoteAndEscapeString(value)}
+}
+
+var sqlStringEscaper = strings.NewReplacer(`\`, `\\`, `'`, `''`)
+
+// QuoteAndEscapeString wraps value in single quotes and escapes it for safe
+// use inside a ClickHouse SQL string literal.
+func QuoteAndEscapeString(value string) string {
+	return "'" + sqlStringEscaper.Replace(value) + "'"
 }
 
 // IsNull reports whether the value is SQL NULL.

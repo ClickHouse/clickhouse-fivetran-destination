@@ -29,12 +29,29 @@ func TestQuoteValue(t *testing.T) {
 		{pb.DataType_JSON, "{\"foo\": \"bar\"}", "'{\"foo\": \"bar\"}'"},
 		{pb.DataType_NAIVE_DATE, "2022-03-05", "'2022-03-05'"},
 		{pb.DataType_NAIVE_DATETIME, "2022-03-05T04:45:12", "'2022-03-05T04:45:12'"},
+		// Make sure the values are escaped (all remaining variations tested in TestQuoteAndEscapeString)
+		{pb.DataType_STRING, "a'b", "'a''b'"},
+		{pb.DataType_STRING, `a\nb`, `'a\\nb'`},
 	}
 	for _, arg := range args {
 		result, err := Value(arg.colType, arg.value)
 		assert.NoError(t, err, "expected no error for value %s with type %s", arg.value, arg.colType.String())
 		assert.Equal(t, arg.result, result, "values mismatch for type %s", arg.colType.String())
 	}
+}
+
+func TestQuoteAndEscapeString(t *testing.T) {
+	assert.Equal(t, "'hello'", QuoteAndEscapeString("hello"))
+	assert.Equal(t, "''", QuoteAndEscapeString(""))
+	// Single quotes are SQL-standard doubled.
+	assert.Equal(t, "'O''Brien'", QuoteAndEscapeString("O'Brien"))
+	assert.Equal(t, "'it''s a ''test'''", QuoteAndEscapeString("it's a 'test'"))
+	assert.Equal(t, `'{"branchName":"s-later-then-w2''s-year"}'`, QuoteAndEscapeString(`{"branchName":"s-later-then-w2's-year"}`))
+	// Backslashes are doubled (ClickHouse treats backslash as an escape char), so
+	// the literal round-trips back to the original value instead of being corrupted.
+	assert.Equal(t, `'a\\nb'`, QuoteAndEscapeString(`a\nb`))
+	assert.Equal(t, `'trailing\\'`, QuoteAndEscapeString(`trailing\`))
+	assert.Equal(t, `'a\\''b'`, QuoteAndEscapeString(`a\'b`))
 }
 
 func TestQuoteUTCDateTime(t *testing.T) {
