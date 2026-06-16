@@ -125,11 +125,11 @@ For each issue, provide: file and line reference, rationale, and a suggested fix
 - Backwards-compatible change?
 - Existing tests still pass?
 - New tests added for new behavior?
-- Documentation updated if user-facing behavior changed? (see [docs/overview.md](./docs/overview.md) and [docs/schema_operations.md](./docs/schema_operations.md))
+- Documentation updated if user-facing behavior changed? Canonical user-facing docs live in the clickhouse-docs repo under `docs/integrations/data-ingestion/etl-tools/fivetran/` (see also the [technical reference](https://clickhouse.com/docs/integrations/fivetran/reference) and [troubleshooting & best practices](https://clickhouse.com/docs/integrations/fivetran/troubleshooting) pages).
 
 ## Documentation
 
-User-facing documentation lives in `docs/`. When changing behavior that affects data type mappings, table structure, sync modes, or migration operations, update the relevant docs. The PR template includes a checklist item for this.
+Canonical user-facing documentation lives in the [clickhouse-docs repo](https://github.com/ClickHouse/clickhouse-docs) under `docs/integrations/data-ingestion/etl-tools/fivetran/` (`index.md`, `reference.md`, `troubleshooting.md`). When changing behavior that affects data type mappings, table structure, sync modes, or migration operations, update those files. The local `docs/` folder in this repo hosts the Fivetran-side overview and setup guide (published at fivetran.com/docs). The PR template includes a checklist item for documentation updates.
 
 ## MCP servers
 

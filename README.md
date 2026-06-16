@@ -25,8 +25,13 @@ Currently, supports [ClickHouse Cloud](https://clickhouse.cloud) only.
 
 ## Documentation
 
-- [Overview](https://fivetran.com/docs/destinations/clickhouse)
-- [Setup guide](https://fivetran.com/docs/destinations/clickhouse/setup-guide)
+- ClickHouse-side docs:
+  - [Fivetran and ClickHouse Cloud — overview](https://clickhouse.com/docs/integrations/fivetran)
+  - [Technical reference](https://clickhouse.com/docs/integrations/fivetran/reference)
+  - [Troubleshooting & best practices](https://clickhouse.com/docs/integrations/fivetran/troubleshooting)
+- Fivetran-side docs:
+  - [Destination overview](https://fivetran.com/docs/destinations/clickhouse)
+  - [Setup guide](https://fivetran.com/docs/destinations/clickhouse/setup-guide)
 
 ## Contributing
 

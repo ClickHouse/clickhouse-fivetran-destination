@@ -13,6 +13,9 @@ in [ClickHouse Cloud](https://clickhouse.cloud).
 > NOTE: This destination is [partner-built](/docs/partner-built-program). For any questions related to ClickHouse Cloud
 > destination and its documentation, contact [ClickHouse Cloud Support](mailto:support@clickhouse.com).
 
+> See also: [the Fivetran docs in the ClickHouse documentation](https://clickhouse.com/docs/integrations/fivetran)
+> for the most up-to-date type mappings, table structures, history mode details, and troubleshooting tips.
+
 ----
 
 {% partial file="destinations/saas-supported-deployment-models.template.md" /%}
