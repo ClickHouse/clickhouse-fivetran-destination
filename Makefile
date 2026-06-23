@@ -58,7 +58,7 @@ lint:
 	docker run --rm -v $$PWD:/destination -v golangci-lint-cache:/root/.cache -w /destination golangci/golangci-lint:$(GOLANG_CI_LINT_VERSION) golangci-lint run -v
 
 test:
-	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json sdk_tests/configuration.json
+	test -f sdk_tests/configuration.json || cp sdk_tests/default_configuration.json.txt sdk_tests/configuration.json
 	go test fivetran.com/fivetran_sdk/destination/... -count=1 -v -race $$TEST_ARGS
 
 test-with-coverage:

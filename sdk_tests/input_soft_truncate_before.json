@@ -1,6 +1,6 @@
 {
   "create_table": {
-    "table_to_truncate": {
+    "table_to_soft_truncate": {
       "columns": {
         "id": "INT",
         "name": "STRING"
@@ -11,12 +11,12 @@
     }
   },
   "describe_table": [
-    "table_to_truncate"
+    "table_to_soft_truncate"
   ],
   "ops": [
     {
       "upsert": {
-        "table_to_truncate": [
+        "table_to_soft_truncate": [
           {
             "id": 1,
             "name": "foo"
@@ -26,12 +26,12 @@
     },
     {
       "soft_truncate_before": [
-        "table_to_truncate"
+        "table_to_soft_truncate"
       ]
     },
     {
       "upsert": {
-        "table_to_truncate": [
+        "table_to_soft_truncate": [
           {
             "id": 2,
             "name": "bar"
