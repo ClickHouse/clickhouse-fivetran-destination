@@ -11,5 +11,7 @@ tests/resources/large_file.csv.zstd.aes
 .DS_Store
 
 out
+bin
+.protoc
 cover.out
 godepgraph.png

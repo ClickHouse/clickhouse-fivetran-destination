@@ -4,69 +4,38 @@
 * Make (see [Makefile](./Makefile) for all available commands)
 * Go 1.22+
 
-## Install Protoc
+## Building
 
-### Mac OS
-
-Install via HomeBrew:
-
-```bash
-brew install protobuf
-```
-
-### Linux
-
-Download the protocol buffer compiler suitable for your platform from
-the [releases page](https://github.com/protocolbuffers/protobuf/releases/latest) and install it to `$HOME/.local`.
-
-For example (Linux x86_64):
-
-```bash
-unzip protoc-*.zip -d $HOME/.local
-```
-
-## Install Go plugins
-Make sure that you have 
-
-```bash
-# protoc-gen-go or gopls are installed this bin directory
-export PATH="$(go env GOPATH)/bin:$PATH"
-```
-
-in your `.bashrc`/`.zshrc`.
-
-(macOS only): try to run `protoc` from the terminal. If `protoc` cannot be executed due to the OS security policy, 
-go to Settings -> Privacy & Security, find "protoc" there, and click "Allow anyway". 
-Run `protoc` one more time from the terminal, and click "Open".
-
-Then, install the Go plugin for the protocol buffer compiler:
-
-```bash
-make install-protoc-gen-go
-```
-
-## Generate Go code from the Protobuf definitions
-
-Download the Fivetran SDK protobuf files first. These files contain
-the [types definitions](https://github.com/fivetran/fivetran_sdk/blob/main/destination_sdk.proto) for the destination
-GRPC server. 
-
-You can do it by executing the following command:
-
-```bash
-make prepare-fivetran-sdk
-```
-
-Then, generate the Go code:
-
-```bash
-make generate-proto
-```
-
-Verify that the application can be built:
+The `build` target is fully self-contained (as required by the
+[Fivetran binary build pipeline](https://github.com/fivetran/fivetran_partner_sdk/blob/main/development-guide/binary-build-requirements.md)):
+it downloads the Fivetran SDK protobuf files, installs a pinned version of `protoc` into the
+local `.protoc/` directory, installs the Go protoc plugins, generates the Go code, and
+builds the binary at `./bin/server`:
 
 ```bash
 make build
+```
+
+No manual `protoc` installation is required.
+
+Tip: if a GitHub token is available, export it as `GITHUB_TOKEN` to authenticate the proto
+downloads and avoid GitHub rate limiting (HTTP 429), e.g. `GITHUB_TOKEN=$(gh auth token) make build`.
+
+Once the protos have been generated, you can rebuild just the server binary (much faster,
+no downloads):
+
+```bash
+make build-server
+```
+
+The individual steps are also available as separate targets, e.g. if you only need to
+re-download the protos or regenerate the Go code:
+
+```bash
+make prepare-fivetran-sdk   # download proto files from the Fivetran SDK repo
+make install-protoc         # install pinned protoc into .protoc/
+make install-protoc-gen-go  # install the Go protoc plugins
+make generate-proto         # generate Go code from the proto files
 ```
 
 ## Running Go tests
@@ -172,8 +141,8 @@ docker run clickhouse-fivetran-destination
 List of available flags for the destination app:
 
 ```sh
-make build
-./out/clickhouse_destination -h
+make build-server
+./bin/server -h
 ```
 
 Check the [flags.go](./destination/common/flags/flags.go) file for more details.
