@@ -823,7 +823,7 @@ func (conn *ClickHouseConnection) UpdateBatch(
 				continue
 			}
 			noConversion := func(row []any) ([]any, error) { return row, nil }
-			err = conn.InsertBatch(ctx, qualifiedTableName, MapErr(slices.Values(insertRows), noConversion), string(insertBatchUpdateTask))
+			err = conn.InsertBatch(ctx, qualifiedTableName, mapErr(slices.Values(insertRows), noConversion), string(insertBatchUpdateTask))
 			if err != nil {
 				return totalRows, err
 			}
