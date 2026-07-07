@@ -1,0 +1,27 @@
+name: 'Setup Go & Build'
+description: 'Install Go and run the self-contained make build (protos, protoc, codegen, binary)'
+
+inputs:
+  go-version:
+    description: 'Go version to install'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Go ${{ inputs.go-version }}
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    # The self-contained `make build` follows the Fivetran binary build requirements:
+    # https://github.com/fivetran/fivetran_partner_sdk/blob/main/development-guide/binary-build-requirements.md
+    - name: Build (downloads protos, installs protoc, generates code, compiles bin/server)
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: make build
+
+    - name: Go mod tidy
+      shell: bash
+      run: go mod tidy
