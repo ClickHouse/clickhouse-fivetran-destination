@@ -118,6 +118,7 @@ func GetCSVRowMappingKey(csvRow []string, csvCols *types.CSVColumns, isHistoryMo
 
 // MergeUpdatedRows merges a CSV with existing ClickHouse rows to create a batch of rows to insert back to the database.
 // `selectRows` are fetched from ClickHouse in advance using primary key values from CSV records.
+// CSV rows without a matching table row are logged and left out of the result.
 // See also: ToUpdatedRow.
 func MergeUpdatedRows(
 	csv [][]string,
@@ -126,29 +127,27 @@ func MergeUpdatedRows(
 	nullStr string,
 	unmodifiedStr string,
 	isHistoryMode bool,
-) (insertRows [][]interface{}, skipIdx map[int]bool, err error) {
-	insertRows = make([][]interface{}, len(csv))
-	skipIdx = make(map[int]bool)
-	for j, csvRow := range csv {
+) ([][]any, error) {
+	insertRows := make([][]any, 0, len(csv))
+	for _, csvRow := range csv {
 		mappingKey, err := GetCSVRowMappingKey(csvRow, csvCols, isHistoryMode)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		dbRow, exists := selectRows[mappingKey]
 		if exists {
 			updatedRow, err := ToUpdatedRow(csvRow, dbRow, csvCols, nullStr, unmodifiedStr)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			insertRows[j] = updatedRow
+			insertRows = append(insertRows, updatedRow)
 		} else {
 			// Shouldn't happen
 			log.Warn(fmt.Sprintf("[MergeUpdatedRows] Row with PK mapping %s does not exist", mappingKey))
-			skipIdx[j] = true
 			continue
 		}
 	}
-	return insertRows, skipIdx, nil
+	return insertRows, nil
 }
 
 // ToInsertRow converts a CSV row to a ClickHouse row, parsing strings and converting them to the correct types.
