@@ -639,7 +639,7 @@ func (conn *ClickHouseConnection) InsertBatch(
 				// Abort releases the batch's connection back to the pool;
 				// batch.Append and batch.Send handle that themselves on failure.
 				_ = batch.Abort()
-				return fmt.Errorf("error converting row for %s: %w", qualifiedTableName, err)
+				return fmt.Errorf("[%s] error converting row for %s: %w", opName, qualifiedTableName, err)
 			}
 			if err := batch.Append(row...); err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
