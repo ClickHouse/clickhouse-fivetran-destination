@@ -598,12 +598,11 @@ func (conn *ClickHouseConnection) DropTable(
 	return conn.ExecStatement(ctx, statement, dropTable, false)
 }
 
-// MapErr lazily transforms a sequence with a function that may fail, yielding
+// mapErr lazily transforms a sequence with a function that may fail, yielding
 // each transformed value together with its error. Iterating the result never
 // materializes the transformed set: values are produced one at a time.
 // The result is re-iterable as long as seq is.
-func MapErr[S, T any](seq iter.Seq[S], f func(S) (T, error)) iter.Seq2[T, error] {
-	return func(yield func(T, error) bool) {
+func mapErr[S, T any](seq iter.Seq[S], f func(S) (T, error)) iter.Seq2[T, error] {
 		for v := range seq {
 			if !yield(f(v)) {
 				return
