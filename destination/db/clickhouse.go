@@ -603,6 +603,7 @@ func (conn *ClickHouseConnection) DropTable(
 // materializes the transformed set: values are produced one at a time.
 // The result is re-iterable as long as seq is.
 func mapErr[S, T any](seq iter.Seq[S], f func(S) (T, error)) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
 		for v := range seq {
 			if !yield(f(v)) {
 				return
@@ -761,7 +762,7 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 			toInsertRow := func(csvRow []string) ([]any, error) {
 				return ToInsertRow(csvRow, csvColumns, nullStr)
 			}
-			err = conn.InsertBatch(ctx, qualifiedTableName, MapErr(slices.Values(batch), toInsertRow), string(insertBatchReplaceTask))
+			err = conn.InsertBatch(ctx, qualifiedTableName, mapErr(slices.Values(batch), toInsertRow), string(insertBatchReplaceTask))
 			if err != nil {
 				return totalRows, err
 			}
