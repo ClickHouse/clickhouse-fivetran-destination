@@ -3,12 +3,14 @@ package db
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/config"
+	"fivetran.com/fivetran_sdk/destination/db/sql"
 	pb "fivetran.com/fivetran_sdk/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -276,6 +278,61 @@ func TestRenameTableIdempotentOnRetry(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "code: 57")
 	})
+}
+
+func TestInsertBatchAbortsOnConversionError(t *testing.T) {
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	dbName := "fivetran_test"
+	tableName := fmt.Sprintf("test_insert_batch_abort_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+	err := conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
+	require.NoError(t, err)
+	err = conn.Exec(ctx, fmt.Sprintf(
+		"CREATE TABLE %s.%s (id Int64, name String) ENGINE = MergeTree ORDER BY id", dbName, tableName))
+	require.NoError(t, err)
+	defer func() {
+		err := conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, tableName))
+		assert.NoError(t, err)
+	}()
+
+	qualifiedTableName, err := sql.GetQualifiedTableName(dbName, tableName)
+	require.NoError(t, err)
+
+	countRows := func(t *testing.T) uint64 {
+		t.Helper()
+		row := conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s.%s", dbName, tableName))
+		var count uint64
+		require.NoError(t, row.Scan(&count))
+		return count
+	}
+
+	// A conversion failure on the second row must abort the whole batch:
+	// the error is surfaced (not retried) and no rows are inserted.
+	failOnSecondRow := func(row []any) ([]any, error) {
+		if row[0].(int64) == 2 {
+			return nil, fmt.Errorf("cannot convert row with id %d", row[0])
+		}
+		return row, nil
+	}
+	rows := [][]any{{int64(1), "one"}, {int64(2), "two"}, {int64(3), "three"}}
+	err = conn.InsertBatch(ctx, qualifiedTableName, mapErr(slices.Values(rows), failOnSecondRow), "TestInsertBatchAbort")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "error converting row for")
+	assert.ErrorContains(t, err, "cannot convert row with id 2")
+	assert.Equal(t, uint64(0), countRows(t))
+
+	// The connection must remain usable after Abort released it.
+	noConversion := func(row []any) ([]any, error) { return row, nil }
+	err = conn.InsertBatch(ctx, qualifiedTableName, mapErr(slices.Values(rows), noConversion), "TestInsertBatchAbort")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(3), countRows(t))
 }
 
 func TestDescribeTable(t *testing.T) {

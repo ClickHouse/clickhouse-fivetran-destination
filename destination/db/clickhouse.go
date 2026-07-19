@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"iter"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -596,17 +598,34 @@ func (conn *ClickHouseConnection) DropTable(
 	return conn.ExecStatement(ctx, statement, dropTable, false)
 }
 
+// mapErr lazily transforms a sequence with a function that may fail, yielding
+// each transformed value together with its error. Iterating the result never
+// materializes the transformed set: values are produced one at a time.
+// The result is re-iterable as long as seq is.
+func mapErr[S, T any](seq iter.Seq[S], f func(S) (T, error)) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		for v := range seq {
+			if !yield(f(v)) {
+				return
+			}
+		}
+	}
+}
+
+// InsertBatch prepares an INSERT batch, appends every row yielded by rows, and
+// sends it, retrying the whole operation on transient errors. A non-nil error
+// yielded by rows (e.g. a CSV conversion failure) aborts the insert.
+//
+// Because the operation is retried, rows may be iterated once per attempt: it
+// MUST be re-iterable, e.g. a lazy transformation over an in-memory slice.
+// Never pass a single-use iterator (such as one consuming a file or network
+// stream) — a retry would silently insert incomplete data.
 func (conn *ClickHouseConnection) InsertBatch(
 	ctx context.Context,
 	qualifiedTableName sql.QualifiedTableName,
-	rows [][]interface{},
-	skipIdx map[int]bool,
+	rows iter.Seq2[[]any, error],
 	opName string,
 ) error {
-	if len(skipIdx) == len(rows) {
-		log.Warn(fmt.Sprintf("[%s] All rows are skipped for %s", opName, qualifiedTableName))
-		return nil
-	}
 	return retry.OnNetError(func() error {
 		batch, err := conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s", qualifiedTableName))
 		if err != nil {
@@ -616,12 +635,14 @@ func (conn *ClickHouseConnection) InsertBatch(
 			}
 			return fmt.Errorf("error while preparing batch for %s: %w", qualifiedTableName, err)
 		}
-		for i, row := range rows {
-			if skipIdx[i] {
-				continue
-			}
-			err = batch.Append(row...)
+		for row, err := range rows {
 			if err != nil {
+				// Abort releases the batch's connection back to the pool;
+				// batch.Append and batch.Send handle that themselves on failure.
+				_ = batch.Abort()
+				return fmt.Errorf("[%s] error converting row for %s: %w", opName, qualifiedTableName, err)
+			}
+			if err := batch.Append(row...); err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					// ctx.Err() is diagnostic context, not the primary error; %v is nil-safe.
 					return fmt.Errorf("error appending row to a batch for %s: %w (context state: %v)", qualifiedTableName, err, ctx.Err()) //nolint:errorlint
@@ -738,15 +759,10 @@ func (conn *ClickHouseConnection) ReplaceBatch(
 			}
 			totalRows += len(batch)
 			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchReplace, len(batch), totalRows))
-			insertRows := make([][]interface{}, len(batch))
-			for j, csvRow := range batch {
-				insertRow, err := ToInsertRow(csvRow, csvColumns, nullStr)
-				if err != nil {
-					return totalRows, err
-				}
-				insertRows[j] = insertRow
+			toInsertRow := func(csvRow []string) ([]any, error) {
+				return ToInsertRow(csvRow, csvColumns, nullStr)
 			}
-			err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, nil, string(insertBatchReplaceTask))
+			err = conn.InsertBatch(ctx, qualifiedTableName, mapErr(slices.Values(batch), toInsertRow), string(insertBatchReplaceTask))
 			if err != nil {
 				return totalRows, err
 			}
@@ -799,11 +815,16 @@ func (conn *ClickHouseConnection) UpdateBatch(
 			if err != nil {
 				return totalRows, err
 			}
-			insertRows, skipIdx, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr, isHistoryMode)
+			insertRows, err := MergeUpdatedRows(batch, selectRows, csvColumns, nullStr, unmodifiedStr, isHistoryMode)
 			if err != nil {
 				return totalRows, err
 			}
-			err = conn.InsertBatch(ctx, qualifiedTableName, insertRows, skipIdx, string(insertBatchUpdateTask))
+			if len(insertRows) == 0 {
+				log.Warn(fmt.Sprintf("[%s] No rows to insert for %s", insertBatchUpdate, qualifiedTableName))
+				continue
+			}
+			noConversion := func(row []any) ([]any, error) { return row, nil }
+			err = conn.InsertBatch(ctx, qualifiedTableName, mapErr(slices.Values(insertRows), noConversion), string(insertBatchUpdateTask))
 			if err != nil {
 				return totalRows, err
 			}
