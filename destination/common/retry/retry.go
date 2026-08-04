@@ -14,11 +14,22 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-// chCodeKeeperException is the ClickHouse server error code KEEPER_EXCEPTION.
-// It surfaces transient ZooKeeper/Keeper failures such as "Session expired",
-// connection loss, and operation timeouts — all worth retrying.
+// ClickHouse server error codes for transient ZooKeeper/Keeper failures.
 // Reference: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp
-const chCodeKeeperException = 999
+const (
+	// chCodeUnexpectedZooKeeperError (UNEXPECTED_ZOOKEEPER_ERROR) surfaces
+	// races in Keeper during part commits, e.g. "Got unexpected ZooKeeper
+	// error ZNODEEXISTS for part ..." when a server-side Keeper retry
+	// collides with the znode created by the first attempt. The server
+	// itself advises to retry ("Insert failed due to zookeeper error.
+	// Please retry."), and retrying is safe for this destination because
+	// duplicate inserts are deduplicated by ReplacingMergeTree.
+	chCodeUnexpectedZooKeeperError = 244
+	// chCodeKeeperException (KEEPER_EXCEPTION) surfaces transient
+	// ZooKeeper/Keeper failures such as "Session expired", connection loss,
+	// and operation timeouts — all worth retrying.
+	chCodeKeeperException = 999
+)
 
 // OnNetError retries the given operation if it returns a transient error
 // (network failure or a ClickHouse Keeper exception) using an exponential
@@ -157,15 +168,19 @@ func IsNetError(err error) bool {
 }
 
 // IsKeeperException returns true if err is (or wraps) a ClickHouse server
-// exception with code 999 (KEEPER_EXCEPTION). These are transient failures of
-// the underlying ZooKeeper/Keeper layer — most commonly "Session expired",
-// connection loss, or operation timeout — and should be retried.
+// exception with code 999 (KEEPER_EXCEPTION) or 244 (UNEXPECTED_ZOOKEEPER_ERROR).
+// These are transient failures of the underlying ZooKeeper/Keeper layer — most
+// commonly "Session expired", connection loss, operation timeout, or a znode
+// conflict during a part commit — and should be retried.
 func IsKeeperException(err error) bool {
 	if err == nil {
 		return false
 	}
 	var ex *clickhouse.Exception
-	return errors.As(err, &ex) && ex.Code == chCodeKeeperException
+	if !errors.As(err, &ex) {
+		return false
+	}
+	return ex.Code == chCodeKeeperException || ex.Code == chCodeUnexpectedZooKeeperError
 }
 
 // IsRetryable returns true if err represents a transient failure that the

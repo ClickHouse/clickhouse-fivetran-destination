@@ -54,10 +54,21 @@ func TestIsKeeperException(t *testing.T) {
 	// Code 999 (KEEPER_EXCEPTION)
 	assert.True(t, IsKeeperException(&clickhouse.Exception{Code: 999, Message: "Session expired"}))
 
+	// Code 244 (UNEXPECTED_ZOOKEEPER_ERROR), e.g. a znode conflict during a
+	// part commit in ClickHouse Cloud.
+	assert.True(t, IsKeeperException(&clickhouse.Exception{
+		Code:    244,
+		Message: "Got unexpected ZooKeeper error ZNODEEXISTS (at index 10) for part all_0_0_1",
+	}))
+
 	// Wrapped, as it would arrive from ExecStatement / benchmark layers.
 	wrapped := fmt.Errorf("ExecStatement(ALTER TABLE x) failed: %w",
 		&clickhouse.Exception{Code: 999, Message: "Session expired"})
 	assert.True(t, IsKeeperException(wrapped))
+
+	wrapped244 := fmt.Errorf("error while sending batch for `tester`.`all_data_types`: %w",
+		&clickhouse.Exception{Code: 244, Message: "Got unexpected ZooKeeper error ZNODEEXISTS (at index 10) for part all_0_0_1"})
+	assert.True(t, IsKeeperException(wrapped244))
 
 	// Other ClickHouse codes must not match.
 	assert.False(t, IsKeeperException(&clickhouse.Exception{Code: 516, Message: "Authentication failed"}))
@@ -66,6 +77,7 @@ func TestIsKeeperException(t *testing.T) {
 func TestIsRetryable(t *testing.T) {
 	assert.True(t, IsRetryable(makeNetError()))
 	assert.True(t, IsRetryable(&clickhouse.Exception{Code: 999, Message: "Session expired"}))
+	assert.True(t, IsRetryable(&clickhouse.Exception{Code: 244, Message: "Got unexpected ZooKeeper error ZNODEEXISTS (at index 10) for part all_0_0_1"}))
 }
 
 func TestGetBackoffDelay(t *testing.T) {
