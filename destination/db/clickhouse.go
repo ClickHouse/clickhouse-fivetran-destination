@@ -16,6 +16,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
 	"fivetran.com/fivetran_sdk/destination/common/constants"
 	csvfile "fivetran.com/fivetran_sdk/destination/common/csv"
+	"fivetran.com/fivetran_sdk/destination/common/fivetran"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/log"
 	"fivetran.com/fivetran_sdk/destination/common/retry"
@@ -126,8 +127,15 @@ func GetClickHouseConnection(ctx context.Context, connConfig *config.Config) (*C
 	if err != nil {
 		return nil, fmt.Errorf("ClickHouse connection error: %w", err)
 	}
-	log.Info("ClickHouse connection established successfully")
-	return &ClickHouseConnection{Conn: conn, username: connConfig.Username, isLocal: connConfig.Local}, nil
+	chConn := &ClickHouseConnection{Conn: conn, username: connConfig.Username, isLocal: connConfig.Local}
+	version, err := chConn.GetVersion(ctx)
+	if err != nil {
+		// Non-fatal: the version query is informational and the connection was already verified via Ping.
+		log.Warn(fmt.Sprintf("Failed to query the ClickHouse server version: %v", err))
+		version = "unknown"
+	}
+	log.Info(fmt.Sprintf("ClickHouse connection established successfully, server version: %s", version))
+	return chConn, nil
 }
 
 func (conn *ClickHouseConnection) ExecStatement(
@@ -1160,6 +1168,28 @@ func (conn *ClickHouseConnection) WaitDatabaseIsCreated(
 	return nil
 }
 
+// GetVersion queries the ClickHouse server version. The Fivetran runtime metadata, if available,
+// is included as a SQL comment so it is visible in the ClickHouse query log for supportability.
+func (conn *ClickHouseConnection) GetVersion(ctx context.Context) (string, error) {
+	query := "SELECT version()"
+	if metadata := fivetran.GetMetadata().String(); metadata != "" {
+		query = fmt.Sprintf("-- %s\n%s", metadata, query)
+	}
+	rows, err := conn.ExecQuery(ctx, query, getVersion, false)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close() //nolint:errcheck
+	if !rows.Next() {
+		return "", fmt.Errorf("unexpected empty result from the version query")
+	}
+	var version string
+	if err = rows.Scan(&version); err != nil {
+		return "", err
+	}
+	return version, nil
+}
+
 func (conn *ClickHouseConnection) ConnectionTest(ctx context.Context) error {
 	rows, err := conn.ExecQuery(ctx, "SELECT toInt8(42) AS fivetran_connection_check", connectionTest, false)
 	if err != nil {
@@ -1284,6 +1314,7 @@ const (
 	selectByPrimaryKeys        connectionOpType = "SelectByPrimaryKeys"
 	getUserGrants              connectionOpType = "GetUserGrants"
 	connectionTest             connectionOpType = "ConnectionTest"
+	getVersion                 connectionOpType = "GetVersion"
 	allReplicasActive          connectionOpType = "AllReplicasActive"
 	allMutationsCompleted      connectionOpType = "AllMutationsCompleted"
 	waitDatabaseIsCreated      connectionOpType = "WaitDatabaseIsCreated"

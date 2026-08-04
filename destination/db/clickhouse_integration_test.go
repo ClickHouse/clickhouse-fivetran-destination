@@ -80,6 +80,21 @@ func TestConnection(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGetVersion(t *testing.T) {
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	version, err := conn.GetVersion(ctx)
+	require.NoError(t, err)
+	assert.NotEmpty(t, version)
+}
+
 func TestGrants(t *testing.T) {
 	guid := func() string {
 		return strings.ReplaceAll(uuid.New().String(), "-", "")
