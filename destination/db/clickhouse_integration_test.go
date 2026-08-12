@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/fivetran"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
@@ -116,13 +117,18 @@ func TestGetVersionWithFivetranMetadata(t *testing.T) {
 	assert.NotEmpty(t, version)
 
 	// Verify the query that reached the server actually contained the metadata comment.
-	err = conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER default")
+	// Read the query log on all replicas: in ClickHouse Cloud the version query may have
+	// landed on a different replica than the one serving this connection. SYSTEM FLUSH LOGS
+	// only flushes the current replica, so poll while the others flush on their own interval.
+	err = conn.Exec(ctx, "SYSTEM FLUSH LOGS")
 	require.NoError(t, err)
-	row := conn.QueryRow(ctx,
-		"SELECT query FROM clusterAllReplicas(default, system.query_log) WHERE type = 'QueryFinish' AND query LIKE $1 ORDER BY event_time_microseconds DESC LIMIT 1",
-		"%"+accountName+"%")
 	var loggedQuery string
-	require.NoError(t, row.Scan(&loggedQuery))
+	require.Eventually(t, func() bool {
+		row := conn.QueryRow(ctx,
+			"SELECT query FROM clusterAllReplicas(default, system.query_log) WHERE type = 'QueryFinish' AND query LIKE $1 ORDER BY event_time_microseconds DESC LIMIT 1",
+			"%"+accountName+"%")
+		return row.Scan(&loggedQuery) == nil
+	}, 30*time.Second, 500*time.Millisecond, "version query not found in system.query_log on any replica")
 	assert.Contains(t, loggedQuery,
 		fmt.Sprintf("-- fivetran_account_name: %s, fivetran_group_name: test-group", accountName))
 	assert.Contains(t, loggedQuery, "SELECT version()")
