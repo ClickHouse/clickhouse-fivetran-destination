@@ -116,11 +116,8 @@ func TestGetVersionWithFivetranMetadata(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, version)
 
-	// Verify the query that reached the server actually contained the metadata comment.
-	// Read the query log on all replicas: in ClickHouse Cloud the version query may have
-	// landed on a different replica than the one serving this connection. SYSTEM FLUSH LOGS
-	// only flushes the current replica, so poll while the others flush on their own interval.
-	err = conn.Exec(ctx, "SYSTEM FLUSH LOGS")
+	// Verify the query that the servers actually contained the metadata comment.
+	err = conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER default")
 	require.NoError(t, err)
 	var loggedQuery string
 	require.Eventually(t, func() bool {
