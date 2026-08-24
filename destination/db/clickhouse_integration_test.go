@@ -6,7 +6,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"fivetran.com/fivetran_sdk/destination/common/fivetran"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/config"
@@ -78,6 +80,73 @@ func TestConnection(t *testing.T) {
 
 	err := conn.ConnectionTest(ctx)
 	require.NoError(t, err)
+}
+
+func TestGetVersion(t *testing.T) {
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	version, err := conn.GetVersion(ctx)
+	require.NoError(t, err)
+	assert.NotEmpty(t, version)
+}
+
+func TestGetVersionWithFivetranMetadata(t *testing.T) {
+	// Unique account name so the query can be unambiguously found in system.query_log
+	accountName := fmt.Sprintf("test-account-%s", uuid.New().String())
+	t.Setenv(fivetran.AccountNameEnvVar, accountName)
+	t.Setenv(fivetran.GroupNameEnvVar, "test-group")
+
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	version, err := conn.GetVersion(ctx)
+	require.NoError(t, err)
+	assert.NotEmpty(t, version)
+
+	// Verify the query that the servers actually contained the metadata comment.
+	err = conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER default")
+	require.NoError(t, err)
+	var loggedQuery string
+	require.Eventually(t, func() bool {
+		row := conn.QueryRow(ctx,
+			"SELECT query FROM clusterAllReplicas(default, system.query_log) WHERE type = 'QueryFinish' AND query LIKE $1 ORDER BY event_time_microseconds DESC LIMIT 1",
+			"%"+accountName+"%")
+		return row.Scan(&loggedQuery) == nil
+	}, 30*time.Second, 500*time.Millisecond, "version query not found in system.query_log on any replica")
+	assert.Contains(t, loggedQuery,
+		fmt.Sprintf("-- fivetran_account_name: %s, fivetran_group_name: test-group", accountName))
+	assert.Contains(t, loggedQuery, "SELECT version()")
+}
+
+func TestGetVersionCancelledContext(t *testing.T) {
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	cancelledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	version, err := conn.GetVersion(cancelledCtx)
+	assert.ErrorContains(t, err, "context canceled")
+	assert.Empty(t, version)
 }
 
 func TestGrants(t *testing.T) {
