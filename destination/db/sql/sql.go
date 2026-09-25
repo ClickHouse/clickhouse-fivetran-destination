@@ -357,7 +357,7 @@ func GetHardDeleteStatement(
 // This function combines primary key equality checks with a timestamp comparison for each row,
 // matching the behavior of the Java writeDelete method which uses AND conditions between
 // primary keys and the timestamp filter.
-//
+// See https://github.com/fivetran/fivetran_partner_sdk/blob/main/how-to-handle-history-mode-batch-files.md#earliest_start_files
 //
 // See also: https://clickhouse.com/docs/en/guides/developer/lightweight-delete
 func GetHardDeleteWithTimestampStatement(
@@ -386,16 +386,16 @@ func GetHardDeleteWithTimestampStatement(
 		// Start parentheses for each row's condition
 		clauseBuilder.WriteRune('(')
 
-		// Build primary key equality conditions with AND between them
+		// Build primary key equality conditions with AND between them. Skip _fivetran_start as it will be handled separately.
 		for _, col := range csvColumns.PrimaryKeys {
+			if col.Name == constants.FivetranStart {
+				continue
+			}
 			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
 				return "", err
 			}
-			clauseBuilder.WriteString(fmt.Sprintf("%s=%s", identifier(col.Name), value))
-
-			// Add AND after each primary key condition (including the last one)
-			clauseBuilder.WriteString(" AND")
+			clauseBuilder.WriteString(fmt.Sprintf("%s=%s AND", identifier(col.Name), value))
 		}
 
 		// Add _fivetran_start condition

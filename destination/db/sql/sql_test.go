@@ -409,6 +409,64 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))", statement)
 }
 
+func TestGetHardDeleteWithTimestampStatement(t *testing.T) {
+	fullTableName := QualifiedTableName("`foo`.`bar`")
+	batch := [][]string{
+		{"42", "foo", "2022-03-05T04:45:12.123456789Z"},
+		{"43", "bar", "2023-04-06T12:30:00.234567890Z"},
+	}
+	id := &types.CSVColumn{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}
+	name := &types.CSVColumn{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}
+	start := &types.CSVColumn{Index: 2, Name: "_fivetran_start", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}
+
+	tests := []struct {
+		name     string
+		csvCols  *types.CSVColumns
+		expected string
+		err      string
+	}{
+		{
+			name:     "single primary key",
+			csvCols:  &types.CSVColumns{All: []*types.CSVColumn{id, name, start}, PrimaryKeys: []*types.CSVColumn{id}},
+			expected: "DELETE FROM `foo`.`bar` WHERE(`id`=42 AND`_fivetran_start`>='1646455512123456789')OR(`id`=43 AND`_fivetran_start`>='1680784200234567890')",
+		},
+		{
+			name:     "composite primary key",
+			csvCols:  &types.CSVColumns{All: []*types.CSVColumn{id, name, start}, PrimaryKeys: []*types.CSVColumn{id, name}},
+			expected: "DELETE FROM `foo`.`bar` WHERE(`id`=42 AND`name`='foo' AND`_fivetran_start`>='1646455512123456789')OR(`id`=43 AND`name`='bar' AND`_fivetran_start`>='1680784200234567890')",
+		},
+		{
+			// Fivetran marks _fivetran_start as a primary key in history mode; it must not become an equality filter.
+			name:     "_fivetran_start marked as primary key is excluded from the key filter",
+			csvCols:  &types.CSVColumns{All: []*types.CSVColumn{id, name, start}, PrimaryKeys: []*types.CSVColumn{id, start}},
+			expected: "DELETE FROM `foo`.`bar` WHERE(`id`=42 AND`_fivetran_start`>='1646455512123456789')OR(`id`=43 AND`_fivetran_start`>='1680784200234567890')",
+		},
+		{
+			name:    "missing _fivetran_start column",
+			csvCols: &types.CSVColumns{All: []*types.CSVColumn{id, name}, PrimaryKeys: []*types.CSVColumn{id}},
+			err:     "column _fivetran_start not found",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			statement, err := GetHardDeleteWithTimestampStatement(batch, tc.csvCols, fullTableName)
+			if tc.err != "" {
+				assert.ErrorContains(t, err, tc.err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, statement)
+		})
+	}
+
+	_, err := GetHardDeleteWithTimestampStatement(batch, &types.CSVColumns{All: []*types.CSVColumn{id, start}, PrimaryKeys: []*types.CSVColumn{id}}, "")
+	assert.ErrorContains(t, err, "table name is empty")
+	_, err = GetHardDeleteWithTimestampStatement(nil, &types.CSVColumns{All: []*types.CSVColumn{id, start}, PrimaryKeys: []*types.CSVColumn{id}}, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty CSV slice")
+	_, err = GetHardDeleteWithTimestampStatement(batch, &types.CSVColumns{}, fullTableName)
+	assert.ErrorContains(t, err, "expected non-empty primary keys")
+}
+
 func TestGetAllReplicasActiveQuery(t *testing.T) {
 	query, err := GetAllReplicasActiveQuery("foo", "bar")
 	assert.NoError(t, err)
