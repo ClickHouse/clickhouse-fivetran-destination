@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db"
 	"fivetran.com/fivetran_sdk/destination/db/config"
@@ -16,11 +17,10 @@ import (
 )
 
 type batchSizeTestConfig struct {
-	tableDesc          *types.TableDescription
-	batchSizes         []uint
-	generateCSV        func(uint) [][]string
-	makeCSVColumns     func() *types.CSVColumns
-	fivetranStartIndex uint
+	tableDesc      *types.TableDescription
+	batchSizes     []uint
+	generateCSV    func(uint) [][]string
+	makeCSVColumns func() *types.CSVColumns
 }
 
 // TestFindOptimalMutationBatchSize tests batch sizes with a simple schema (2 PKs, 7 columns)
@@ -39,7 +39,6 @@ func TestFindOptimalMutationBatchSize(t *testing.T) {
 			{Name: "_fivetran_start", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true},
 			{Name: "_fivetran_end", Type: "Nullable(DateTime64(9, 'UTC'))"},
 		}),
-		fivetranStartIndex: 5,
 	})
 }
 
@@ -60,7 +59,6 @@ func TestFindRealisticMutationBatchSize(t *testing.T) {
 			{Name: "_fivetran_start", Type: "DateTime64(9, 'UTC')", IsPrimaryKey: true},
 			{Name: "_fivetran_end", Type: "Nullable(DateTime64(9, 'UTC'))"},
 		}),
-		fivetranStartIndex: 6,
 	})
 }
 
@@ -100,7 +98,7 @@ func runBatchSizeTest(t *testing.T, cfg batchSizeTestConfig) {
 		{
 			name: "UPDATE",
 			generate: func(csv [][]string, cols *types.CSVColumns, table sql.QualifiedTableName) (string, error) {
-				return sql.GetUpdateHistoryActiveStatement(csv, cols, table, cfg.fivetranStartIndex, pb.DataType_UTC_DATETIME)
+				return sql.GetUpdateHistoryActiveStatement(csv, cols, table, constants.FivetranStart)
 			},
 		},
 		{
@@ -108,10 +106,8 @@ func runBatchSizeTest(t *testing.T, cfg batchSizeTestConfig) {
 			generate: sql.GetHardDeleteStatement,
 		},
 		{
-			name: "DELETE+Timestamp",
-			generate: func(csv [][]string, cols *types.CSVColumns, table sql.QualifiedTableName) (string, error) {
-				return sql.GetHardDeleteWithTimestampStatement(csv, cols, table, "_fivetran_start", cfg.fivetranStartIndex, pb.DataType_UTC_DATETIME)
-			},
+			name:     "DELETE+Timestamp",
+			generate: sql.GetHardDeleteWithTimestampStatement,
 		},
 	}
 

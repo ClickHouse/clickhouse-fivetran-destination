@@ -14,7 +14,6 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
-	"fivetran.com/fivetran_sdk/destination/common/constants"
 	csvfile "fivetran.com/fivetran_sdk/destination/common/csv"
 	"fivetran.com/fivetran_sdk/destination/common/fivetran"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
@@ -905,11 +904,6 @@ func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
 			return 0, err
 		}
 
-		fivetranStartIndex, fivetranStartType, err := findColumnInCSV(csvColumns, constants.FivetranStart)
-		if err != nil {
-			return 0, err
-		}
-
 		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
 		if err != nil {
 			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
@@ -926,14 +920,7 @@ func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
 			}
 			totalRows += len(batch)
 			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchHardDelete, len(batch), totalRows))
-			statement, err := sql.GetHardDeleteWithTimestampStatement(
-				batch,
-				csvColumns,
-				qualifiedTableName,
-				constants.FivetranStart,
-				fivetranStartIndex,
-				fivetranStartType,
-			)
+			statement, err := sql.GetHardDeleteWithTimestampStatement(batch, csvColumns, qualifiedTableName)
 			if err != nil {
 				return totalRows, err
 			}
@@ -983,12 +970,6 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 			return 0, err
 		}
 
-		// Find the _fivetran_start column index and type
-		fivetranStartColumnIndex, fivetranStartColumnType, err := findColumnInCSV(csvColumns, fivetranStartColumnName)
-		if err != nil {
-			return 0, err
-		}
-
 		// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
 		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
 		if err != nil {
@@ -1008,13 +989,7 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 			}
 			totalRows += len(batch)
 			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", updateHistoryBatch, len(batch), totalRows))
-			statement, err := sql.GetUpdateHistoryActiveStatement(
-				batch,
-				csvColumns,
-				qualifiedTableName,
-				fivetranStartColumnIndex,
-				fivetranStartColumnType,
-			)
+			statement, err := sql.GetUpdateHistoryActiveStatement(batch, csvColumns, qualifiedTableName, fivetranStartColumnName)
 			if err != nil {
 				return totalRows, err
 			}
@@ -1029,22 +1004,6 @@ func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
 		}
 		return totalRows, nil
 	}, string(updateHistoryBatch))
-}
-
-// findColumnInCSV searches for a column by name in csvColumns and returns its index and type.
-// Returns an error if the column is not found.
-func findColumnInCSV(csvColumns *types.CSVColumns, columnName string) (uint, pb.DataType, error) {
-	if csvColumns == nil || csvColumns.All == nil {
-		return 0, pb.DataType_UNSPECIFIED, fmt.Errorf("csvColumns is nil or empty")
-	}
-
-	for _, col := range csvColumns.All {
-		if col.Name == columnName {
-			return col.Index, col.Type, nil
-		}
-	}
-
-	return 0, pb.DataType_UNSPECIFIED, fmt.Errorf("column %s not found in CSV columns", columnName)
 }
 
 // WaitAllNodesAvailable

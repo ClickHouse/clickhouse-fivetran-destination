@@ -262,14 +262,6 @@ func TestGetSelectByPrimaryKeysQueryValidation(t *testing.T) {
 	assert.ErrorContains(t, err, "expected non-empty primary keys")
 	_, err = GetSelectByPrimaryKeysQuery(batch, csvCols, fullTableName, false)
 	assert.ErrorContains(t, err, "expected non-empty primary keys")
-
-	withInvalidCol := []*types.CSVColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: false}}
-	invalidIndexCSVCols := &types.CSVColumns{
-		All:         withInvalidCol,
-		PrimaryKeys: withInvalidCol,
-	}
-	_, err = GetSelectByPrimaryKeysQuery([][]string{{"foo"}}, invalidIndexCSVCols, fullTableName, false)
-	assert.ErrorContains(t, err, "can't find matching value for primary key with index 5")
 }
 
 func TestGetSelectByPrimaryKeysQuery(t *testing.T) {
@@ -373,14 +365,6 @@ func TestGetHardDeleteStatementValidation(t *testing.T) {
 	assert.ErrorContains(t, err, "expected non-empty CSV slice")
 	_, err = GetHardDeleteStatement([][]string{}, csvCols, fullTableName)
 	assert.ErrorContains(t, err, "expected non-empty CSV slice")
-
-	withInvalidCol := []*types.CSVColumn{{Index: 5, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}}
-	invalidIndexCSVCols := &types.CSVColumns{
-		All:         withInvalidCol,
-		PrimaryKeys: withInvalidCol,
-	}
-	_, err = GetHardDeleteStatement([][]string{{"foo"}}, invalidIndexCSVCols, fullTableName)
-	assert.ErrorContains(t, err, "can't find matching value for primary key with index 5")
 }
 
 func TestGetHardDeleteStatement(t *testing.T) {

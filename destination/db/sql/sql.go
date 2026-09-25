@@ -8,7 +8,6 @@ import (
 	constants "fivetran.com/fivetran_sdk/destination/common/constants"
 	"fivetran.com/fivetran_sdk/destination/common/types"
 	"fivetran.com/fivetran_sdk/destination/db/values"
-	pb "fivetran.com/fivetran_sdk/proto"
 )
 
 type QualifiedTableName string
@@ -279,9 +278,6 @@ func GetSelectByPrimaryKeysQuery(
 	for i, csvRow := range csv {
 		clauseBuilder.WriteRune('(')
 		for j, col := range csvColumns.PrimaryKeys {
-			if col.Index > uint(len(csvRow)) {
-				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-			}
 			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
 				return "", err
@@ -333,9 +329,6 @@ func GetHardDeleteStatement(
 	for i, csvRow := range csv {
 		clauseBuilder.WriteRune('(')
 		for j, col := range csvColumns.PrimaryKeys {
-			if col.Index > uint(len(csvRow)) {
-				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-			}
 			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
 				return "", err
@@ -365,17 +358,12 @@ func GetHardDeleteStatement(
 // matching the behavior of the Java writeDelete method which uses AND conditions between
 // primary keys and the timestamp filter.
 //
-// The timestampColumn parameter specifies which column to use for the timestamp comparison (e.g., "_fivetran_start").
-// The timestampIndex parameter specifies the index of the timestamp column in the CSV rows.
 //
 // See also: https://clickhouse.com/docs/en/guides/developer/lightweight-delete
 func GetHardDeleteWithTimestampStatement(
 	csv [][]string,
 	csvColumns *types.CSVColumns,
 	qualifiedTableName QualifiedTableName,
-	timestampColumn string,
-	timestampIndex uint,
-	timestampType pb.DataType,
 ) (string, error) {
 	if qualifiedTableName == "" {
 		return "", fmt.Errorf("table name is empty")
@@ -386,26 +374,20 @@ func GetHardDeleteWithTimestampStatement(
 	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
 		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
 	}
-	if timestampColumn == "" {
-		return "", fmt.Errorf("timestamp column name is empty")
+	fivetranStartCol, err := csvColumns.FindColumn(constants.FivetranStart)
+	if err != nil {
+		return "", err
 	}
 
 	var clauseBuilder strings.Builder
 	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE", qualifiedTableName))
 
 	for i, csvRow := range csv {
-		if timestampIndex >= uint(len(csvRow)) {
-			return "", fmt.Errorf("can't find matching value for timestamp column with index %d", timestampIndex)
-		}
-
 		// Start parentheses for each row's condition
 		clauseBuilder.WriteRune('(')
 
 		// Build primary key equality conditions with AND between them
 		for _, col := range csvColumns.PrimaryKeys {
-			if col.Index >= uint(len(csvRow)) {
-				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-			}
 			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
 				return "", err
@@ -416,12 +398,12 @@ func GetHardDeleteWithTimestampStatement(
 			clauseBuilder.WriteString(" AND")
 		}
 
-		// Add timestamp condition
-		timestampValue, err := values.Value(timestampType, csvRow[timestampIndex])
+		// Add _fivetran_start condition
+		fivetranStartValue, err := values.Value(fivetranStartCol.Type, csvRow[fivetranStartCol.Index])
 		if err != nil {
 			return "", err
 		}
-		clauseBuilder.WriteString(fmt.Sprintf("%s>=%s", identifier(timestampColumn), timestampValue))
+		clauseBuilder.WriteString(fmt.Sprintf("%s>=%s", identifier(fivetranStartCol.Name), fivetranStartValue))
 
 		// Close parentheses for this row's condition
 		clauseBuilder.WriteRune(')')
@@ -452,7 +434,8 @@ func GetHardDeleteWithTimestampStatement(
 // This function updates history records by setting _fivetran_active to FALSE and
 // _fivetran_end to the timestamp value from the CSV (typically _fivetran_start - 1).
 //
-// The endTimestampIndex parameter specifies the index of the column containing the end timestamp value.
+// The endTimestampColumn parameter names the CSV column containing the end timestamp value
+// (e.g., _fivetran_start for earliest-start files, _fivetran_end for delete files); it is looked up in csvColumns.
 // For each row, the CASE statement maps primary key values to their corresponding end timestamps.
 //
 // See also: https://clickhouse.com/docs/en/sql-reference/statements/alter/update
@@ -460,8 +443,7 @@ func GetUpdateHistoryActiveStatement(
 	csv [][]string,
 	csvColumns *types.CSVColumns,
 	qualifiedTableName QualifiedTableName,
-	endTimestampIndex uint,
-	endTimestampType pb.DataType,
+	endTimestampColumn string,
 ) (string, error) {
 	if qualifiedTableName == "" {
 		return "", fmt.Errorf("table name is empty")
@@ -471,6 +453,10 @@ func GetUpdateHistoryActiveStatement(
 	}
 	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
 		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
+	}
+	endTimestampCol, err := csvColumns.FindColumn(endTimestampColumn)
+	if err != nil {
+		return "", err
 	}
 
 	var queryBuilder strings.Builder
@@ -486,10 +472,6 @@ func GetUpdateHistoryActiveStatement(
 
 	// Build CASE WHEN statements for each row
 	for _, csvRow := range csv {
-		if endTimestampIndex >= uint(len(csvRow)) {
-			return "", fmt.Errorf("can't find matching value for end timestamp column with index %d", endTimestampIndex)
-		}
-
 		queryBuilder.WriteString(" WHEN")
 
 		// Build condition for primary keys (excluding _fivetran_start)
@@ -497,9 +479,6 @@ func GetUpdateHistoryActiveStatement(
 		for _, col := range csvColumns.PrimaryKeys {
 			if col.Name == constants.FivetranStart {
 				continue
-			}
-			if col.Index >= uint(len(csvRow)) {
-				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
 			}
 			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
@@ -514,7 +493,7 @@ func GetUpdateHistoryActiveStatement(
 		}
 
 		// THEN clause with end timestamp value
-		endTimestampValue, err := values.Value(endTimestampType, csvRow[endTimestampIndex])
+		endTimestampValue, err := values.Value(endTimestampCol.Type, csvRow[endTimestampCol.Index])
 		if err != nil {
 			return "", err
 		}
@@ -542,9 +521,6 @@ func GetUpdateHistoryActiveStatement(
 
 		for i, csvRow := range csv {
 			col := filteredPKs[0]
-			if col.Index >= uint(len(csvRow)) {
-				return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-			}
 			value, err := values.Value(col.Type, csvRow[col.Index])
 			if err != nil {
 				return "", err
@@ -569,9 +545,6 @@ func GetUpdateHistoryActiveStatement(
 		for i, csvRow := range csv {
 			queryBuilder.WriteRune('(')
 			for j, col := range filteredPKs {
-				if col.Index >= uint(len(csvRow)) {
-					return "", fmt.Errorf("can't find matching value for primary key with index %d", col.Index)
-				}
 				value, err := values.Value(col.Type, csvRow[col.Index])
 				if err != nil {
 					return "", err
