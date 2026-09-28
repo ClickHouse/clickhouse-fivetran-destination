@@ -471,45 +471,42 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 			for fileIdx, earliestStartFile := range in.EarliestStartFiles {
 				log.Notice(fmt.Sprintf("[%s] Processing file %d/%d: %s", writeHistoryBatchEarliestStartOp, fileIdx+1, len(in.EarliestStartFiles), earliestStartFile))
 				if err := func() error {
-					// First pass: hard delete overlapping records
-					deleteReader, err := csvreader.NewCSVFileReader(earliestStartFile, in.Keys, compression, encryption)
+					reader, err := csvreader.NewCSVFileReader(earliestStartFile, in.Keys, compression, encryption)
 					if err != nil {
 						return fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err)
 					}
-					defer deleteReader.Close()
-					csvColumns, err := types.MakeCSVColumns(deleteReader.Header(), driverColumns, metadata.ColumnsMap, false)
+					defer reader.Close()
+					csvColumns, err := types.MakeCSVColumns(reader.Header(), driverColumns, metadata.ColumnsMap, false)
 					if err != nil {
 						return fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err)
 					}
-					log.Notice(fmt.Sprintf("[%s] Executing HardDeleteForEarliestStartHistory for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
-					deleteRows, err := conn.HardDeleteForEarliestStartHistory(ctx, in.SchemaName, in.Table, deleteReader, csvColumns)
+					staging, err := conn.StageEarliestStartFile(ctx, in.SchemaName, in.Table, reader, csvColumns, driverColumns)
 					if err != nil {
-						return fmt.Errorf("[%s] HardDeleteForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err)
+						return fmt.Errorf("[%s] StageEarliestStartFile failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err)
 					}
-
-					// Second pass: update active records
-					updateReader, err := csvreader.NewCSVFileReader(earliestStartFile, in.Keys, compression, encryption)
-					if err != nil {
-						return fmt.Errorf("[%s] Failed to open CSV file %s: %w", writeHistoryBatchEarliestStartOp, earliestStartFile, err)
-					}
-					defer updateReader.Close()
-					log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
-					updateRows, err := conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, updateReader, csvColumns, constants.FivetranStart)
-					if err != nil {
-						return fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err)
-					}
-
-					totalRows := deleteRows + updateRows
-					if totalRows == 0 {
+					defer conn.DropEarliestStartStaging(ctx, staging)
+					if staging.Rows == 0 {
 						logEmptyCSV(&emptyCSVWarnParams{
 							operation:  writeHistoryBatchEarliestStartOp,
 							schemaName: in.SchemaName,
 							tableName:  in.Table.Name,
 							fileName:   earliestStartFile,
 						})
-					} else {
-						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total (%d deleted, %d updated)", writeHistoryBatchEarliestStartOp, earliestStartFile, deleteRows, deleteRows, updateRows))
+						return nil
 					}
+
+					// First pass: hard delete overlapping records
+					log.Notice(fmt.Sprintf("[%s] Executing DeleteOverlappingHistory for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
+					if err := conn.DeleteOverlappingHistory(ctx, in.SchemaName, in.Table, staging); err != nil {
+						return fmt.Errorf("[%s] DeleteOverlappingHistory failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err)
+					}
+
+					// Second pass: close active records
+					log.Notice(fmt.Sprintf("[%s] Executing CloseActiveHistoryRows for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
+					if err := conn.CloseActiveHistoryRows(ctx, in.SchemaName, in.Table, staging, driverColumns); err != nil {
+						return fmt.Errorf("[%s] CloseActiveHistoryRows failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err)
+					}
+					log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeHistoryBatchEarliestStartOp, earliestStartFile, staging.Rows))
 					return nil
 				}(); err != nil {
 					return err

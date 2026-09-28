@@ -105,10 +105,6 @@ func runBatchSizeTest(t *testing.T, cfg batchSizeTestConfig) {
 			name:     "DELETE",
 			generate: sql.GetHardDeleteStatement,
 		},
-		{
-			name:     "DELETE+Timestamp",
-			generate: sql.GetHardDeleteWithTimestampStatement,
-		},
 	}
 
 	results := make(map[string]uint, len(mutations))

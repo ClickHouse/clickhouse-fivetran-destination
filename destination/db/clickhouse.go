@@ -14,6 +14,7 @@ import (
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
+	"fivetran.com/fivetran_sdk/destination/common/constants"
 	csvfile "fivetran.com/fivetran_sdk/destination/common/csv"
 	"fivetran.com/fivetran_sdk/destination/common/fivetran"
 	"fivetran.com/fivetran_sdk/destination/common/flags"
@@ -887,54 +888,130 @@ func (conn *ClickHouseConnection) HardDelete(
 	}, string(insertBatchHardDelete))
 }
 
-// HardDeleteForEarliestStartHistory is similar to HardDelete but includes a timestamp condition
-// for each row, combining primary key equality checks with a timestamp comparison.
-// This is useful for deleting records that match both the primary key and a timestamp threshold.
-// See also: sql.GetHardDeleteWithTimestampStatement
-func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
+// EarliestStartStaging is the helper table holding one earliest-start file: the table primary keys
+// (without _fivetran_start) plus _fivetran_start, one row per key. Created by StageEarliestStartFile,
+// consumed by DeleteOverlappingHistory and CloseActiveHistoryRows, removed by DropEarliestStartStaging.
+type EarliestStartStaging struct {
+	QualifiedTableName sql.QualifiedTableName
+	Rows               int                // rows copied from the file
+	columns            []*types.CSVColumn // file columns in staging table order: primary keys, then _fivetran_start
+}
+
+func newEarliestStartStaging(schemaName string, table *pb.Table, csvColumns *types.CSVColumns) (*EarliestStartStaging, error) {
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, fmt.Sprintf("%s_tmp_earliest_start_%d", table.Name, time.Now().UnixMilli()))
+	if err != nil {
+		return nil, err
+	}
+	startCol, err := csvColumns.FindColumn(constants.FivetranStart)
+	if err != nil {
+		return nil, err
+	}
+	staging := &EarliestStartStaging{QualifiedTableName: qualifiedTableName}
+	for _, col := range csvColumns.PrimaryKeys {
+		if col.Name != constants.FivetranStart {
+			staging.columns = append(staging.columns, col)
+		}
+	}
+	if len(staging.columns) == 0 {
+		return nil, fmt.Errorf("expected at least one primary key besides %s", constants.FivetranStart)
+	}
+	staging.columns = append(staging.columns, startCol)
+	return staging, nil
+}
+
+// PrimaryKeys are the table primary keys as Fivetran defines them
+func (s *EarliestStartStaging) PrimaryKeys() []string {
+	keys := make([]string, 0, len(s.columns))
+	for _, col := range s.columns {
+		keys = append(keys, col.Name)
+	}
+	return keys
+}
+
+// StageEarliestStartFile copies an earliest-start file into <table>_tmp_earliest_start_<unix millis>.
+// On failure the staging table is dropped before returning; on success the caller owns it.
+func (conn *ClickHouseConnection) StageEarliestStartFile(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
 	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
-) (int, error) {
-	return benchmark.RunAndNoticeWithData(func() (int, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+	driverColumns *types.DriverColumns,
+) (*EarliestStartStaging, error) {
+	return benchmark.RunAndNoticeWithData(func() (*EarliestStartStaging, error) {
+		staging, err := newEarliestStartStaging(schemaName, table, csvColumns)
 		if err != nil {
-			return 0, err
+			return nil, fmt.Errorf("[%s] %s.%s: %w", earliestStartStage, schemaName, table.Name, err)
 		}
-
-		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
-		if err != nil {
-			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
+		createStmt := sql.GetCreateHistoryStagingTableStatement(staging.QualifiedTableName, staging.columns, driverColumns)
+		if err = conn.ExecStatement(ctx, createStmt, earliestStartStageCreate, false); err != nil {
+			return nil, err
 		}
-
-		totalRows := 0
 		for {
-			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
-			if err != nil {
-				return totalRows, err
+			batch, err := reader.ReadBatch(*flags.WriteBatchSize)
+			if err == nil && batch == nil {
+				return staging, nil
 			}
-			if batch == nil {
-				break
+			if err == nil {
+				staging.Rows += len(batch)
+				log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", earliestStartStage, len(batch), staging.Rows))
+				toRow := func(csvRow []string) ([]any, error) { return ToStagingRow(csvRow, staging.columns) }
+				err = conn.InsertBatch(ctx, staging.QualifiedTableName, mapErr(slices.Values(batch), toRow), string(earliestStartStageInsert))
 			}
-			totalRows += len(batch)
-			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchHardDelete, len(batch), totalRows))
-			statement, err := sql.GetHardDeleteWithTimestampStatement(batch, csvColumns, qualifiedTableName)
 			if err != nil {
-				return totalRows, err
-			}
-			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
-			if err != nil {
-				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
-				if waitErr != nil {
-					return totalRows, waitErr
-				}
-				return totalRows, nil
+				conn.DropEarliestStartStaging(ctx, staging)
+				return nil, err
 			}
 		}
-		return totalRows, nil
-	}, string(insertBatchHardDelete))
+	}, string(earliestStartStage))
+}
+
+// DropEarliestStartStaging drops the staging table even if ctx is already cancelled.
+// A leftover helper table is clutter, not a data issue, so failures are only logged.
+func (conn *ClickHouseConnection) DropEarliestStartStaging(ctx context.Context, staging *EarliestStartStaging) {
+	dropCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	if err := conn.DropTable(dropCtx, staging.QualifiedTableName); err != nil {
+		log.Warn(fmt.Sprintf("[%s] Failed to drop staging table %s: %v", earliestStartStage, staging.QualifiedTableName, err))
+	}
+}
+
+// DeleteOverlappingHistory runs sql.GetDeleteOverlappingHistoryStatement against the staged file.
+func (conn *ClickHouseConnection) DeleteOverlappingHistory(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	staging *EarliestStartStaging,
+) error {
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
+	statement := sql.GetDeleteOverlappingHistoryStatement(qualifiedTableName, staging.QualifiedTableName, staging.PrimaryKeys())
+	return conn.execMutation(ctx, statement, schemaName, table.Name, earliestStartDelete)
+}
+
+// CloseActiveHistoryRows runs sql.GetCloseActiveHistoryRowsStatement against the staged file.
+func (conn *ClickHouseConnection) CloseActiveHistoryRows(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	staging *EarliestStartStaging,
+	driverColumns *types.DriverColumns,
+) error {
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
+	columnNames := make([]string, 0, len(driverColumns.Columns))
+	for _, col := range driverColumns.Columns {
+		columnNames = append(columnNames, col.Name)
+	}
+	statement, err := sql.GetCloseActiveHistoryRowsStatement(qualifiedTableName, staging.QualifiedTableName, columnNames, staging.PrimaryKeys())
+	if err != nil {
+		return err
+	}
+	return conn.ExecStatement(ctx, statement, earliestStartCloseActive, true)
 }
 
 // UpdateForEarliestStartHistory updates history records by setting _fivetran_active to FALSE and
@@ -1268,6 +1345,11 @@ const (
 	insertBatchUpdateTask      connectionOpType = "InsertBatch(Update task)"
 	insertBatchHardDelete      connectionOpType = "InsertBatch(Hard delete)"
 	insertBatchHardDeleteTask  connectionOpType = "InsertBatch(Hard delete task)"
+	earliestStartStage         connectionOpType = "EarliestStart(Stage file)"
+	earliestStartStageCreate   connectionOpType = "EarliestStart(Stage file, Create table)"
+	earliestStartStageInsert   connectionOpType = "EarliestStart(Stage file, Insert)"
+	earliestStartDelete        connectionOpType = "EarliestStart(Delete overlapping versions)"
+	earliestStartCloseActive   connectionOpType = "EarliestStart(Close active rows)"
 	updateHistoryBatch         connectionOpType = "UpdateHistoryBatch"
 	getColumnTypesWithIndexMap connectionOpType = "GetColumnTypes"
 	selectByPrimaryKeys        connectionOpType = "SelectByPrimaryKeys"

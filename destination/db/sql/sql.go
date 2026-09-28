@@ -2,6 +2,7 @@ package sql
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -347,75 +348,154 @@ func GetHardDeleteStatement(
 	return clauseBuilder.String(), nil
 }
 
-// GetHardDeleteWithTimestampStatement generates statements such as:
+// GetCreateHistoryStagingTableStatement generates statements such as:
 //
-//	DELETE FROM `foo`.`bar` WHERE
-//	    (`id` = 1 AND `_fivetran_start` >= '1646455512123456789')
-//	    OR (`id` = 2 AND `_fivetran_start` >= '1680784200234567890')
-//	    OR (`id` = 3 AND `_fivetran_start` >= '1680784300234567890')
+//	CREATE TABLE IF NOT EXISTS `foo`.`bar_tmp_earliest_start_1700000000000`
+//	(`id` Int64, `_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`)
 //
-// This function combines primary key equality checks with a timestamp comparison for each row,
-// matching the behavior of the Java writeDelete method which uses AND conditions between
-// primary keys and the timestamp filter.
-// See https://github.com/fivetran/fivetran_partner_sdk/blob/main/how-to-handle-history-mode-batch-files.md#earliest_start_files
+// columns are the file columns to stage, typed as in the destination table (driverColumns) and ordered by the
+// primary keys (see historyPrimaryKeys). IF NOT EXISTS keeps the statement safe to retry.
+func GetCreateHistoryStagingTableStatement(
+	qualifiedStagingTableName QualifiedTableName,
+	columns []*types.CSVColumn,
+	driverColumns *types.DriverColumns,
+) string {
+	columnDefs := make([]string, 0, len(columns))
+	names := make([]string, 0, len(columns))
+	for _, col := range columns {
+		columnDefs = append(columnDefs, fmt.Sprintf("%s %s", identifier(col.Name), driverColumns.Mapping[col.Name].DatabaseType))
+		names = append(names, col.Name)
+	}
+	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s) ENGINE = MergeTree ORDER BY (%s)",
+		qualifiedStagingTableName, strings.Join(columnDefs, ","), joinIdentifiers(historyPrimaryKeys(names)))
+}
+
+// GetDeleteOverlappingHistoryStatement removes the versions overlapping an earliest-start file staged in
+// qualifiedStagingTableName (same primary key, _fivetran_start >= staged start). Sample generated query:
 //
-// See also: https://clickhouse.com/docs/en/guides/developer/lightweight-delete
-func GetHardDeleteWithTimestampStatement(
-	csv [][]string,
-	csvColumns *types.CSVColumns,
+//	DELETE FROM `foo`.`bar` WHERE (`id`,`_fivetran_start`) IN (
+//	    SELECT tgt.`id`,tgt.`_fivetran_start` FROM `foo`.`bar` AS tgt
+//	    INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
+//	    WHERE tgt.`_fivetran_start`>=stg.`_fivetran_start` SETTINGS select_sequential_consistency = 1)
+//	SETTINGS allow_nondeterministic_mutations = 1
+//
+// primaryKeys are the table primary keys as Fivetran defines them; see historyPrimaryKeys.
+//
+// Replicated tables reject mutations with subqueries unless allow_nondeterministic_mutations is set (the
+// staging table is immutable while the mutation runs, so the result is deterministic). The subquery runs
+// in the background on the replica applying the mutation, outside the session that set
+// select_sequential_consistency on the connection, hence that setting is repeated inside the subquery.
+func GetDeleteOverlappingHistoryStatement(
 	qualifiedTableName QualifiedTableName,
+	qualifiedStagingTableName QualifiedTableName,
+	primaryKeys []string,
+) string {
+	keys := historyPrimaryKeys(primaryKeys)
+	keysWithStart := append(slices.Clone(keys), constants.FivetranStart)
+	return fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (SELECT %s FROM %s AS tgt INNER JOIN %s AS stg ON %s WHERE tgt.%s>=stg.%s SETTINGS select_sequential_consistency = 1) SETTINGS allow_nondeterministic_mutations = 1",
+		qualifiedTableName,
+		joinIdentifiers(keysWithStart),
+		joinTargetIdentifiers(keysWithStart),
+		qualifiedTableName,
+		qualifiedStagingTableName,
+		historyStagingJoinCondition(keys),
+		identifier(constants.FivetranStart),
+		identifier(constants.FivetranStart),
+	)
+}
+
+// GetCloseActiveHistoryRowsStatement closes the active row of every key in an earliest-start file staged in
+// qualifiedStagingTableName by inserting a new version of it. columnNames are all table columns, in table
+// order; primaryKeys are the table primary keys as Fivetran defines them, see historyPrimaryKeys.
+// Sample generated query:
+//
+//	INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`)
+//	SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),
+//	    tgt.`_fivetran_start`,stg.`_fivetran_start`,FALSE
+//	FROM `foo`.`bar` AS tgt FINAL
+//	INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
+//	WHERE tgt.`_fivetran_active`=TRUE
+//
+// The new version carries _fivetran_synced + 1 nanosecond:
+//   - Fivetran defines this step as an in-place update that leaves _fivetran_synced unchanged, and the
+//     earliest-start file has no _fivetran_synced column; the only value available is the active row's own.
+//   - ReplacingMergeTree keeps the highest _fivetran_synced, so the closing row must be strictly newer:
+//     an equal value would leave the winner to merge order, a default value would make it lose.
+//   - now() is not used: _fivetran_synced is the start of Fivetran's sync, truncate compares it against
+//     utc_delete_before, and it would depend on the ClickHouse clock.
+//   - One nanosecond is invisible at the millisecond precision Fivetran writes and compares at.
+//
+// Later operations cannot undo the close:
+//   - a re-delivered version arrives with a newer Fivetran sync time and wins;
+//   - the same batch cannot contain the closed version, its start precedes the earliest start;
+//   - a retry finds the row inactive and inserts nothing;
+//   - update files pick the last row per key by _fivetran_synced, so the closed row wins over same-sync siblings;
+//   - delete files and later earliest-start files only touch active rows;
+//   - truncate compares _fivetran_synced at millisecond precision.
+func GetCloseActiveHistoryRowsStatement(
+	qualifiedTableName QualifiedTableName,
+	qualifiedStagingTableName QualifiedTableName,
+	columnNames []string,
+	primaryKeys []string,
 ) (string, error) {
-	if qualifiedTableName == "" {
-		return "", fmt.Errorf("table name is empty")
+	closingValues := map[string]string{
+		constants.FivetranEnd:    "stg." + identifier(constants.FivetranStart),
+		constants.FivetranActive: "FALSE",
+		constants.FivetranSynced: fmt.Sprintf("tgt.%s + toIntervalNanosecond(1)", identifier(constants.FivetranSynced)),
 	}
-	if len(csv) == 0 {
-		return "", fmt.Errorf("expected non-empty CSV slice for table %s", qualifiedTableName)
-	}
-	if csvColumns == nil || len(csvColumns.PrimaryKeys) == 0 {
-		return "", fmt.Errorf("expected non-empty primary keys for table %s", qualifiedTableName)
-	}
-	fivetranStartCol, err := csvColumns.FindColumn(constants.FivetranStart)
-	if err != nil {
-		return "", err
-	}
-
-	var clauseBuilder strings.Builder
-	clauseBuilder.WriteString(fmt.Sprintf("DELETE FROM %s WHERE", qualifiedTableName))
-
-	for i, csvRow := range csv {
-		// Start parentheses for each row's condition
-		clauseBuilder.WriteRune('(')
-
-		// Build primary key equality conditions with AND between them. Skip _fivetran_start as it will be handled separately.
-		for _, col := range csvColumns.PrimaryKeys {
-			if col.Name == constants.FivetranStart {
-				continue
-			}
-			value, err := values.Value(col.Type, csvRow[col.Index])
-			if err != nil {
-				return "", err
-			}
-			clauseBuilder.WriteString(fmt.Sprintf("%s=%s AND", identifier(col.Name), value))
-		}
-
-		// Add _fivetran_start condition
-		fivetranStartValue, err := values.Value(fivetranStartCol.Type, csvRow[fivetranStartCol.Index])
-		if err != nil {
-			return "", err
-		}
-		clauseBuilder.WriteString(fmt.Sprintf("%s>=%s", identifier(fivetranStartCol.Name), fivetranStartValue))
-
-		// Close parentheses for this row's condition
-		clauseBuilder.WriteRune(')')
-
-		// Add OR between row conditions (except after the last one)
-		if i < len(csv)-1 {
-			clauseBuilder.WriteString("OR")
+	for _, required := range []string{constants.FivetranEnd, constants.FivetranActive, constants.FivetranSynced} {
+		if !slices.Contains(columnNames, required) {
+			return "", fmt.Errorf("column %s not found in table %s", required, qualifiedTableName)
 		}
 	}
+	selectCols := make([]string, 0, len(columnNames))
+	for _, col := range columnNames {
+		if value, ok := closingValues[col]; ok {
+			selectCols = append(selectCols, value)
+		} else {
+			selectCols = append(selectCols, "tgt."+identifier(col))
+		}
+	}
+	return fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s AS tgt FINAL INNER JOIN %s AS stg ON %s WHERE tgt.%s=TRUE",
+		qualifiedTableName,
+		joinIdentifiers(columnNames),
+		strings.Join(selectCols, ","),
+		qualifiedTableName,
+		qualifiedStagingTableName,
+		historyStagingJoinCondition(historyPrimaryKeys(primaryKeys)),
+		identifier(constants.FivetranActive),
+	), nil
+}
 
-	statement := clauseBuilder.String()
-	return statement, nil
+// historyPrimaryKeys returns the primary keys without _fivetran_start. Fivetran marks it as a primary key in
+// history mode, but keeping it in a key filter turns the earliest-start range into an exact match; see
+// https://github.com/fivetran/fivetran_partner_sdk/blob/main/how-to-handle-history-mode-batch-files.md#earliest_start_files
+func historyPrimaryKeys(primaryKeys []string) []string {
+	return slices.DeleteFunc(slices.Clone(primaryKeys), func(key string) bool { return key == constants.FivetranStart })
+}
+
+func historyStagingJoinCondition(primaryKeys []string) string {
+	conditions := make([]string, 0, len(primaryKeys))
+	for _, pk := range primaryKeys {
+		conditions = append(conditions, fmt.Sprintf("tgt.%s=stg.%s", identifier(pk), identifier(pk)))
+	}
+	return strings.Join(conditions, " AND ")
+}
+
+func joinIdentifiers(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, identifier(name))
+	}
+	return strings.Join(quoted, ",")
+}
+
+func joinTargetIdentifiers(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, "tgt."+identifier(name))
+	}
+	return strings.Join(quoted, ",")
 }
 
 // GetUpdateHistoryActiveStatement generates UPDATE statements such as:
