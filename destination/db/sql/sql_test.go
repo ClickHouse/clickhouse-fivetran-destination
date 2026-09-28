@@ -421,7 +421,7 @@ func TestGetCreateHistoryStagingTableStatement(t *testing.T) {
 		"name":            {DatabaseType: "String"},
 		"_fivetran_start": {DatabaseType: "DateTime64(9, 'UTC')"},
 	}}
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS `foo`.`bar_tmp_earliest_start_1700000000000` "+
+	assert.Equal(t, "CREATE TABLE `foo`.`bar_tmp_earliest_start_1700000000000` "+
 		"(`id` Int64,`name` String,`_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`,`name`)",
 		GetCreateHistoryStagingTableStatement(staging, columns, driverColumns))
 }

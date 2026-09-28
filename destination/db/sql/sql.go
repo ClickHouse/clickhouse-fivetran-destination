@@ -350,11 +350,12 @@ func GetHardDeleteStatement(
 
 // GetCreateHistoryStagingTableStatement generates statements such as:
 //
-//	CREATE TABLE IF NOT EXISTS `foo`.`bar_tmp_earliest_start_1700000000000`
+//	CREATE TABLE `foo`.`bar_tmp_earliest_start_1700000000000`
 //	(`id` Int64, `_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`)
 //
 // columns are the file columns to stage, typed as in the destination table (driverColumns) and ordered by the
-// primary keys (see historyPrimaryKeys). IF NOT EXISTS keeps the statement safe to retry.
+// primary keys (see historyPrimaryKeys). The statement fails if the table exists: a leftover helper table
+// would mix its rows into this batch, so it must not be reused.
 func GetCreateHistoryStagingTableStatement(
 	qualifiedStagingTableName QualifiedTableName,
 	columns []*types.CSVColumn,
@@ -366,8 +367,8 @@ func GetCreateHistoryStagingTableStatement(
 		columnDefs = append(columnDefs, fmt.Sprintf("%s %s", identifier(col.Name), driverColumns.Mapping[col.Name].DatabaseType))
 		names = append(names, col.Name)
 	}
-	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s) ENGINE = MergeTree ORDER BY (%s)",
-		qualifiedStagingTableName, strings.Join(columnDefs, ","), joinIdentifiers(historyPrimaryKeys(names)))
+	return fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = MergeTree ORDER BY (%s)",
+		qualifiedStagingTableName, strings.Join(columnDefs, ","), joinIdentifiers("", historyPrimaryKeys(names)))
 }
 
 // GetDeleteOverlappingHistoryStatement removes the versions overlapping an earliest-start file staged in
@@ -394,8 +395,8 @@ func GetDeleteOverlappingHistoryStatement(
 	keysWithStart := append(slices.Clone(keys), constants.FivetranStart)
 	return fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (SELECT %s FROM %s AS tgt INNER JOIN %s AS stg ON %s WHERE tgt.%s>=stg.%s SETTINGS select_sequential_consistency = 1) SETTINGS allow_nondeterministic_mutations = 1",
 		qualifiedTableName,
-		joinIdentifiers(keysWithStart),
-		joinTargetIdentifiers(keysWithStart),
+		joinIdentifiers("", keysWithStart),
+		joinIdentifiers("tgt.", keysWithStart),
 		qualifiedTableName,
 		qualifiedStagingTableName,
 		historyStagingJoinCondition(keys),
@@ -458,7 +459,7 @@ func GetCloseActiveHistoryRowsStatement(
 	}
 	return fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s AS tgt FINAL INNER JOIN %s AS stg ON %s WHERE tgt.%s=TRUE",
 		qualifiedTableName,
-		joinIdentifiers(columnNames),
+		joinIdentifiers("", columnNames),
 		strings.Join(selectCols, ","),
 		qualifiedTableName,
 		qualifiedStagingTableName,
@@ -482,18 +483,10 @@ func historyStagingJoinCondition(primaryKeys []string) string {
 	return strings.Join(conditions, " AND ")
 }
 
-func joinIdentifiers(names []string) string {
+func joinIdentifiers(prefix string, names []string) string {
 	quoted := make([]string, 0, len(names))
 	for _, name := range names {
-		quoted = append(quoted, identifier(name))
-	}
-	return strings.Join(quoted, ",")
-}
-
-func joinTargetIdentifiers(names []string) string {
-	quoted := make([]string, 0, len(names))
-	for _, name := range names {
-		quoted = append(quoted, "tgt."+identifier(name))
+		quoted = append(quoted, prefix+identifier(name))
 	}
 	return strings.Join(quoted, ",")
 }

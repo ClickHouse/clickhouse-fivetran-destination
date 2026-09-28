@@ -888,9 +888,10 @@ func (conn *ClickHouseConnection) HardDelete(
 	}, string(insertBatchHardDelete))
 }
 
-// EarliestStartStaging is the helper table holding one earliest-start file: the table primary keys
-// (without _fivetran_start) plus _fivetran_start, one row per key. Created by StageEarliestStartFile,
-// consumed by DeleteOverlappingHistory and CloseActiveHistoryRows, removed by DropEarliestStartStaging.
+// EarliestStartStaging is a helper table holding up to earliest_start_batch_size rows of an earliest-start
+// file: the table primary keys (without _fivetran_start) plus _fivetran_start, one row per key. Created by
+// StageEarliestStartChunk, consumed by DeleteOverlappingHistory and CloseActiveHistoryRows, removed by
+// DropEarliestStartStaging.
 type EarliestStartStaging struct {
 	QualifiedTableName sql.QualifiedTableName
 	Rows               int                // rows copied from the file
@@ -928,9 +929,10 @@ func (s *EarliestStartStaging) PrimaryKeys() []string {
 	return keys
 }
 
-// StageEarliestStartFile copies an earliest-start file into <table>_tmp_earliest_start_<unix millis>.
+// StageEarliestStartChunk copies the next earliest_start_batch_size rows of reader into a new
+// <table>_tmp_earliest_start_<unix millis> table, or returns nil when the reader is exhausted.
 // On failure the staging table is dropped before returning; on success the caller owns it.
-func (conn *ClickHouseConnection) StageEarliestStartFile(
+func (conn *ClickHouseConnection) StageEarliestStartChunk(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
@@ -943,14 +945,17 @@ func (conn *ClickHouseConnection) StageEarliestStartFile(
 		if err != nil {
 			return nil, fmt.Errorf("[%s] %s.%s: %w", earliestStartStage, schemaName, table.Name, err)
 		}
-		createStmt := sql.GetCreateHistoryStagingTableStatement(staging.QualifiedTableName, staging.columns, driverColumns)
-		if err = conn.ExecStatement(ctx, createStmt, earliestStartStageCreate, false); err != nil {
-			return nil, err
-		}
-		for {
-			batch, err := reader.ReadBatch(*flags.WriteBatchSize)
+		limit := int(*flags.EarliestStartBatchSize)
+		for staging.Rows < limit {
+			batch, err := reader.ReadBatch(min(*flags.WriteBatchSize, uint(limit-staging.Rows)))
 			if err == nil && batch == nil {
-				return staging, nil
+				break
+			}
+			if err == nil && staging.Rows == 0 {
+				createStmt := sql.GetCreateHistoryStagingTableStatement(staging.QualifiedTableName, staging.columns, driverColumns)
+				if err = conn.ExecStatement(ctx, createStmt, earliestStartStageCreate, false); err != nil {
+					return nil, err
+				}
 			}
 			if err == nil {
 				staging.Rows += len(batch)
@@ -963,6 +968,10 @@ func (conn *ClickHouseConnection) StageEarliestStartFile(
 				return nil, err
 			}
 		}
+		if staging.Rows == 0 {
+			return nil, nil
+		}
+		return staging, nil
 	}, string(earliestStartStage))
 }
 
