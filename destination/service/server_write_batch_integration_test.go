@@ -15,16 +15,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Behavioural tests for the delete_files phase of WriteBatch (live and soft-delete modes): they only drive
-// the gRPC handlers and read the table back.
+// Behavioural tests for the delete_files phase of WriteBatch, Fivetran's hard deletes in soft-delete mode: they
+// only drive the gRPC handlers and read the table back.
 
-type liveRow struct {
+type standardRow struct {
 	contactID int64
 	name      string
 	value     string
 }
 
-type liveHarness struct {
+type standardHarness struct {
 	t         *testing.T
 	ctx       context.Context
 	conn      *db.ClickHouseConnection
@@ -33,7 +33,7 @@ type liveHarness struct {
 	tableName string
 }
 
-func newLiveHarness(t *testing.T) *liveHarness {
+func newStandardHarness(t *testing.T) *standardHarness {
 	t.Helper()
 	ctx := context.Background()
 	connConfig, err := config.Parse(integrationConfiguration)
@@ -43,7 +43,7 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	t.Cleanup(func() { conn.Close() }) //nolint:errcheck
 	require.NoError(t, conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS "+integrationSchema))
 
-	h := &liveHarness{
+	h := &standardHarness{
 		t: t, ctx: ctx, conn: conn, server: &Server{},
 		tableName: "live_" + strings.ReplaceAll(uuid.New().String(), "-", "_"),
 	}
@@ -65,7 +65,7 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	return h
 }
 
-func (h *liveHarness) seed(rows ...liveRow) {
+func (h *standardHarness) seed(rows ...standardRow) {
 	h.t.Helper()
 	values := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -75,7 +75,7 @@ func (h *liveHarness) seed(rows ...liveRow) {
 }
 
 // rows are "contact_id,name" lines; delete files carry every table column
-func (h *liveHarness) deleteFile(rows ...string) string {
+func (h *standardHarness) deleteFile(rows ...string) string {
 	h.t.Helper()
 	lines := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -84,13 +84,13 @@ func (h *liveHarness) deleteFile(rows ...string) string {
 	return (&historyHarness{t: h.t}).csvFile("contact_id,name,value,_fivetran_synced,_fivetran_deleted", lines)
 }
 
-func (h *liveHarness) writeDelete(files ...string) {
+func (h *standardHarness) writeDelete(files ...string) {
 	h.t.Helper()
 	resp := h.writeDeleteResponse(files...)
 	require.True(h.t, resp.GetSuccess(), "WriteBatch failed: %s", resp.GetTask().GetMessage())
 }
 
-func (h *liveHarness) writeDeleteResponse(files ...string) *pb.WriteBatchResponse {
+func (h *standardHarness) writeDeleteResponse(files ...string) *pb.WriteBatchResponse {
 	h.t.Helper()
 	keys := make(map[string][]byte, len(files))
 	for _, f := range files {
@@ -111,21 +111,21 @@ func (h *liveHarness) writeDeleteResponse(files ...string) *pb.WriteBatchRespons
 	return resp
 }
 
-func (h *liveHarness) rows() []liveRow {
+func (h *standardHarness) rows() []standardRow {
 	h.t.Helper()
 	rows, err := h.conn.Query(h.ctx, fmt.Sprintf("SELECT `contact_id`, `name`, ifNull(`value`, '') FROM %s.%s FINAL ORDER BY `contact_id`, `name`", integrationSchema, h.tableName))
 	require.NoError(h.t, err)
 	defer rows.Close() //nolint:errcheck
-	var result []liveRow
+	var result []standardRow
 	for rows.Next() {
-		var r liveRow
+		var r standardRow
 		require.NoError(h.t, rows.Scan(&r.contactID, &r.name, &r.value))
 		result = append(result, r)
 	}
 	return result
 }
 
-func (h *liveHarness) helperTables() uint64 {
+func (h *standardHarness) helperTables() uint64 {
 	h.t.Helper()
 	var count uint64
 	require.NoError(h.t, h.conn.QueryRow(h.ctx, fmt.Sprintf(
@@ -136,37 +136,37 @@ func (h *liveHarness) helperTables() uint64 {
 func TestWriteBatchDeleteFiles(t *testing.T) {
 	t.Run("rows with a staged key are removed, others untouched", func(t *testing.T) {
 		// (1,a) removed; (1,b) shares contact_id only and stays; 2 is not in the file; 3 is unknown
-		h := newLiveHarness(t)
-		h.seed(liveRow{1, "a", "v"}, liveRow{1, "b", "v"}, liveRow{2, "a", "v"})
+		h := newStandardHarness(t)
+		h.seed(standardRow{1, "a", "v"}, standardRow{1, "b", "v"}, standardRow{2, "a", "v"})
 		h.writeDelete(h.deleteFile("1,a", "3,a"))
-		assert.Equal(t, []liveRow{{1, "b", "v"}, {2, "a", "v"}}, h.rows())
+		assert.Equal(t, []standardRow{{1, "b", "v"}, {2, "a", "v"}}, h.rows())
 		assert.Equal(t, uint64(0), h.helperTables())
 	})
 
 	t.Run("header only file changes nothing", func(t *testing.T) {
-		h := newLiveHarness(t)
-		h.seed(liveRow{10, "a", "v"})
+		h := newStandardHarness(t)
+		h.seed(standardRow{10, "a", "v"})
 		h.writeDelete(h.deleteFile())
-		assert.Equal(t, []liveRow{{10, "a", "v"}}, h.rows())
+		assert.Equal(t, []standardRow{{10, "a", "v"}}, h.rows())
 		assert.Equal(t, uint64(0), h.helperTables())
 	})
 
 	t.Run("replaying the same file changes nothing", func(t *testing.T) {
-		h := newLiveHarness(t)
-		h.seed(liveRow{20, "a", "v"}, liveRow{21, "a", "v"})
+		h := newStandardHarness(t)
+		h.seed(standardRow{20, "a", "v"}, standardRow{21, "a", "v"})
 		file := h.deleteFile("20,a")
 		h.writeDelete(file)
 		h.writeDelete(file)
-		assert.Equal(t, []liveRow{{21, "a", "v"}}, h.rows())
+		assert.Equal(t, []standardRow{{21, "a", "v"}}, h.rows())
 	})
 
 	t.Run("invalid value fails the batch and leaves no helper table", func(t *testing.T) {
-		h := newLiveHarness(t)
-		h.seed(liveRow{30, "a", "v"})
+		h := newStandardHarness(t)
+		h.seed(standardRow{30, "a", "v"})
 		resp := h.writeDeleteResponse(h.deleteFile("not-a-number,a"))
 		require.NotNil(t, resp.GetTask(), "expected a failed response")
 		assert.Contains(t, resp.GetTask().GetMessage(), "not-a-number")
-		assert.Equal(t, []liveRow{{30, "a", "v"}}, h.rows())
+		assert.Equal(t, []standardRow{{30, "a", "v"}}, h.rows())
 		assert.Equal(t, uint64(0), h.helperTables())
 	})
 
@@ -187,16 +187,16 @@ func TestWriteBatchDeleteFiles(t *testing.T) {
 				*r.flag = r.old
 			}
 		}()
-		h := newLiveHarness(t)
-		var seeded []liveRow
+		h := newStandardHarness(t)
+		var seeded []standardRow
 		var lines []string
 		for id := int64(40); id < 45; id++ {
-			seeded = append(seeded, liveRow{id, "a", "v"})
+			seeded = append(seeded, standardRow{id, "a", "v"})
 			lines = append(lines, fmt.Sprintf("%d,a", id))
 		}
-		h.seed(append(seeded, liveRow{45, "a", "v"})...)
+		h.seed(append(seeded, standardRow{45, "a", "v"})...)
 		h.writeDelete(h.deleteFile(lines...))
-		assert.Equal(t, []liveRow{{45, "a", "v"}}, h.rows())
+		assert.Equal(t, []standardRow{{45, "a", "v"}}, h.rows())
 		assert.Equal(t, uint64(0), h.helperTables())
 	})
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -239,8 +240,8 @@ func (conn *ClickHouseConnection) ExecBoolQuery(
 // TRUNCATE, etc.) with the standard envelope: a pre-flight WaitAllNodesAvailable check
 // (warns on failure, non-fatal) followed by ExecStatement, and on failure a
 // WaitAllMutationsCompleted fallback that handles ClickHouse error code 341 (incomplete
-// mutation, typically caused by a replica being unavailable during the ALTER) by waiting
-// for the async mutation to finish.
+// mutation, typically caused by a replica being unavailable during the ALTER), read timeouts,
+// cancellations and rejected same-id retries by waiting for the async mutation to finish.
 func (conn *ClickHouseConnection) execMutation(
 	ctx context.Context,
 	statement string,
@@ -849,10 +850,43 @@ func (conn *ClickHouseConnection) UpdateBatch(
 // CloseActiveHistoryRows), removed by DropStagingTable.
 type StagingTable struct {
 	QualifiedTableName sql.QualifiedTableName
-	Rows               int                // rows copied from the file
+	Rows               int // rows copied from the file
+	name               string
+	schema             string             // shared with the destination table
+	targetTable        string             // destination table the staged rows are applied to
 	columns            []*types.CSVColumn // staging table columns, in order
 	orderBy            []string           // also the join columns against the destination table
 }
+
+// NewStagingTable names the staging table <table>_fivetran_tmp_<operation>_<unix millis>. ClickHouse 26.3
+// accepts table names of at most 213 bytes minus the database name, so a longer result is cut: it keeps a
+// prefix of the table name and a hash of the full name, which keeps distinct tables apart.
+func NewStagingTable(schemaName string, tableName string, operation string, columns []*types.CSVColumn, orderBy []string) (*StagingTable, error) {
+	suffix := fmt.Sprintf("_fivetran_tmp_%s_%d", operation, time.Now().UnixMilli())
+	base := tableName
+	stagingTableNameLength := len(schemaName) + len(base) + len(suffix)
+	if stagingTableNameLength > maxTableNameLength {
+		sum := sha256.Sum256([]byte(tableName))
+		hash := hex.EncodeToString(sum[:4])
+		excess := stagingTableNameLength - maxTableNameLength + len(hash) + 1
+		prefix := base[:max(len(base)-excess, 0)]
+		for !utf8.ValidString(prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+		base = hash
+		if prefix != "" {
+			base = prefix + "_" + hash
+		}
+	}
+	name := base + suffix
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, name)
+	if err != nil {
+		return nil, err
+	}
+	return &StagingTable{QualifiedTableName: qualifiedTableName, name: name, schema: schemaName, targetTable: tableName, columns: columns, orderBy: orderBy}, nil
+}
+
+const maxTableNameLength = 213
 
 // OrderBy are the key column names
 func (s *StagingTable) OrderBy() []string {
@@ -873,11 +907,10 @@ func (conn *ClickHouseConnection) stageChunk(
 	orderBy []string,
 ) (*StagingTable, error) {
 	return benchmark.RunAndNoticeWithData(func() (*StagingTable, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, stagingTableName(schemaName, table.Name, operation))
+		staging, err := NewStagingTable(schemaName, table.Name, operation, columns, orderBy)
 		if err != nil {
 			return nil, err
 		}
-		staging := &StagingTable{QualifiedTableName: qualifiedTableName, columns: columns, orderBy: orderBy}
 		limit := int(*flags.StagingBatchSize)
 		for staging.Rows < limit {
 			batch, err := reader.ReadBatch(min(*flags.WriteBatchSize, uint(limit-staging.Rows)))
@@ -908,33 +941,9 @@ func (conn *ClickHouseConnection) stageChunk(
 	}, string(stagingChunk))
 }
 
-// stagingTableName builds <table>_fivetran_tmp_<operation>_<unix millis>. ClickHouse 26.3 accepts table
-// names of at most 213 bytes minus the database name, so a longer result is cut: it keeps a prefix of the
-// table name and a hash of the full name, which keeps distinct tables apart.
-func stagingTableName(schemaName string, tableName string, operation string) string {
-	suffix := fmt.Sprintf("_fivetran_tmp_%s_%d", operation, time.Now().UnixMilli())
-	base := tableName
-	stagingTableNameLength := len(schemaName) + len(base) + len(suffix)
-	if stagingTableNameLength > maxTableNameLength {
-		sum := sha256.Sum256([]byte(tableName))
-		hash := hex.EncodeToString(sum[:4])
-		excess := stagingTableNameLength - maxTableNameLength + len(hash) + 1
-		prefix := base[:max(len(base)-excess, 0)]
-		for !utf8.ValidString(prefix) {
-			prefix = prefix[:len(prefix)-1]
-		}
-		base = hash
-		if prefix != "" {
-			base = prefix + "_" + hash
-		}
-	}
-	return base + suffix
-}
-
-const maxTableNameLength = 213
-
-// DropStagingTable drops the staging table even if ctx is already cancelled.
-// A leftover helper table is clutter, not a data issue, so failures are only logged.
+// DropStagingTable drops the staging table even if ctx is already cancelled. Callers must not drop a table a
+// mutation still reads from (ErrMutationPending): the mutation would get stuck. A leftover helper table is
+// clutter, not a data issue, so failures are only logged.
 func (conn *ClickHouseConnection) DropStagingTable(ctx context.Context, staging *StagingTable) {
 	dropCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer cancel()
@@ -1110,11 +1119,21 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 	return nil
 }
 
+// ErrMutationPending wraps the original error when a mutation the client stopped waiting for is still
+// running after the wait bound. Callers must not drop tables the mutation reads from.
+var ErrMutationPending = errors.New("mutation still pending")
+
 // WaitAllMutationsCompleted waits for all async mutations to complete.
 // If mutation_sync=3 and alter_sync=3 is not enough if
 // one of the nodes went down exactly at the time of the ALTER TABLE statement execution,
 // we will still get the error code 341, which indicates that the mutations will still be completed asynchronously;
 // wait until all the nodes are available again, and all mutations are completed before sending the response.
+//
+// The same applies to every error after which the mutation may still be running on the server (see
+// isMutationPossiblyRunningErr): a read timeout, a cancelled request, or a retry rejected because the first
+// attempt still runs. The wait ignores ctx cancellation because a cancelled ctx is one of the triggers; it is
+// bounded by max-async-mutations-check-retries and async-mutations-check-interval and returns
+// ErrMutationPending when the bound is reached.
 func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	ctx context.Context,
 	mutationError error,
@@ -1122,11 +1141,16 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	tableName string,
 ) error {
 	// disable this check with the local ClickHouse in a Docker; the result will be always empty there
-	if conn.isLocal || !isIncompleteMutationErr(mutationError) {
+	if conn.isLocal || !isMutationPossiblyRunningErr(mutationError) {
 		return mutationError
 	}
+	waitBound := time.Duration(*flags.MaxAsyncMutationsCheckRetries+1) * *flags.AsyncMutationsCheckInterval
+	waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), waitBound)
+	defer cancel()
+	log.Warn(fmt.Sprintf("Waiting for the mutations of %s.%s to complete, cause: %v", schemaName, tableName, mutationError))
+
 	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
-	err := conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
+	err := conn.WaitAllNodesAvailable(waitCtx, schemaName, tableName)
 	if err != nil {
 		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 	}
@@ -1139,17 +1163,18 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	// Measure the total execution (or, more precisely, waiting) time of all the operations here
 	err = benchmark.RunAndNotice(func() error {
 		return retry.OnFalseWithFixedDelay(func() (bool, error) {
-			allCompleted, err := conn.ExecBoolQuery(ctx, query, allMutationsCompleted, false)
+			allCompleted, err := conn.ExecBoolQuery(waitCtx, query, allMutationsCompleted, false)
 			if err != nil {
 				return false, err
 			}
 			return allCompleted, nil
-		}, ctx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
+		}, waitCtx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
 	}, string(allMutationsCompleted))
 
 	if err != nil {
-		return fmt.Errorf("error while waiting for all mutations to be completed: %w; initial cause: %w", err, mutationError)
+		return fmt.Errorf("%w for %s.%s after %s: %w; initial cause: %w", ErrMutationPending, schemaName, tableName, waitBound, err, mutationError)
 	}
+	log.Notice(fmt.Sprintf("Mutations of %s.%s completed after the client stopped waiting; the operation succeeded", schemaName, tableName))
 	return nil
 }
 
@@ -1282,14 +1307,21 @@ func hasDecimalPrefix(colType string) bool {
 	return strings.HasPrefix(colType, "Decimal(") || strings.HasPrefix(colType, "Nullable(Decimal(")
 }
 
-// A sample exception: code: 341, message: Mutation is not finished because some replicas are inactive right now
-func isIncompleteMutationErr(err error) bool {
+// isMutationPossiblyRunningErr tells whether the statement reached the server and its mutation may still be
+// running although the client got an error: code 341 (mutation not finished because replicas are inactive),
+// code 216 (a retry that reused the query id was rejected because the first attempt is still running), a
+// read timeout, or a cancelled or expired context.
+func isMutationPossiblyRunningErr(err error) bool {
 	var exception *clickhouse.Exception
-	ok := errors.As(err, &exception)
-	if !ok || exception.Code != 341 {
-		return false
+	if errors.As(err, &exception) {
+		return exception.Code == 341 || exception.Code == 216
 	}
-	return true
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+		strings.Contains(err.Error(), "i/o timeout")
 }
 
 func isDatabaseBeingCreatedErr(err error) bool {

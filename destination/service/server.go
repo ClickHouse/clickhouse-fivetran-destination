@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -519,15 +520,16 @@ func (s *Server) processEarliestStartFilesForHistoryBatch(
 	return nil
 }
 
-// applyEarliestStartChunk runs both earliest-start passes against one staged chunk and drops the staging table.
+// applyEarliestStartChunk runs both earliest-start passes against one staged chunk and drops the staging table,
+// unless a mutation that reads from it is still running.
 func (s *Server) applyEarliestStartChunk(
 	ctx context.Context,
 	in *pb.WriteHistoryBatchRequest,
 	conn *db.ClickHouseConnection,
 	staging *db.StagingTable,
 	driverColumns *types.DriverColumns,
-) error {
-	defer conn.DropStagingTable(ctx, staging)
+) (err error) {
+	defer func() { s.dropStagingUnlessPending(ctx, conn, staging, writeHistoryBatchEarliestStartOp, err) }()
 	log.Notice(fmt.Sprintf("[%s] Staged %d rows in %s", writeHistoryBatchEarliestStartOp, staging.Rows, staging.QualifiedTableName))
 
 	// First pass: hard delete overlapping records
@@ -744,8 +746,8 @@ func (s *Server) processDeleteFiles(
 						if staging == nil {
 							break
 						}
-						if err := func() error {
-							defer conn.DropStagingTable(ctx, staging)
+						if err := func() (err error) {
+							defer func() { s.dropStagingUnlessPending(ctx, conn, staging, writeBatchDeleteOp, err) }()
 							log.Notice(fmt.Sprintf("[%s] Staged %d rows in %s", writeBatchDeleteOp, staging.Rows, staging.QualifiedTableName))
 							log.Notice(fmt.Sprintf("[%s] Executing HardDelete for %s.%s", writeBatchDeleteOp, in.SchemaName, in.Table.Name))
 							if err := conn.HardDelete(ctx, in.SchemaName, in.Table, staging); err != nil {
@@ -851,6 +853,17 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 		log.Notice(fmt.Sprintf("[%s] Completed processing all delete files for %s.%s", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name))
 	}
 	return nil
+}
+
+// dropStagingUnlessPending drops the staging table of a finished chunk. When the chunk's mutation is still
+// running after the client stopped waiting for it (db.ErrMutationPending), the table is kept: the mutation
+// reads from it and would get stuck without it. Defer it in a closure so the function's named error is read on return.
+func (s *Server) dropStagingUnlessPending(ctx context.Context, conn *db.ClickHouseConnection, staging *db.StagingTable, op writeBatchOpType, err error) {
+	if errors.Is(err, db.ErrMutationPending) {
+		log.Warn(fmt.Sprintf("[%s] Keeping staging table %s: a mutation still reads from it; drop it once system.mutations shows the mutation done", op, staging.QualifiedTableName))
+		return
+	}
+	conn.DropStagingTable(ctx, staging)
 }
 
 type emptyCSVWarnParams struct {

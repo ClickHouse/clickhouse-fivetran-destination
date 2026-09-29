@@ -50,8 +50,8 @@ var MaxIdleConnections = flag.Uint("max-idle-connections", 5,
 	"Max number of idle connections for ClickHouse client")
 var MaxOpenConnections = flag.Uint("max-open-connections", 10,
 	"Max number of open connections for ClickHouse client (recommended: max-idle-connections + 5)")
-var RequestTimeoutDuration = flag.Duration("request-timeout-duration", 300*time.Second,
-	"Timeout for ClickHouse client requests")
+var RequestTimeoutDuration = flag.Duration("request-timeout-duration", 600*time.Second,
+	"Timeout for ClickHouse client requests; a single mutation on a large table can take minutes")
 
 var MaxRetries = flag.Uint("max-retries", 10,
 	"Max number of retries for ClickHouse client in case of network errors")
@@ -65,7 +65,7 @@ var MaxInactiveReplicaCheckRetries = flag.Uint("max-inactive-replica-check-retri
 var InactiveReplicaCheckInterval = flag.Duration("inactive-replica-check-interval", 1*time.Second,
 	"Interval between inactive replicas check retries")
 
-var MaxAsyncMutationsCheckRetries = flag.Uint("max-async-mutations-check-retries", 600,
+var MaxAsyncMutationsCheckRetries = flag.Uint("max-async-mutations-check-retries", 1200,
 	"Max number of retries when checking async mutations status before failing")
 var AsyncMutationsCheckInterval = flag.Duration("async-mutations-check-interval", 1*time.Second,
 	"Interval between async mutations status check retries")
