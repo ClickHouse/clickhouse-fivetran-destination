@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"iter"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
@@ -870,7 +873,7 @@ func (conn *ClickHouseConnection) stageChunk(
 	orderBy []string,
 ) (*StagingTable, error) {
 	return benchmark.RunAndNoticeWithData(func() (*StagingTable, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, fmt.Sprintf("%s_fivetran_tmp_%s_%d", table.Name, operation, time.Now().UnixMilli()))
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, stagingTableName(schemaName, table.Name, operation))
 		if err != nil {
 			return nil, err
 		}
@@ -904,6 +907,31 @@ func (conn *ClickHouseConnection) stageChunk(
 		return staging, nil
 	}, string(stagingChunk))
 }
+
+// stagingTableName builds <table>_fivetran_tmp_<operation>_<unix millis>. ClickHouse 26.3 accepts table
+// names of at most 213 bytes minus the database name, so a longer result is cut: it keeps a prefix of the
+// table name and a hash of the full name, which keeps distinct tables apart.
+func stagingTableName(schemaName string, tableName string, operation string) string {
+	suffix := fmt.Sprintf("_fivetran_tmp_%s_%d", operation, time.Now().UnixMilli())
+	base := tableName
+	stagingTableNameLength := len(schemaName) + len(base) + len(suffix)
+	if stagingTableNameLength > maxTableNameLength {
+		sum := sha256.Sum256([]byte(tableName))
+		hash := hex.EncodeToString(sum[:4])
+		excess := stagingTableNameLength - maxTableNameLength + len(hash) + 1
+		prefix := base[:max(len(base)-excess, 0)]
+		for !utf8.ValidString(prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+		base = hash
+		if prefix != "" {
+			base = prefix + "_" + hash
+		}
+	}
+	return base + suffix
+}
+
+const maxTableNameLength = 213
 
 // DropStagingTable drops the staging table even if ctx is already cancelled.
 // A leftover helper table is clutter, not a data issue, so failures are only logged.

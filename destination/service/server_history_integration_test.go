@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,12 +23,28 @@ import (
 // phases are implemented. Times follow Fivetran's history mode guide: T100 -> 01:00, T105 -> 01:05, etc.
 
 const (
-	integrationSchema = "fivetran_test"
+	integrationSchema = "fivetran_verify"
 	historyMaxEnd     = "2262-04-11 23:47:16.000000000"
 )
 
-var integrationConfiguration = map[string]string{
-	"host": "localhost", "port": "9000", "username": "default", "local": "true",
+// integrationConfiguration is the local Docker ClickHouse unless FIVETRAN_TEST_CONFIG names a configuration
+// file (same format as sdk_tests/configuration.json), which lets these suites run against ClickHouse Cloud.
+var integrationConfiguration = loadIntegrationConfiguration()
+
+func loadIntegrationConfiguration() map[string]string {
+	path := os.Getenv("FIVETRAN_TEST_CONFIG")
+	if path == "" {
+		return map[string]string{"host": "localhost", "port": "9000", "username": "default", "local": "true"}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		panic(fmt.Sprintf("FIVETRAN_TEST_CONFIG: %v", err))
+	}
+	m := map[string]string{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		panic(fmt.Sprintf("FIVETRAN_TEST_CONFIG: %v", err))
+	}
+	return m
 }
 
 type historyVersion struct {
