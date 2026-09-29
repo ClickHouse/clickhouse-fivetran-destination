@@ -524,10 +524,10 @@ func (s *Server) applyEarliestStartChunk(
 	ctx context.Context,
 	in *pb.WriteHistoryBatchRequest,
 	conn *db.ClickHouseConnection,
-	staging *db.EarliestStartStaging,
+	staging *db.StagingTable,
 	driverColumns *types.DriverColumns,
 ) error {
-	defer conn.DropEarliestStartStaging(ctx, staging)
+	defer conn.DropStagingTable(ctx, staging)
 	log.Notice(fmt.Sprintf("[%s] Staged %d rows in %s", writeHistoryBatchEarliestStartOp, staging.Rows, staging.QualifiedTableName))
 
 	// First pass: hard delete overlapping records

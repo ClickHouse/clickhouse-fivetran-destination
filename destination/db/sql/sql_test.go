@@ -409,7 +409,7 @@ func TestGetHardDeleteStatement(t *testing.T) {
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))", statement)
 }
 
-func TestGetCreateHistoryStagingTableStatement(t *testing.T) {
+func TestGetCreateStagingTableStatement(t *testing.T) {
 	staging := QualifiedTableName("`foo`.`bar_tmp_earliest_start_1700000000000`")
 	columns := []*types.CSVColumn{
 		{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
@@ -423,7 +423,7 @@ func TestGetCreateHistoryStagingTableStatement(t *testing.T) {
 	}}
 	assert.Equal(t, "CREATE TABLE `foo`.`bar_tmp_earliest_start_1700000000000` "+
 		"(`id` Int64,`name` String,`_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`,`name`)",
-		GetCreateHistoryStagingTableStatement(staging, columns, driverColumns))
+		GetCreateStagingTableStatement(staging, columns, []string{"id", "name"}, driverColumns))
 }
 
 func TestGetDeleteOverlappingHistoryStatement(t *testing.T) {

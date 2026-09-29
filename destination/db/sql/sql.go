@@ -348,27 +348,25 @@ func GetHardDeleteStatement(
 	return clauseBuilder.String(), nil
 }
 
-// GetCreateHistoryStagingTableStatement generates statements such as:
+// GetCreateStagingTableStatement generates statements such as:
 //
 //	CREATE TABLE `foo`.`bar_tmp_earliest_start_1700000000000`
 //	(`id` Int64, `_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`)
 //
-// columns are the file columns to stage, typed as in the destination table (driverColumns) and ordered by the
-// primary keys (see historyPrimaryKeys). The statement fails if the table exists: a leftover helper table
-// would mix its rows into this batch, so it must not be reused.
-func GetCreateHistoryStagingTableStatement(
+// columns are typed as in the destination table (driverColumns). The statement fails if the table exists:
+// a leftover helper table would mix its rows into this batch, so it must not be reused.
+func GetCreateStagingTableStatement(
 	qualifiedStagingTableName QualifiedTableName,
 	columns []*types.CSVColumn,
+	orderBy []string,
 	driverColumns *types.DriverColumns,
 ) string {
 	columnDefs := make([]string, 0, len(columns))
-	names := make([]string, 0, len(columns))
 	for _, col := range columns {
 		columnDefs = append(columnDefs, fmt.Sprintf("%s %s", identifier(col.Name), driverColumns.Mapping[col.Name].DatabaseType))
-		names = append(names, col.Name)
 	}
 	return fmt.Sprintf("CREATE TABLE %s (%s) ENGINE = MergeTree ORDER BY (%s)",
-		qualifiedStagingTableName, strings.Join(columnDefs, ","), joinIdentifiers("", historyPrimaryKeys(names)))
+		qualifiedStagingTableName, strings.Join(columnDefs, ","), joinIdentifiers("", orderBy))
 }
 
 // GetDeleteOverlappingHistoryStatement removes the versions overlapping an earliest-start file staged in

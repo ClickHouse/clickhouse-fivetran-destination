@@ -48,10 +48,10 @@ var HardDeleteBatchSizeSetting = ConfigDefinition{
 	Description: "Batch size for DELETE mutations (builds SQL strings, keep low to avoid large queries)"}
 var HardDeleteBatchSize = HardDeleteBatchSizeSetting.RegisterFlag()
 
-var EarliestStartBatchSizeSetting = ConfigDefinition{
-	Name: "earliest_start_batch_size", DefaultValue: 1_000_000, MinValue: 10_000, MaxValue: 1_000_000,
-	Description: "Max rows of a history-mode earliest_start file staged per helper table (bounds each DELETE/INSERT)"}
-var EarliestStartBatchSize = EarliestStartBatchSizeSetting.RegisterFlag()
+var StagingBatchSizeSetting = ConfigDefinition{
+	Name: "staging_batch_size", DefaultValue: 1_000_000, MinValue: 10_000, MaxValue: 1_000_000,
+	Description: "Max rows of a batch file staged per helper table. Bounds the rows each staged DELETE/UPDATE(INSERT) operates on"}
+var StagingBatchSize = StagingBatchSizeSetting.RegisterFlag()
 
 var MaxParallelSelects = flag.Uint("max-parallel-selects", 10,
 	"Max number of parallel SELECT queries")

@@ -276,7 +276,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 	})
 
 	t.Run("files larger than the batch sizes are fully applied", func(t *testing.T) {
-		// write batch (3) above the earliest-start batch (2) so a read must be capped to the chunk
+		// write batch (3) above the staging batch (2) so a read must be capped to the chunk
 		restore := []struct {
 			flag *uint
 			old  uint
@@ -285,7 +285,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 			{flags.WriteBatchSize, *flags.WriteBatchSize, 3},
 			{flags.MutationBatchSize, *flags.MutationBatchSize, 2},
 			{flags.HardDeleteBatchSize, *flags.HardDeleteBatchSize, 2},
-			{flags.EarliestStartBatchSize, *flags.EarliestStartBatchSize, 2},
+			{flags.StagingBatchSize, *flags.StagingBatchSize, 2},
 		}
 		for _, r := range restore {
 			*r.flag = r.new
