@@ -303,7 +303,7 @@ func GetSelectByPrimaryKeysQuery(
 // Sample generated query:
 //
 //	DELETE FROM `foo`.`bar` WHERE (`id`,`name`) IN (
-//	    SELECT `id`,`name` FROM `foo`.`bar_tmp_delete_1700000000000` SETTINGS select_sequential_consistency = 1)
+//	    SELECT `id`,`name` FROM `foo`.`bar_fivetran_tmp_delete_1700000000000` SETTINGS select_sequential_consistency = 1)
 //	SETTINGS allow_nondeterministic_mutations = 1
 //
 // See GetDeleteOverlappingHistoryStatement for why both settings are needed.
@@ -322,7 +322,7 @@ func GetHardDeleteStatement(
 
 // GetCreateStagingTableStatement generates statements such as:
 //
-//	CREATE TABLE `foo`.`bar_tmp_earliest_start_1700000000000`
+//	CREATE TABLE `foo`.`bar_fivetran_tmp_earliest_start_1700000000000`
 //	(`id` Int64, `_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`)
 //
 // columns are typed as in the destination table (driverColumns). The statement fails if the table exists:
@@ -346,7 +346,7 @@ func GetCreateStagingTableStatement(
 //
 //	DELETE FROM `foo`.`bar` WHERE (`id`,`_fivetran_start`) IN (
 //	    SELECT tgt.`id`,tgt.`_fivetran_start` FROM `foo`.`bar` AS tgt
-//	    INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
+//	    INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
 //	    WHERE tgt.`_fivetran_start`>=stg.`_fivetran_start` SETTINGS select_sequential_consistency = 1)
 //	SETTINGS allow_nondeterministic_mutations = 1
 //
@@ -384,7 +384,7 @@ func GetDeleteOverlappingHistoryStatement(
 //	SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),
 //	    tgt.`_fivetran_start`,stg.`_fivetran_start`,FALSE
 //	FROM `foo`.`bar` AS tgt FINAL
-//	INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
+//	INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
 //	WHERE tgt.`_fivetran_active`=TRUE
 //
 // The new version carries _fivetran_synced + 1 nanosecond:

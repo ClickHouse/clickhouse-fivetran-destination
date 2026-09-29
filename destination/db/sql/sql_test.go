@@ -347,15 +347,15 @@ func TestGetSelectFromSystemGrantsQuery(t *testing.T) {
 
 func TestGetHardDeleteStatement(t *testing.T) {
 	table := QualifiedTableName("`foo`.`bar`")
-	staging := QualifiedTableName("`foo`.`bar_tmp_delete_1700000000000`")
+	staging := QualifiedTableName("`foo`.`bar_fivetran_tmp_delete_1700000000000`")
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`,`name`) IN ("+
-		"SELECT `id`,`name` FROM `foo`.`bar_tmp_delete_1700000000000` SETTINGS select_sequential_consistency = 1) "+
+		"SELECT `id`,`name` FROM `foo`.`bar_fivetran_tmp_delete_1700000000000` SETTINGS select_sequential_consistency = 1) "+
 		"SETTINGS allow_nondeterministic_mutations = 1",
 		GetHardDeleteStatement(table, staging, []string{"id", "name"}))
 }
 
 func TestGetCreateStagingTableStatement(t *testing.T) {
-	staging := QualifiedTableName("`foo`.`bar_tmp_earliest_start_1700000000000`")
+	staging := QualifiedTableName("`foo`.`bar_fivetran_tmp_earliest_start_1700000000000`")
 	columns := []*types.CSVColumn{
 		{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
 		{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true},
@@ -366,47 +366,47 @@ func TestGetCreateStagingTableStatement(t *testing.T) {
 		"name":            {DatabaseType: "String"},
 		"_fivetran_start": {DatabaseType: "DateTime64(9, 'UTC')"},
 	}}
-	assert.Equal(t, "CREATE TABLE `foo`.`bar_tmp_earliest_start_1700000000000` "+
+	assert.Equal(t, "CREATE TABLE `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` "+
 		"(`id` Int64,`name` String,`_fivetran_start` DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY (`id`,`name`)",
 		GetCreateStagingTableStatement(staging, columns, []string{"id", "name"}, driverColumns))
 }
 
 func TestGetDeleteOverlappingHistoryStatement(t *testing.T) {
 	table := QualifiedTableName("`foo`.`bar`")
-	staging := QualifiedTableName("`foo`.`bar_tmp_earliest_start_1700000000000`")
+	staging := QualifiedTableName("`foo`.`bar_fivetran_tmp_earliest_start_1700000000000`")
 
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`,`_fivetran_start`) IN ("+
 		"SELECT tgt.`id`,tgt.`_fivetran_start` FROM `foo`.`bar` AS tgt "+
-		"INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
+		"INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
 		"WHERE tgt.`_fivetran_start`>=stg.`_fivetran_start` SETTINGS select_sequential_consistency = 1) SETTINGS allow_nondeterministic_mutations = 1",
 		GetDeleteOverlappingHistoryStatement(table, staging, []string{"id"}))
 
 	// Fivetran marks _fivetran_start as a primary key in history mode; it must never become an equality filter.
 	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`,`name`,`_fivetran_start`) IN ("+
 		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_start` FROM `foo`.`bar` AS tgt "+
-		"INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` AND tgt.`name`=stg.`name` "+
+		"INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` AND tgt.`name`=stg.`name` "+
 		"WHERE tgt.`_fivetran_start`>=stg.`_fivetran_start` SETTINGS select_sequential_consistency = 1) SETTINGS allow_nondeterministic_mutations = 1",
 		GetDeleteOverlappingHistoryStatement(table, staging, []string{"id", "name", "_fivetran_start"}))
 }
 
 func TestGetCloseActiveHistoryRowsStatement(t *testing.T) {
 	table := QualifiedTableName("`foo`.`bar`")
-	staging := QualifiedTableName("`foo`.`bar_tmp_earliest_start_1700000000000`")
+	staging := QualifiedTableName("`foo`.`bar_fivetran_tmp_earliest_start_1700000000000`")
 	columns := []string{"id", "name", "_fivetran_synced", "_fivetran_start", "_fivetran_end", "_fivetran_active"}
 
 	statement, err := GetCloseActiveHistoryRowsStatement(table, staging, columns, []string{"id", "_fivetran_start"}, "_fivetran_start")
 	assert.NoError(t, err)
 	assert.Equal(t, "INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) "+
 		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),tgt.`_fivetran_start`,stg.`_fivetran_start`,FALSE "+
-		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
+		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
 		"WHERE tgt.`_fivetran_active`=TRUE", statement)
 
-	deleteStaging := QualifiedTableName("`foo`.`bar_tmp_delete_1700000000000`")
+	deleteStaging := QualifiedTableName("`foo`.`bar_fivetran_tmp_delete_1700000000000`")
 	statement, err = GetCloseActiveHistoryRowsStatement(table, deleteStaging, columns, []string{"id", "_fivetran_start"}, "_fivetran_end")
 	assert.NoError(t, err)
 	assert.Equal(t, "INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) "+
 		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),tgt.`_fivetran_start`,stg.`_fivetran_end`,FALSE "+
-		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_tmp_delete_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
+		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_fivetran_tmp_delete_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
 		"WHERE tgt.`_fivetran_active`=TRUE", statement)
 
 	_, err = GetCloseActiveHistoryRowsStatement(table, staging, []string{"id", "_fivetran_synced", "_fivetran_active"}, []string{"id"}, "_fivetran_start")

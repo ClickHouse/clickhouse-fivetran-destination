@@ -856,7 +856,7 @@ func (s *StagingTable) OrderBy() []string {
 	return s.orderBy
 }
 
-// stageChunk copies the next staging_batch_size rows of reader into a new <table>_tmp_<operation>_<unix millis>
+// stageChunk copies the next staging_batch_size rows of reader into a new <table>_fivetran_tmp_<operation>_<unix millis>
 // table made of columns, or returns nil when the reader is exhausted. On failure the staging table is
 // dropped before returning; on success the caller owns it.
 func (conn *ClickHouseConnection) stageChunk(
@@ -870,7 +870,7 @@ func (conn *ClickHouseConnection) stageChunk(
 	orderBy []string,
 ) (*StagingTable, error) {
 	return benchmark.RunAndNoticeWithData(func() (*StagingTable, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, fmt.Sprintf("%s_tmp_%s_%d", table.Name, operation, time.Now().UnixMilli()))
+		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, fmt.Sprintf("%s_fivetran_tmp_%s_%d", table.Name, operation, time.Now().UnixMilli()))
 		if err != nil {
 			return nil, err
 		}
