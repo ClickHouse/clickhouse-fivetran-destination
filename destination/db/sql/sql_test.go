@@ -345,68 +345,13 @@ func TestGetSelectFromSystemGrantsQuery(t *testing.T) {
 	assert.ErrorContains(t, err, "username is empty")
 }
 
-func TestGetHardDeleteStatementValidation(t *testing.T) {
-	fullTableName := QualifiedTableName("`foo`.`bar`")
-	csvCols := &types.CSVColumns{
-		All:         []*types.CSVColumn{{Index: 0, Name: "id", Type: pb.DataType_LONG}},
-		PrimaryKeys: nil,
-	}
-	batch := [][]string{{"42", "foo", "2022-03-05T04:45:12.123456789Z"}}
-
-	_, err := GetHardDeleteStatement(batch, csvCols, "")
-	assert.ErrorContains(t, err, "table name is empty")
-
-	_, err = GetHardDeleteStatement(batch, nil, fullTableName)
-	assert.ErrorContains(t, err, "expected non-empty primary keys")
-	_, err = GetHardDeleteStatement(batch, &types.CSVColumns{}, fullTableName)
-	assert.ErrorContains(t, err, "expected non-empty primary keys")
-
-	_, err = GetHardDeleteStatement(nil, csvCols, fullTableName)
-	assert.ErrorContains(t, err, "expected non-empty CSV slice")
-	_, err = GetHardDeleteStatement([][]string{}, csvCols, fullTableName)
-	assert.ErrorContains(t, err, "expected non-empty CSV slice")
-}
-
 func TestGetHardDeleteStatement(t *testing.T) {
-	fullTableName := QualifiedTableName("`foo`.`bar`")
-	batch := [][]string{
-		{"42", "foo", "2022-03-05T04:45:12.123456789Z"},
-		{"43", "bar", "2023-04-06T12:30:00.234567890Z"},
-	}
-	statement, err := GetHardDeleteStatement(batch, &types.CSVColumns{
-		All: []*types.CSVColumn{
-			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
-			{Index: 1, Name: "name", Type: pb.DataType_STRING},
-			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
-		PrimaryKeys: []*types.CSVColumn{
-			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true}},
-	}, fullTableName)
-	assert.NoError(t, err)
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`id`)IN((42),(43))", statement)
-
-	statement, err = GetHardDeleteStatement(batch, &types.CSVColumns{
-		All: []*types.CSVColumn{
-			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
-			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true},
-			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME}},
-		PrimaryKeys: []*types.CSVColumn{
-			{Index: 0, Name: "id", Type: pb.DataType_LONG, IsPrimaryKey: true},
-			{Index: 1, Name: "name", Type: pb.DataType_STRING, IsPrimaryKey: true}},
-	}, fullTableName)
-	assert.NoError(t, err)
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`id`,`name`)IN((42,'foo'),(43,'bar'))", statement)
-
-	statement, err = GetHardDeleteStatement(batch, &types.CSVColumns{
-		All: []*types.CSVColumn{
-			{Index: 0, Name: "id", Type: pb.DataType_LONG},
-			{Index: 1, Name: "name", Type: pb.DataType_STRING},
-			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
-		PrimaryKeys: []*types.CSVColumn{
-			{Index: 2, Name: "ts", Type: pb.DataType_UTC_DATETIME, IsPrimaryKey: true}},
-	}, fullTableName)
-	assert.NoError(t, err)
-	// DateTime64(9, 'UTC') is converted to nanoseconds.
-	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE(`ts`)IN(('1646455512123456789'),('1680784200234567890'))", statement)
+	table := QualifiedTableName("`foo`.`bar`")
+	staging := QualifiedTableName("`foo`.`bar_tmp_delete_1700000000000`")
+	assert.Equal(t, "DELETE FROM `foo`.`bar` WHERE (`id`,`name`) IN ("+
+		"SELECT `id`,`name` FROM `foo`.`bar_tmp_delete_1700000000000` SETTINGS select_sequential_consistency = 1) "+
+		"SETTINGS allow_nondeterministic_mutations = 1",
+		GetHardDeleteStatement(table, staging, []string{"id", "name"}))
 }
 
 func TestGetCreateStagingTableStatement(t *testing.T) {
@@ -449,14 +394,22 @@ func TestGetCloseActiveHistoryRowsStatement(t *testing.T) {
 	staging := QualifiedTableName("`foo`.`bar_tmp_earliest_start_1700000000000`")
 	columns := []string{"id", "name", "_fivetran_synced", "_fivetran_start", "_fivetran_end", "_fivetran_active"}
 
-	statement, err := GetCloseActiveHistoryRowsStatement(table, staging, columns, []string{"id", "_fivetran_start"})
+	statement, err := GetCloseActiveHistoryRowsStatement(table, staging, columns, []string{"id", "_fivetran_start"}, "_fivetran_start")
 	assert.NoError(t, err)
 	assert.Equal(t, "INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) "+
 		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),tgt.`_fivetran_start`,stg.`_fivetran_start`,FALSE "+
 		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
 		"WHERE tgt.`_fivetran_active`=TRUE", statement)
 
-	_, err = GetCloseActiveHistoryRowsStatement(table, staging, []string{"id", "_fivetran_synced", "_fivetran_active"}, []string{"id"})
+	deleteStaging := QualifiedTableName("`foo`.`bar_tmp_delete_1700000000000`")
+	statement, err = GetCloseActiveHistoryRowsStatement(table, deleteStaging, columns, []string{"id", "_fivetran_start"}, "_fivetran_end")
+	assert.NoError(t, err)
+	assert.Equal(t, "INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) "+
+		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),tgt.`_fivetran_start`,stg.`_fivetran_end`,FALSE "+
+		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_tmp_delete_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
+		"WHERE tgt.`_fivetran_active`=TRUE", statement)
+
+	_, err = GetCloseActiveHistoryRowsStatement(table, staging, []string{"id", "_fivetran_synced", "_fivetran_active"}, []string{"id"}, "_fivetran_start")
 	assert.ErrorContains(t, err, "column _fivetran_end not found")
 }
 

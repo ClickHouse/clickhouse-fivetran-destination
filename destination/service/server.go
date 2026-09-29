@@ -538,7 +538,7 @@ func (s *Server) applyEarliestStartChunk(
 
 	// Second pass: close active records
 	log.Notice(fmt.Sprintf("[%s] Executing CloseActiveHistoryRows for %s.%s", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name))
-	if err := conn.CloseActiveHistoryRows(ctx, in.SchemaName, in.Table, staging, driverColumns); err != nil {
+	if err := conn.CloseActiveHistoryRows(ctx, in.SchemaName, in.Table, staging, driverColumns, constants.FivetranStart); err != nil {
 		return fmt.Errorf("[%s] CloseActiveHistoryRows failed for %s.%s: %w", writeHistoryBatchEarliestStartOp, in.SchemaName, in.Table.Name, err)
 	}
 	return nil
@@ -735,10 +735,27 @@ func (s *Server) processDeleteFiles(
 					if err != nil {
 						return fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeBatchDeleteOp, deleteFile, err)
 					}
-					log.Notice(fmt.Sprintf("[%s] Executing HardDelete for %s.%s", writeBatchDeleteOp, in.SchemaName, in.Table.Name))
-					totalRows, err := conn.HardDelete(ctx, in.SchemaName, in.Table, reader, csvColumns)
-					if err != nil {
-						return fmt.Errorf("[%s] HardDelete failed for %s.%s: %w", writeBatchDeleteOp, in.SchemaName, in.Table.Name, err)
+					totalRows := 0
+					for {
+						staging, err := conn.StageDeleteChunk(ctx, in.SchemaName, in.Table, reader, csvColumns, driverColumns)
+						if err != nil {
+							return fmt.Errorf("[%s] StageDeleteChunk failed for %s.%s: %w", writeBatchDeleteOp, in.SchemaName, in.Table.Name, err)
+						}
+						if staging == nil {
+							break
+						}
+						if err := func() error {
+							defer conn.DropStagingTable(ctx, staging)
+							log.Notice(fmt.Sprintf("[%s] Staged %d rows in %s", writeBatchDeleteOp, staging.Rows, staging.QualifiedTableName))
+							log.Notice(fmt.Sprintf("[%s] Executing HardDelete for %s.%s", writeBatchDeleteOp, in.SchemaName, in.Table.Name))
+							if err := conn.HardDelete(ctx, in.SchemaName, in.Table, staging); err != nil {
+								return fmt.Errorf("[%s] HardDelete failed for %s.%s: %w", writeBatchDeleteOp, in.SchemaName, in.Table.Name, err)
+							}
+							return nil
+						}(); err != nil {
+							return err
+						}
+						totalRows += staging.Rows
 					}
 					if totalRows == 0 {
 						logEmptyCSV(&emptyCSVWarnParams{
@@ -747,9 +764,9 @@ func (s *Server) processDeleteFiles(
 							tableName:  in.Table.Name,
 							fileName:   deleteFile,
 						})
-					} else {
-						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeBatchDeleteOp, deleteFile, totalRows))
+						return nil
 					}
+					log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeBatchDeleteOp, deleteFile, totalRows))
 					return nil
 				}(); err != nil {
 					return err
@@ -789,10 +806,27 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 					if err != nil {
 						return fmt.Errorf("[%s] Failed to make CSV columns for file %s: %w", writeHistoryBatchDeleteOp, deleteFile, err)
 					}
-					log.Notice(fmt.Sprintf("[%s] Executing UpdateForEarliestStartHistory for %s.%s", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name))
-					totalRows, err := conn.UpdateForEarliestStartHistory(ctx, in.SchemaName, in.Table, reader, csvColumns, constants.FivetranEnd)
-					if err != nil {
-						return fmt.Errorf("[%s] UpdateForEarliestStartHistory failed for %s.%s: %w", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, err)
+					totalRows := 0
+					for {
+						staging, err := conn.StageHistoryDeleteChunk(ctx, in.SchemaName, in.Table, reader, csvColumns, driverColumns)
+						if err != nil {
+							return fmt.Errorf("[%s] StageHistoryDeleteChunk failed for %s.%s: %w", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, err)
+						}
+						if staging == nil {
+							break
+						}
+						if err := func() error {
+							defer conn.DropStagingTable(ctx, staging)
+							log.Notice(fmt.Sprintf("[%s] Staged %d rows in %s", writeHistoryBatchDeleteOp, staging.Rows, staging.QualifiedTableName))
+							log.Notice(fmt.Sprintf("[%s] Executing CloseActiveHistoryRows for %s.%s", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name))
+							if err := conn.CloseActiveHistoryRows(ctx, in.SchemaName, in.Table, staging, driverColumns, constants.FivetranEnd); err != nil {
+								return fmt.Errorf("[%s] CloseActiveHistoryRows failed for %s.%s: %w", writeHistoryBatchDeleteOp, in.SchemaName, in.Table.Name, err)
+							}
+							return nil
+						}(); err != nil {
+							return err
+						}
+						totalRows += staging.Rows
 					}
 					if totalRows == 0 {
 						logEmptyCSV(&emptyCSVWarnParams{
@@ -801,9 +835,9 @@ func (s *Server) processDeleteFilesForHistoryBatch(
 							tableName:  in.Table.Name,
 							fileName:   deleteFile,
 						})
-					} else {
-						log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeHistoryBatchDeleteOp, deleteFile, totalRows))
+						return nil
 					}
+					log.Notice(fmt.Sprintf("[%s] File %s contained %d rows total", writeHistoryBatchDeleteOp, deleteFile, totalRows))
 					return nil
 				}(); err != nil {
 					return err
