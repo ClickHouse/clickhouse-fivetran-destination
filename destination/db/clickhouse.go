@@ -2,15 +2,19 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"iter"
+	"net"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"fivetran.com/fivetran_sdk/destination/common"
 	"fivetran.com/fivetran_sdk/destination/common/benchmark"
@@ -236,8 +240,8 @@ func (conn *ClickHouseConnection) ExecBoolQuery(
 // TRUNCATE, etc.) with the standard envelope: a pre-flight WaitAllNodesAvailable check
 // (warns on failure, non-fatal) followed by ExecStatement, and on failure a
 // WaitAllMutationsCompleted fallback that handles ClickHouse error code 341 (incomplete
-// mutation, typically caused by a replica being unavailable during the ALTER) by waiting
-// for the async mutation to finish.
+// mutation, typically caused by a replica being unavailable during the ALTER), read timeouts,
+// cancellations and rejected same-id retries by waiting for the async mutation to finish.
 func (conn *ClickHouseConnection) execMutation(
 	ctx context.Context,
 	statement string,
@@ -841,210 +845,239 @@ func (conn *ClickHouseConnection) UpdateBatch(
 	}, string(insertBatchUpdate))
 }
 
-// HardDelete is called when processing "delete" CSVs.
-// Uses lightweight deletes to remove records from the table.
-// See also: sql.GetHardDeleteStatement
+// StagingTable is a helper table holding one chunk (up to staging_batch_size rows) of a batch file.
+// Created by stageChunk, consumed by the operation's statements (e.g. DeleteOverlappingHistory,
+// CloseActiveHistoryRows), removed by DropStagingTable.
+type StagingTable struct {
+	QualifiedTableName sql.QualifiedTableName
+	Rows               int // rows copied from the file
+	name               string
+	schema             string             // shared with the destination table
+	targetTable        string             // destination table the staged rows are applied to
+	columns            []*types.CSVColumn // staging table columns, in order
+	orderBy            []string           // also the join columns against the destination table
+}
+
+// NewStagingTable names the staging table <table>_fivetran_tmp_<operation>_<unix millis>. ClickHouse 26.3
+// accepts table names of at most 213 bytes minus the database name, so a longer result is cut: it keeps a
+// prefix of the table name and a hash of the full name, which keeps distinct tables apart.
+func NewStagingTable(schemaName string, tableName string, operation string, columns []*types.CSVColumn, orderBy []string) (*StagingTable, error) {
+	suffix := fmt.Sprintf("_fivetran_tmp_%s_%d", operation, time.Now().UnixMilli())
+	base := tableName
+	stagingTableNameLength := len(schemaName) + len(base) + len(suffix)
+	if stagingTableNameLength > maxTableNameLength {
+		sum := sha256.Sum256([]byte(tableName))
+		hash := hex.EncodeToString(sum[:4])
+		excess := stagingTableNameLength - maxTableNameLength + len(hash) + 1
+		prefix := base[:max(len(base)-excess, 0)]
+		for !utf8.ValidString(prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+		base = hash
+		if prefix != "" {
+			base = prefix + "_" + hash
+		}
+	}
+	name := base + suffix
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, name)
+	if err != nil {
+		return nil, err
+	}
+	return &StagingTable{QualifiedTableName: qualifiedTableName, name: name, schema: schemaName, targetTable: tableName, columns: columns, orderBy: orderBy}, nil
+}
+
+const maxTableNameLength = 213
+
+// OrderBy are the key column names
+func (s *StagingTable) OrderBy() []string {
+	return s.orderBy
+}
+
+// stageChunk copies the next staging_batch_size rows of reader into a new <table>_fivetran_tmp_<operation>_<unix millis>
+// table made of columns, or returns nil when the reader is exhausted. On failure the staging table is
+// dropped before returning; on success the caller owns it.
+func (conn *ClickHouseConnection) stageChunk(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	reader *csvfile.CSVFileReader,
+	driverColumns *types.DriverColumns,
+	operation string,
+	columns []*types.CSVColumn,
+	orderBy []string,
+) (*StagingTable, error) {
+	return benchmark.RunAndNoticeWithData(func() (*StagingTable, error) {
+		staging, err := NewStagingTable(schemaName, table.Name, operation, columns, orderBy)
+		if err != nil {
+			return nil, err
+		}
+		limit := int(*flags.StagingBatchSize)
+		for staging.Rows < limit {
+			batch, err := reader.ReadBatch(min(*flags.WriteBatchSize, uint(limit-staging.Rows)))
+			if err == nil && batch == nil {
+				break
+			}
+			if err == nil && staging.Rows == 0 {
+				createStmt := sql.GetCreateStagingTableStatement(staging.QualifiedTableName, staging.columns, staging.orderBy, driverColumns)
+				if err = conn.ExecStatement(ctx, createStmt, stagingCreate, false); err != nil {
+					return nil, err
+				}
+			}
+			if err == nil {
+				staging.Rows += len(batch)
+				log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", stagingChunk, len(batch), staging.Rows))
+				toRow := func(csvRow []string) ([]any, error) { return ToStagingRow(csvRow, staging.columns) }
+				err = conn.InsertBatch(ctx, staging.QualifiedTableName, mapErr(slices.Values(batch), toRow), string(stagingInsert))
+			}
+			if err != nil {
+				conn.DropStagingTable(ctx, staging)
+				return nil, err
+			}
+		}
+		if staging.Rows == 0 {
+			return nil, nil
+		}
+		return staging, nil
+	}, string(stagingChunk))
+}
+
+// DropStagingTable drops the staging table even if ctx is already cancelled. Callers must not drop a table a
+// mutation still reads from (ErrMutationPending): the mutation would get stuck. A leftover helper table is
+// clutter, not a data issue, so failures are only logged.
+func (conn *ClickHouseConnection) DropStagingTable(ctx context.Context, staging *StagingTable) {
+	dropCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	if err := conn.DropTable(dropCtx, staging.QualifiedTableName); err != nil {
+		log.Warn(fmt.Sprintf("[%s] Failed to drop staging table %s: %v", stagingChunk, staging.QualifiedTableName, err))
+	}
+}
+
+// StageDeleteChunk stages the next chunk of a delete file: the primary keys, which are also the ORDER BY.
+func (conn *ClickHouseConnection) StageDeleteChunk(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	reader *csvfile.CSVFileReader,
+	csvColumns *types.CSVColumns,
+	driverColumns *types.DriverColumns,
+) (*StagingTable, error) {
+	if len(csvColumns.PrimaryKeys) == 0 {
+		return nil, fmt.Errorf("[%s] %s.%s: expected at least one primary key", stagingChunk, schemaName, table.Name)
+	}
+	orderBy := make([]string, 0, len(csvColumns.PrimaryKeys))
+	for _, col := range csvColumns.PrimaryKeys {
+		orderBy = append(orderBy, col.Name)
+	}
+	return conn.stageChunk(ctx, schemaName, table, reader, driverColumns, "delete", csvColumns.PrimaryKeys, orderBy)
+}
+
+// HardDelete runs sql.GetHardDeleteStatement against the staged keys.
 func (conn *ClickHouseConnection) HardDelete(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
-	reader *csvfile.CSVFileReader,
-	csvColumns *types.CSVColumns,
-) (int, error) {
-	return benchmark.RunAndNoticeWithData(func() (int, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
-		if err != nil {
-			return 0, err
-		}
-		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
-		if err != nil {
-			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
-		}
-		totalRows := 0
-		for {
-			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
-			if err != nil {
-				return totalRows, err
-			}
-			if batch == nil {
-				break
-			}
-			totalRows += len(batch)
-			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchHardDelete, len(batch), totalRows))
-			statement, err := sql.GetHardDeleteStatement(batch, csvColumns, qualifiedTableName)
-			if err != nil {
-				return totalRows, err
-			}
-			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
-			if err != nil {
-				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
-				if waitErr != nil {
-					return totalRows, waitErr
-				}
-				return totalRows, nil
-			}
-		}
-		return totalRows, nil
-	}, string(insertBatchHardDelete))
+	staging *StagingTable,
+) error {
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
+	statement := sql.GetHardDeleteStatement(qualifiedTableName, staging.QualifiedTableName, staging.OrderBy())
+	return conn.execMutation(ctx, statement, schemaName, table.Name, hardDelete)
 }
 
-// HardDeleteForEarliestStartHistory is similar to HardDelete but includes a timestamp condition
-// for each row, combining primary key equality checks with a timestamp comparison.
-// This is useful for deleting records that match both the primary key and a timestamp threshold.
-// See also: sql.GetHardDeleteWithTimestampStatement
-func (conn *ClickHouseConnection) HardDeleteForEarliestStartHistory(
+// StageEarliestStartChunk stages the next chunk of an earliest-start file: the history keys, then _fivetran_start.
+func (conn *ClickHouseConnection) StageEarliestStartChunk(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
 	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
-) (int, error) {
-	return benchmark.RunAndNoticeWithData(func() (int, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
-		if err != nil {
-			return 0, err
-		}
-
-		fivetranStartIndex, fivetranStartType, err := findColumnInCSV(csvColumns, constants.FivetranStart)
-		if err != nil {
-			return 0, err
-		}
-
-		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
-		if err != nil {
-			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
-		}
-
-		totalRows := 0
-		for {
-			batch, err := reader.ReadBatch(*flags.HardDeleteBatchSize)
-			if err != nil {
-				return totalRows, err
-			}
-			if batch == nil {
-				break
-			}
-			totalRows += len(batch)
-			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", insertBatchHardDelete, len(batch), totalRows))
-			statement, err := sql.GetHardDeleteWithTimestampStatement(
-				batch,
-				csvColumns,
-				qualifiedTableName,
-				constants.FivetranStart,
-				fivetranStartIndex,
-				fivetranStartType,
-			)
-			if err != nil {
-				return totalRows, err
-			}
-			err = conn.ExecStatement(ctx, statement, insertBatchHardDeleteTask, true)
-			if err != nil {
-				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
-				if waitErr != nil {
-					return totalRows, waitErr
-				}
-				return totalRows, nil
-			}
-		}
-		return totalRows, nil
-	}, string(insertBatchHardDelete))
+	driverColumns *types.DriverColumns,
+) (*StagingTable, error) {
+	return conn.stageHistoryChunk(ctx, schemaName, table, reader, csvColumns, driverColumns, "earliest_start", constants.FivetranStart)
 }
 
-// UpdateForEarliestStartHistory updates history records by setting _fivetran_active to FALSE and
-// _fivetran_end to the timestamp from the CSV (typically _fivetran_start - 1).
-// This is used for history mode tables to close out existing active records when new versions arrive.
-//
-// The CSV should contain:
-// - Primary key columns to identify which records to update
-// - An "end timestamp" column (typically calculated as _fivetran_start - 1 of the new record)
-//
-// Example UPDATE generated:
-//
-//	ALTER TABLE schema.table UPDATE
-//	  _fivetran_active = FALSE,
-//	  _fivetran_end = CASE
-//	    WHEN id = 1 THEN T1 - 1
-//	    WHEN id = 2 THEN T2 - 1
-//	  END
-//	WHERE id IN (1, 2) AND _fivetran_active = TRUE
-//
-// See also: sql.GetUpdateHistoryActiveStatement
-func (conn *ClickHouseConnection) UpdateForEarliestStartHistory(
+// StageHistoryDeleteChunk stages the next chunk of a history-mode delete file: the history keys, then _fivetran_end.
+func (conn *ClickHouseConnection) StageHistoryDeleteChunk(
 	ctx context.Context,
 	schemaName string,
 	table *pb.Table,
 	reader *csvfile.CSVFileReader,
 	csvColumns *types.CSVColumns,
-	fivetranStartColumnName string,
-) (int, error) {
-	return benchmark.RunAndNoticeWithData(func() (int, error) {
-		qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
-		if err != nil {
-			return 0, err
-		}
-
-		// Find the _fivetran_start column index and type
-		fivetranStartColumnIndex, fivetranStartColumnType, err := findColumnInCSV(csvColumns, fivetranStartColumnName)
-		if err != nil {
-			return 0, err
-		}
-
-		// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
-		err = conn.WaitAllNodesAvailable(ctx, schemaName, table.Name)
-		if err != nil {
-			log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
-		}
-
-		totalRows := 0
-		for {
-			// Use MutationBatchSize for ALTER TABLE UPDATE mutations to avoid generating
-			// extremely large SQL statements that can cause ClickHouse OOM during AST parsing
-			batch, err := reader.ReadBatch(*flags.MutationBatchSize)
-			if err != nil {
-				return totalRows, err
-			}
-			if batch == nil {
-				break
-			}
-			totalRows += len(batch)
-			log.Notice(fmt.Sprintf("[%s] Read batch of %d rows (total so far: %d)", updateHistoryBatch, len(batch), totalRows))
-			statement, err := sql.GetUpdateHistoryActiveStatement(
-				batch,
-				csvColumns,
-				qualifiedTableName,
-				fivetranStartColumnIndex,
-				fivetranStartColumnType,
-			)
-			if err != nil {
-				return totalRows, err
-			}
-			err = conn.ExecStatement(ctx, statement, updateHistoryBatch, true)
-			if err != nil {
-				waitErr := conn.WaitAllMutationsCompleted(ctx, err, schemaName, table.Name)
-				if waitErr != nil {
-					return totalRows, waitErr
-				}
-				return totalRows, nil
-			}
-		}
-		return totalRows, nil
-	}, string(updateHistoryBatch))
+	driverColumns *types.DriverColumns,
+) (*StagingTable, error) {
+	return conn.stageHistoryChunk(ctx, schemaName, table, reader, csvColumns, driverColumns, "delete", constants.FivetranEnd)
 }
 
-// findColumnInCSV searches for a column by name in csvColumns and returns its index and type.
-// Returns an error if the column is not found.
-func findColumnInCSV(csvColumns *types.CSVColumns, columnName string) (uint, pb.DataType, error) {
-	if csvColumns == nil || csvColumns.All == nil {
-		return 0, pb.DataType_UNSPECIFIED, fmt.Errorf("csvColumns is nil or empty")
-	}
-
-	for _, col := range csvColumns.All {
-		if col.Name == columnName {
-			return col.Index, col.Type, nil
+// stageHistoryChunk stages the primary keys without _fivetran_start, which are also the ORDER BY, followed by
+// valueColumn. See stageChunk.
+func (conn *ClickHouseConnection) stageHistoryChunk(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	reader *csvfile.CSVFileReader,
+	csvColumns *types.CSVColumns,
+	driverColumns *types.DriverColumns,
+	operation string,
+	valueColumn string,
+) (*StagingTable, error) {
+	var columns []*types.CSVColumn
+	var orderBy []string
+	// _fivetran_start is a version boundary, never a key to match on; see sql.GetDeleteOverlappingHistoryStatement
+	for _, col := range csvColumns.PrimaryKeys {
+		if col.Name != constants.FivetranStart {
+			columns = append(columns, col)
+			orderBy = append(orderBy, col.Name)
 		}
 	}
+	if len(orderBy) == 0 {
+		return nil, fmt.Errorf("[%s] %s.%s: expected at least one primary key besides %s", stagingChunk, schemaName, table.Name, constants.FivetranStart)
+	}
+	value, err := csvColumns.FindColumn(valueColumn)
+	if err != nil {
+		return nil, err
+	}
+	return conn.stageChunk(ctx, schemaName, table, reader, driverColumns, operation, append(columns, value), orderBy)
+}
 
-	return 0, pb.DataType_UNSPECIFIED, fmt.Errorf("column %s not found in CSV columns", columnName)
+// DeleteOverlappingHistory runs sql.GetDeleteOverlappingHistoryStatement against the staged file.
+func (conn *ClickHouseConnection) DeleteOverlappingHistory(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	staging *StagingTable,
+) error {
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
+	statement := sql.GetDeleteOverlappingHistoryStatement(qualifiedTableName, staging.QualifiedTableName, staging.OrderBy())
+	return conn.execMutation(ctx, statement, schemaName, table.Name, earliestStartDelete)
+}
+
+// CloseActiveHistoryRows runs sql.GetCloseActiveHistoryRowsStatement against the staged file.
+func (conn *ClickHouseConnection) CloseActiveHistoryRows(
+	ctx context.Context,
+	schemaName string,
+	table *pb.Table,
+	staging *StagingTable,
+	driverColumns *types.DriverColumns,
+	endColumn string,
+) error {
+	qualifiedTableName, err := sql.GetQualifiedTableName(schemaName, table.Name)
+	if err != nil {
+		return err
+	}
+	columnNames := make([]string, 0, len(driverColumns.Columns))
+	for _, col := range driverColumns.Columns {
+		columnNames = append(columnNames, col.Name)
+	}
+	statement, err := sql.GetCloseActiveHistoryRowsStatement(qualifiedTableName, staging.QualifiedTableName, columnNames, staging.OrderBy(), endColumn)
+	if err != nil {
+		return err
+	}
+	return conn.ExecStatement(ctx, statement, historyCloseActive, true)
 }
 
 // WaitAllNodesAvailable
@@ -1086,11 +1119,21 @@ func (conn *ClickHouseConnection) WaitAllNodesAvailable(
 	return nil
 }
 
+// ErrMutationPending wraps the original error when a mutation the client stopped waiting for is still
+// running after the wait bound. Callers must not drop tables the mutation reads from.
+var ErrMutationPending = errors.New("mutation still pending")
+
 // WaitAllMutationsCompleted waits for all async mutations to complete.
 // If mutation_sync=3 and alter_sync=3 is not enough if
 // one of the nodes went down exactly at the time of the ALTER TABLE statement execution,
 // we will still get the error code 341, which indicates that the mutations will still be completed asynchronously;
 // wait until all the nodes are available again, and all mutations are completed before sending the response.
+//
+// The same applies to every error after which the mutation may still be running on the server (see
+// isMutationPossiblyRunningErr): a read timeout, a cancelled request, or a retry rejected because the first
+// attempt still runs. The wait ignores ctx cancellation because a cancelled ctx is one of the triggers; it is
+// bounded by max-async-mutations-check-retries and async-mutations-check-interval and returns
+// ErrMutationPending when the bound is reached.
 func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	ctx context.Context,
 	mutationError error,
@@ -1098,11 +1141,16 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	tableName string,
 ) error {
 	// disable this check with the local ClickHouse in a Docker; the result will be always empty there
-	if conn.isLocal || !isIncompleteMutationErr(mutationError) {
+	if conn.isLocal || !isMutationPossiblyRunningErr(mutationError) {
 		return mutationError
 	}
+	waitBound := time.Duration(*flags.MaxAsyncMutationsCheckRetries+1) * *flags.AsyncMutationsCheckInterval
+	waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), waitBound)
+	defer cancel()
+	log.Warn(fmt.Sprintf("Waiting for the mutations of %s.%s to complete, cause: %v", schemaName, tableName, mutationError))
+
 	// even though we set alter/mutations_sync=3, we check for all nodes availability and log warning if not all nodes are available
-	err := conn.WaitAllNodesAvailable(ctx, schemaName, tableName)
+	err := conn.WaitAllNodesAvailable(waitCtx, schemaName, tableName)
 	if err != nil {
 		log.Warn(fmt.Sprintf("It seems like not all nodes are available: %v. We strongly recommend to check the cluster health and availability to avoid inconsistency between replicas", err))
 	}
@@ -1115,17 +1163,18 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	// Measure the total execution (or, more precisely, waiting) time of all the operations here
 	err = benchmark.RunAndNotice(func() error {
 		return retry.OnFalseWithFixedDelay(func() (bool, error) {
-			allCompleted, err := conn.ExecBoolQuery(ctx, query, allMutationsCompleted, false)
+			allCompleted, err := conn.ExecBoolQuery(waitCtx, query, allMutationsCompleted, false)
 			if err != nil {
 				return false, err
 			}
 			return allCompleted, nil
-		}, ctx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
+		}, waitCtx, query, *flags.MaxAsyncMutationsCheckRetries, *flags.AsyncMutationsCheckInterval)
 	}, string(allMutationsCompleted))
 
 	if err != nil {
-		return fmt.Errorf("error while waiting for all mutations to be completed: %w; initial cause: %w", err, mutationError)
+		return fmt.Errorf("%w for %s.%s after %s: %w; initial cause: %w", ErrMutationPending, schemaName, tableName, waitBound, err, mutationError)
 	}
+	log.Notice(fmt.Sprintf("Mutations of %s.%s completed after the client stopped waiting; the operation succeeded", schemaName, tableName))
 	return nil
 }
 
@@ -1258,14 +1307,21 @@ func hasDecimalPrefix(colType string) bool {
 	return strings.HasPrefix(colType, "Decimal(") || strings.HasPrefix(colType, "Nullable(Decimal(")
 }
 
-// A sample exception: code: 341, message: Mutation is not finished because some replicas are inactive right now
-func isIncompleteMutationErr(err error) bool {
+// isMutationPossiblyRunningErr tells whether the statement reached the server and its mutation may still be
+// running although the client got an error: code 341 (mutation not finished because replicas are inactive),
+// code 216 (a retry that reused the query id was rejected because the first attempt is still running), a
+// read timeout, or a cancelled or expired context.
+func isMutationPossiblyRunningErr(err error) bool {
 	var exception *clickhouse.Exception
-	ok := errors.As(err, &exception)
-	if !ok || exception.Code != 341 {
-		return false
+	if errors.As(err, &exception) {
+		return exception.Code == 341 || exception.Code == 216
 	}
-	return true
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+		strings.Contains(err.Error(), "i/o timeout")
 }
 
 func isDatabaseBeingCreatedErr(err error) bool {
@@ -1307,9 +1363,12 @@ const (
 	insertBatchReplaceTask     connectionOpType = "InsertBatch(Replace task)"
 	insertBatchUpdate          connectionOpType = "InsertBatch(Update)"
 	insertBatchUpdateTask      connectionOpType = "InsertBatch(Update task)"
-	insertBatchHardDelete      connectionOpType = "InsertBatch(Hard delete)"
-	insertBatchHardDeleteTask  connectionOpType = "InsertBatch(Hard delete task)"
-	updateHistoryBatch         connectionOpType = "UpdateHistoryBatch"
+	hardDelete                 connectionOpType = "HardDelete"
+	stagingChunk               connectionOpType = "Staging(Chunk)"
+	stagingCreate              connectionOpType = "Staging(Create table)"
+	stagingInsert              connectionOpType = "Staging(Insert)"
+	earliestStartDelete        connectionOpType = "EarliestStart(Delete overlapping versions)"
+	historyCloseActive         connectionOpType = "History(Close active rows)"
 	getColumnTypesWithIndexMap connectionOpType = "GetColumnTypes"
 	selectByPrimaryKeys        connectionOpType = "SelectByPrimaryKeys"
 	getUserGrants              connectionOpType = "GetUserGrants"

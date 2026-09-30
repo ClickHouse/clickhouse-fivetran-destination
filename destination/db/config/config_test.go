@@ -206,8 +206,7 @@ func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
 		"destination_configurations": {
 			"write_batch_size": 500000,
 			"select_batch_size": 3000,
-			"mutation_batch_size": 1000,
-			"hard_delete_batch_size": 2000
+			"staging_batch_size": 500000
 		}
 	}`)
 	assert.NoError(t, err)
@@ -215,8 +214,7 @@ func TestParseAdvancedConfigWithDestinationConfigs(t *testing.T) {
 	assert.NotNil(t, cfg.DestinationConfigurations)
 	assert.Equal(t, uint(500000), *cfg.DestinationConfigurations.WriteBatchSize)
 	assert.Equal(t, uint(3000), *cfg.DestinationConfigurations.SelectBatchSize)
-	assert.Equal(t, uint(1000), *cfg.DestinationConfigurations.MutationBatchSize)
-	assert.Equal(t, uint(2000), *cfg.DestinationConfigurations.HardDeleteBatchSize)
+	assert.Equal(t, uint(500000), *cfg.DestinationConfigurations.StagingBatchSize)
 }
 
 func TestParseAdvancedConfigPartialConfigs(t *testing.T) {
@@ -229,7 +227,7 @@ func TestParseAdvancedConfigPartialConfigs(t *testing.T) {
 	assert.NotNil(t, cfg.DestinationConfigurations)
 	assert.Equal(t, uint(200000), *cfg.DestinationConfigurations.WriteBatchSize)
 	assert.Nil(t, cfg.DestinationConfigurations.SelectBatchSize)
-	assert.Nil(t, cfg.DestinationConfigurations.HardDeleteBatchSize)
+	assert.Nil(t, cfg.DestinationConfigurations.StagingBatchSize)
 }
 
 func TestParseAdvancedConfigOverflowUint(t *testing.T) {
@@ -268,32 +266,27 @@ func TestValidateAndOverwriteFlagsNilLeftsFlagsUnchanged(t *testing.T) {
 func TestValidateAndOverwriteFlagsOverridesFlags(t *testing.T) {
 	originalWriteBatch := *flags.WriteBatchSize
 	originalSelectBatch := *flags.SelectBatchSize
-	originalMutationBatch := *flags.MutationBatchSize
-	originalHardDeleteBatch := *flags.HardDeleteBatchSize
+	originalStagingBatch := *flags.StagingBatchSize
 	defer func() {
 		*flags.WriteBatchSize = originalWriteBatch
 		*flags.SelectBatchSize = originalSelectBatch
-		*flags.MutationBatchSize = originalMutationBatch
-		*flags.HardDeleteBatchSize = originalHardDeleteBatch
+		*flags.StagingBatchSize = originalStagingBatch
 	}()
 
 	writeBatch := flags.WriteBatchSizeSetting.MinValue + 1
 	selectBatch := flags.SelectBatchSizeSetting.MinValue + 1
-	mutationBatch := flags.MutationBatchSizeSetting.MinValue + 1
-	hardDelete := flags.HardDeleteBatchSizeSetting.MinValue + 1
+	stagingBatch := flags.StagingBatchSizeSetting.MinValue + 1
 
 	ds := &DestinationConfigurations{
-		WriteBatchSize:      &writeBatch,
-		SelectBatchSize:     &selectBatch,
-		MutationBatchSize:   &mutationBatch,
-		HardDeleteBatchSize: &hardDelete,
+		WriteBatchSize:   &writeBatch,
+		SelectBatchSize:  &selectBatch,
+		StagingBatchSize: &stagingBatch,
 	}
 	assert.NoError(t, ValidateAndOverwriteFlags(ds))
 
 	assert.Equal(t, writeBatch, *flags.WriteBatchSize)
 	assert.Equal(t, selectBatch, *flags.SelectBatchSize)
-	assert.Equal(t, mutationBatch, *flags.MutationBatchSize)
-	assert.Equal(t, hardDelete, *flags.HardDeleteBatchSize)
+	assert.Equal(t, stagingBatch, *flags.StagingBatchSize)
 }
 
 func TestValidateAndOverwriteFlagsPartialOverride(t *testing.T) {
@@ -329,22 +322,22 @@ func TestValidateAndOverwriteFlagsRejectsOutOfRange(t *testing.T) {
 func TestValidateAndOverwriteFlagsAcceptsBoundaryValues(t *testing.T) {
 	originalWriteBatch := *flags.WriteBatchSize
 	originalSelectBatch := *flags.SelectBatchSize
-	originalHardDeleteBatch := *flags.HardDeleteBatchSize
+	originalStagingBatch := *flags.StagingBatchSize
 	defer func() {
 		*flags.WriteBatchSize = originalWriteBatch
 		*flags.SelectBatchSize = originalSelectBatch
-		*flags.HardDeleteBatchSize = originalHardDeleteBatch
+		*flags.StagingBatchSize = originalStagingBatch
 	}()
 
 	ds := &DestinationConfigurations{
-		WriteBatchSize:      uintPtr(flags.WriteBatchSizeSetting.MinValue),
-		SelectBatchSize:     uintPtr(flags.SelectBatchSizeSetting.MaxValue),
-		HardDeleteBatchSize: uintPtr(flags.HardDeleteBatchSizeSetting.MaxValue),
+		WriteBatchSize:   uintPtr(flags.WriteBatchSizeSetting.MinValue),
+		SelectBatchSize:  uintPtr(flags.SelectBatchSizeSetting.MaxValue),
+		StagingBatchSize: uintPtr(flags.StagingBatchSizeSetting.MaxValue),
 	}
 	assert.NoError(t, ValidateAndOverwriteFlags(ds))
 	assert.Equal(t, flags.WriteBatchSizeSetting.MinValue, *flags.WriteBatchSize)
 	assert.Equal(t, flags.SelectBatchSizeSetting.MaxValue, *flags.SelectBatchSize)
-	assert.Equal(t, flags.HardDeleteBatchSizeSetting.MaxValue, *flags.HardDeleteBatchSize)
+	assert.Equal(t, flags.StagingBatchSizeSetting.MaxValue, *flags.StagingBatchSize)
 }
 
 func TestValidateAndOverwriteFlagsDoesNotModifyFlagsOnError(t *testing.T) {
