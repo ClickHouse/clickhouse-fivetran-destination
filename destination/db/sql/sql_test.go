@@ -397,7 +397,7 @@ func TestGetCloseActiveHistoryRowsStatement(t *testing.T) {
 	statement, err := GetCloseActiveHistoryRowsStatement(table, staging, columns, []string{"id", "_fivetran_start"}, "_fivetran_start")
 	assert.NoError(t, err)
 	assert.Equal(t, "INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`) "+
-		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),tgt.`_fivetran_start`,stg.`_fivetran_start`,FALSE "+
+		"SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),tgt.`_fivetran_start`,stg.`_fivetran_start` - toIntervalMillisecond(1),FALSE "+
 		"FROM `foo`.`bar` AS tgt FINAL INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id` "+
 		"WHERE tgt.`_fivetran_active`=TRUE", statement)
 

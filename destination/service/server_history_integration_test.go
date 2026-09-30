@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"fivetran.com/fivetran_sdk/destination/common/flags"
 	"fivetran.com/fivetran_sdk/destination/db"
@@ -58,6 +59,15 @@ type historyVersion struct {
 }
 
 func chTime(hhmm string) string { return "2024-01-01 " + hhmm + ":00.000000000" }
+
+// chTimeBefore is one millisecond before chTime(hhmm): where an earliest-start file closes the previous version
+func chTimeBefore(hhmm string) string {
+	t, err := time.Parse("2006-01-02 15:04:05", "2024-01-01 "+hhmm+":00")
+	if err != nil {
+		panic(err)
+	}
+	return t.Add(-time.Millisecond).Format("2006-01-02 15:04:05.000000000")
+}
 
 func csvTime(hhmm string) string { return "2024-01-01T" + hhmm + ":00Z" }
 
@@ -225,7 +235,7 @@ func (h *historyHarness) helperTables() uint64 {
 func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 	t.Run("fivetran guide example", func(t *testing.T) {
 		// id 1 -> T150: the active T200 version overlaps and is removed, the closed T100 version is untouched.
-		// ids 2, 3 -> T105: nothing overlaps, the active versions are closed at T105. id 4 is not in the file.
+		// ids 2, 3 -> T105: nothing overlaps, the active versions are closed one millisecond before T105. id 4 is not in the file.
 		h := newHistoryHarness(t)
 		h.seed(
 			closedVersion(1, "a", "abc", "01:00", "2024-01-01 01:59:59.999000000"),
@@ -237,8 +247,8 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 		h.writeEarliestStart(h.earliestStartFile("1,a,"+csvTime("01:50"), "2,a,"+csvTime("01:05"), "3,a,"+csvTime("01:05")))
 		assert.Equal(t, []historyVersion{
 			closedVersion(1, "a", "abc", "01:00", "2024-01-01 01:59:59.999000000"),
-			closedVersion(2, "a", "mno", "01:02", chTime("01:05")),
-			closedVersion(3, "a", "xyz", "01:03", chTime("01:05")),
+			closedVersion(2, "a", "mno", "01:02", chTimeBefore("01:05")),
+			closedVersion(3, "a", "xyz", "01:03", chTimeBefore("01:05")),
 			activeVersion(4, "a", "lmn", "01:04"),
 		}, h.rows())
 		assert.Equal(t, uint64(0), h.helperTables())
@@ -250,7 +260,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 		h.seed(activeVersion(5, "x", "v1", "01:00"), activeVersion(5, "y", "v2", "01:00"))
 		h.writeEarliestStart(h.earliestStartFile("5,x," + csvTime("01:30")))
 		assert.Equal(t, []historyVersion{
-			closedVersion(5, "x", "v1", "01:00", chTime("01:30")),
+			closedVersion(5, "x", "v1", "01:00", chTimeBefore("01:30")),
 			activeVersion(5, "y", "v2", "01:00"),
 		}, h.rows())
 	})
@@ -268,7 +278,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 		h.writeEarliestStart(h.earliestStartFile("10,a,"+csvTime("02:00"), "11,a,"+csvTime("05:00"), "99,a,"+csvTime("01:00")))
 		assert.Equal(t, []historyVersion{
 			closedVersion(10, "a", "old", "01:00", "2024-01-01 01:59:59.999000000"),
-			closedVersion(11, "a", "cur", "03:00", chTime("05:00")),
+			closedVersion(11, "a", "cur", "03:00", chTimeBefore("05:00")),
 		}, h.rows())
 	})
 
@@ -285,7 +295,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 		h := newHistoryHarness(t)
 		h.seed(activeVersion(30, "a", "v", "01:00"))
 		h.writeEarliestStart(h.earliestStartFile("30,a,"+csvTime("03:00")), h.earliestStartFile("30,a,"+csvTime("02:00")))
-		assert.Equal(t, []historyVersion{closedVersion(30, "a", "v", "01:00", chTime("03:00"))}, h.rows())
+		assert.Equal(t, []historyVersion{closedVersion(30, "a", "v", "01:00", chTimeBefore("03:00"))}, h.rows())
 	})
 
 	t.Run("header only file changes nothing", func(t *testing.T) {
@@ -302,7 +312,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 		file := h.earliestStartFile("45,a," + csvTime("02:00"))
 		h.writeEarliestStart(file)
 		expected := h.rows()
-		require.Equal(t, []historyVersion{closedVersion(45, "a", "v1", "01:00", chTime("02:00"))}, expected)
+		require.Equal(t, []historyVersion{closedVersion(45, "a", "v1", "01:00", chTimeBefore("02:00"))}, expected)
 		h.writeEarliestStart(file)
 		assert.Equal(t, expected, h.rows())
 	})
@@ -342,7 +352,7 @@ func TestWriteHistoryBatchEarliestStart(t *testing.T) {
 		for id := int64(50); id < 55; id++ {
 			seeded = append(seeded, activeVersion(id, "a", "v1", "01:00"), activeVersion(id, "a", "v2", "03:00"))
 			lines = append(lines, fmt.Sprintf("%d,a,%s", id, csvTime("02:00")))
-			expected = append(expected, closedVersion(id, "a", "v1", "01:00", chTime("02:00")))
+			expected = append(expected, closedVersion(id, "a", "v1", "01:00", chTimeBefore("02:00")))
 		}
 		h.seed(seeded...)
 		h.writeEarliestStart(h.earliestStartFile(lines...))

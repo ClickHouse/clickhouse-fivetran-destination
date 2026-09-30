@@ -376,13 +376,15 @@ func GetDeleteOverlappingHistoryStatement(
 }
 
 // GetCloseActiveHistoryRowsStatement closes the active row of every key staged in qualifiedStagingTableName
-// by inserting a new version of it, ended at the staged endColumn (_fivetran_start of an earliest-start
-// file, _fivetran_end of a delete file). columnNames are all table columns, in table order; primaryKeys are
-// the table primary keys as Fivetran defines them, see historyPrimaryKeys. Sample generated query:
+// by inserting a new version of it. endColumn is the staged column giving the new _fivetran_end:
+// _fivetran_start of an earliest-start file (the version ends one millisecond before the new one starts) or
+// _fivetran_end of a delete file (used as is). columnNames are all table columns, in table order;
+// primaryKeys are the table primary keys as Fivetran defines them, see historyPrimaryKeys. Sample generated
+// query for an earliest-start file:
 //
 //	INSERT INTO `foo`.`bar` (`id`,`name`,`_fivetran_synced`,`_fivetran_start`,`_fivetran_end`,`_fivetran_active`)
 //	SELECT tgt.`id`,tgt.`name`,tgt.`_fivetran_synced` + toIntervalNanosecond(1),
-//	    tgt.`_fivetran_start`,stg.`_fivetran_start`,FALSE
+//	    tgt.`_fivetran_start`,stg.`_fivetran_start` - toIntervalMillisecond(1),FALSE
 //	FROM `foo`.`bar` AS tgt FINAL
 //	INNER JOIN `foo`.`bar_fivetran_tmp_earliest_start_1700000000000` AS stg ON tgt.`id`=stg.`id`
 //	WHERE tgt.`_fivetran_active`=TRUE
@@ -410,8 +412,14 @@ func GetCloseActiveHistoryRowsStatement(
 	primaryKeys []string,
 	endColumn string,
 ) (string, error) {
+	end := "stg." + identifier(endColumn)
+	if endColumn == constants.FivetranStart {
+		// Fivetran's history mode guide: "_fivetran_end = _fivetran_start - 1 msec", so no instant belongs to
+		// both the closed version and the one starting at the earliest start
+		end += " - toIntervalMillisecond(1)"
+	}
 	closingValues := map[string]string{
-		constants.FivetranEnd:    "stg." + identifier(endColumn),
+		constants.FivetranEnd:    end,
 		constants.FivetranActive: "FALSE",
 		constants.FivetranSynced: fmt.Sprintf("tgt.%s + toIntervalNanosecond(1)", identifier(constants.FivetranSynced)),
 	}
