@@ -181,6 +181,19 @@ func ToInsertRow(
 	return insertRow, nil
 }
 
+// ToStagingRow converts a CSV row to a row of a staging table made of the given CSV columns, in that order.
+func ToStagingRow(csvRow []string, columns []*types.CSVColumn) ([]any, error) {
+	row := make([]any, len(columns))
+	for i, col := range columns {
+		value, err := values.Parse(col.Name, col.Type, csvRow[col.Index])
+		if err != nil {
+			return nil, err
+		}
+		row[i] = value
+	}
+	return row, nil
+}
+
 // ToUpdatedRow merges an existing ClickHouse row with the CSV row values.
 // Fields that are equal to unmodifiedStr are not updated.
 // csvColumns - all CSV columns (not just primary keys).

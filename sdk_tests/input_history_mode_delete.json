@@ -1,0 +1,86 @@
+{
+  "create_table": {
+    "users_del": {
+      "columns": {
+        "id": "INT",
+        "name": "STRING",
+        "status": "STRING"
+      },
+      "primary_key": [
+        "id"
+      ],
+      "history_mode": true
+    }
+  },
+  "describe_table": [
+    "users_del"
+  ],
+  "ops": [
+    {
+      "upsert": {
+        "users_del": [
+          {
+            "id": 1,
+            "name": "name 1",
+            "status": "TODO",
+            "op_time": "2025-11-10T20:57:00Z"
+          },
+          {
+            "id": 2,
+            "name": "name 2",
+            "status": "TODO",
+            "op_time": "2025-11-10T20:57:00Z"
+          },
+          {
+            "id": 3,
+            "name": "name 3",
+            "status": "TODO",
+            "op_time": "2025-11-10T20:57:00Z"
+          },
+          {
+            "id": 4,
+            "name": "name 4",
+            "status": "TODO",
+            "op_time": "2025-11-10T20:57:00Z"
+          },
+          {
+            "id": 5,
+            "name": "name 5",
+            "status": "TODO",
+            "op_time": "2025-11-10T20:57:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "users_del": [
+          {
+            "id": 1,
+            "name": "name 11",
+            "status": "TODO",
+            "op_time": "2025-11-11T20:57:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "delete": {
+        "users_del": [
+          {
+            "id": 2,
+            "op_time": "2025-11-12T20:57:00Z"
+          },
+          {
+            "id": 3,
+            "op_time": "2025-11-12T20:57:00Z"
+          },
+          {
+            "id": 9,
+            "op_time": "2025-11-12T20:57:00Z"
+          }
+        ]
+      }
+    }
+  ]
+}

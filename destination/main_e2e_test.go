@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -373,6 +375,25 @@ func TestHistoryMode(t *testing.T) {
 		{"3", "name 3", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
 		{"4", "name 4", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
 		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
+}
+
+func TestHistoryModeDelete(t *testing.T) {
+	fileName := "input_history_mode_delete.json"
+	tableName := "users_del"
+	startServer(t)
+	runSDKTestCommand(t, fileName)
+	// delete files close the active version at the operation time; id 9 does not exist and is ignored
+	query := fmt.Sprintf("SELECT id, name, status, _fivetran_start, _fivetran_end, _fivetran_active FROM tester.%s FINAL ORDER BY id, _fivetran_start FORMAT CSV SETTINGS select_sequential_consistency=1", tableName)
+	dbRecordsCSVStr := runQuery(t, query)
+	assertDatabaseRecords(t, [][]string{
+		{"1", "name 1", "TODO", "2025-11-10 20:57:00.000000000", "2025-11-11 20:56:59.999000000", "false"},
+		{"1", "name 11", "TODO", "2025-11-11 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
+		{"2", "name 2", "TODO", "2025-11-10 20:57:00.000000000", "2025-11-12 20:57:00.000000000", "false"},
+		{"3", "name 3", "TODO", "2025-11-10 20:57:00.000000000", "2025-11-12 20:57:00.000000000", "false"},
+		{"4", "name 4", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"},
+		{"5", "name 5", "TODO", "2025-11-10 20:57:00.000000000", "2262-04-11 23:47:16.000000000", "true"}}, dbRecordsCSVStr)
+	query = fmt.Sprintf("SELECT count() FROM system.tables WHERE database = 'tester' AND name LIKE '%s%%fivetran_tmp%%' FORMAT CSV", tableName)
+	require.Equal(t, "0\n", runQuery(t, query), "staging tables left behind")
 }
 
 func TestSchemaMigrationsDDL(t *testing.T) {
@@ -821,6 +842,9 @@ func runQuery(t *testing.T, query string) string {
 	t.Logf("Running ClickHouse query: %s", query)
 
 	conf := readConfig(t)
+	if !conf.Local {
+		return runQueryOverHTTPS(t, conf, query)
+	}
 	cmdArgs := []string{
 		"exec", "fivetran-destination-clickhouse-server",
 		"clickhouse-client", "--query", query,
@@ -841,6 +865,22 @@ func runQuery(t *testing.T, query string) string {
 	}
 	require.NoError(t, err)
 	return string(out)
+}
+
+// runQueryOverHTTPS is used against ClickHouse Cloud, where there is no local clickhouse-client container.
+// The HTTPS interface returns the same FORMAT CSV text as clickhouse-client.
+func runQueryOverHTTPS(t *testing.T, conf *config.Config, query string) string {
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, fmt.Sprintf("https://%s:8443/", conf.Host), strings.NewReader(query))
+	require.NoError(t, err)
+	req.Header.Set("X-ClickHouse-User", conf.Username)
+	req.Header.Set("X-ClickHouse-Key", conf.Password)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close() //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "query failed: %s", string(body))
+	return string(body)
 }
 
 func isPortReady(t *testing.T, port uint) (isOpen bool) {
