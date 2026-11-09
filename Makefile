@@ -35,7 +35,9 @@ ifneq ($(strip $(GITHUB_TOKEN)),)
     GITHUB_AUTH = -H "Authorization: Bearer $(GITHUB_TOKEN)"
 endif
 
+# Recreates proto/ from scratch so stray committed files show up as drift in CI.
 prepare-fivetran-sdk:
+	rm -rf proto
 	mkdir -p proto
 	curl -fL --retry 6 $(GITHUB_AUTH) -o proto/common.proto          "$(FIVETRAN_SDK_URL)/common.proto"
 	curl -fL --retry 6 $(GITHUB_AUTH) -o proto/destination_sdk.proto "$(FIVETRAN_SDK_URL)/destination_sdk.proto"
@@ -94,7 +96,7 @@ test-with-coverage:
 	TEST_ARGS="-coverpkg=fivetran.com/fivetran_sdk/destination/... -coverprofile cover.out" make test
 	go tool cover -func=cover.out
 
-# Compile only — assumes protos are already generated and tools installed.
+# Compile only, using the committed protos.
 build-server:
 	rm -rf ./bin
 	go build -o ./bin/server ./destination
