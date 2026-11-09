@@ -37,15 +37,15 @@ endif
 
 prepare-fivetran-sdk:
 	mkdir -p proto
-	curl -fL --retry 3 $(GITHUB_AUTH) -o proto/common.proto          "$(FIVETRAN_SDK_URL)/common.proto"
-	curl -fL --retry 3 $(GITHUB_AUTH) -o proto/destination_sdk.proto "$(FIVETRAN_SDK_URL)/destination_sdk.proto"
+	curl -fL --retry 6 $(GITHUB_AUTH) -o proto/common.proto          "$(FIVETRAN_SDK_URL)/common.proto"
+	curl -fL --retry 6 $(GITHUB_AUTH) -o proto/destination_sdk.proto "$(FIVETRAN_SDK_URL)/destination_sdk.proto"
 
 # Installs a pinned protoc version into .protoc/ so builds do not depend on
 # whatever protoc happens to be on PATH.
 install-protoc:
 	rm -rf .protoc
 	mkdir -p .protoc
-	curl -fL --retry 3 -o .protoc/protoc.zip \
+	curl -fL --retry 6 -o .protoc/protoc.zip \
 		"https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-$(PROTOC_OS)-$(PROTOC_ARCH).zip"
 	unzip -o .protoc/protoc.zip -d .protoc
 	rm .protoc/protoc.zip
