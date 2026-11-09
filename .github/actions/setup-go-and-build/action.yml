@@ -22,6 +22,15 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
       run: make build
 
+    - name: Check committed protos are up to date
+      shell: bash
+      run: |
+        if [ -n "$(git status --porcelain proto)" ]; then
+          git status --porcelain proto
+          echo "::error::proto/ differs from 'make build' output. Run 'make build' and commit proto/."
+          exit 1
+        fi
+
     - name: Go mod tidy
       shell: bash
       run: go mod tidy

@@ -1,5 +1,4 @@
 fivetran_sdk
-proto
 
 sdk_tests/*.csv*
 sdk_tests/input_large_file.json

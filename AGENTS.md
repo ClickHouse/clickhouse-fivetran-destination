@@ -72,7 +72,7 @@ All tests run with `make test`. Integration and e2e tests need ClickHouse runnin
 
 ## Gotchas
 
-- Never edit files in `proto/` — they are generated. Run `make generate-proto` instead.
+- Never edit files in `proto/` by hand - they are generated and committed. See "Building" in [CONTRIBUTING.md](./CONTRIBUTING.md) for how to regenerate them.
 - Tests require `127.0.0.1 clickhouse` in `/etc/hosts` (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
 - Integration and e2e tests require ClickHouse running via `docker compose up -d`. Sometimes the container may be already running, so you can check with `docker ps` and skip the step if you are sure it is running.
 - `sdk_tests/configuration.json` is gitignored. It is auto-created from `sdk_tests/default_configuration.json` when running `make test`.

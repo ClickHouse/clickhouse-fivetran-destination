@@ -21,8 +21,7 @@ No manual `protoc` installation is required.
 Tip: if a GitHub token is available, export it as `GITHUB_TOKEN` to authenticate the proto
 downloads and avoid GitHub rate limiting (HTTP 429), e.g. `GITHUB_TOKEN=$(gh auth token) make build`.
 
-Once the protos have been generated, you can rebuild just the server binary (much faster,
-no downloads):
+To rebuild just the server binary from the committed protos (much faster, no downloads):
 
 ```bash
 make build-server
@@ -37,6 +36,10 @@ make install-protoc         # install pinned protoc into .protoc/
 make install-protoc-gen-go  # install the Go protoc plugins
 make generate-proto         # generate Go code from the proto files
 ```
+
+The downloaded and generated files in `proto/` are committed.
+After changing `FIVETRAN_TAG` or any protoc version in the Makefile, run `make build` and commit `proto/`.
+CI fails if the committed files differ from the `make build` output.
 
 ## Running Go tests
 

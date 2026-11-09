@@ -1,0 +1,270 @@
+syntax = "proto3";
+option optimize_for = SPEED;
+option java_multiple_files = true;
+option go_package = "fivetran.com/fivetran_sdk_v2";
+package fivetran_sdk.v2;
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// Fivetran (grpc client) <> DestinationConnector (grpc server)
+service DestinationConnector {
+    rpc ConfigurationForm (ConfigurationFormRequest) returns (ConfigurationFormResponse) {}
+    rpc Capabilities (CapabilitiesRequest) returns (CapabilitiesResponse) {}
+    rpc Test (TestRequest) returns (TestResponse) {}
+    rpc DescribeTable (DescribeTableRequest) returns (DescribeTableResponse) {}
+    rpc CreateTable(CreateTableRequest) returns (CreateTableResponse) {}
+    rpc AlterTable(AlterTableRequest) returns (AlterTableResponse) {}
+    rpc Truncate(TruncateRequest) returns (TruncateResponse) {}
+    rpc WriteBatch (WriteBatchRequest) returns (WriteBatchResponse) {}
+    rpc WriteHistoryBatch (WriteHistoryBatchRequest) returns (WriteBatchResponse) {}
+    rpc Migrate (MigrateRequest) returns (MigrateResponse) {}
+}
+
+message CapabilitiesRequest {}
+
+message CapabilitiesResponse {
+    BatchFileFormat batch_file_format = 1;
+}
+
+message DescribeTableRequest {
+    map<string, string> configuration = 1;
+    string schema_name = 2;
+    string table_name = 3;
+}
+
+message DescribeTableResponse {
+    oneof response {
+        bool not_found = 1;
+        Table table = 2;
+        Warning warning = 3;
+        Task task = 4;
+    }
+}
+
+message CreateTableRequest {
+    map<string, string> configuration = 1;
+    string schema_name = 2;
+    Table table = 3;
+}
+
+message CreateTableResponse {
+    oneof response {
+        bool success = 1;
+        Warning warning = 2;
+        Task task = 3;
+    }
+}
+
+message AlterTableRequest {
+    map<string, string> configuration = 1;
+    string schema_name = 2;
+    Table table = 3;
+    bool drop_columns = 4;
+}
+
+message AlterTableResponse {
+    oneof response {
+        bool success = 1;
+        Warning warning = 2;
+        Task task = 3;
+    }
+}
+
+message TruncateRequest {
+    map<string, string> configuration = 1;
+    string schema_name = 2;
+    string table_name = 3;
+    string synced_column = 4;
+    google.protobuf.Timestamp utc_delete_before = 5;
+    optional SoftTruncate soft = 6;
+}
+
+message SoftTruncate {
+    string deleted_column = 1;
+}
+
+message TruncateResponse {
+    oneof response {
+        bool success = 1;
+        Warning warning = 2;
+        Task task = 3;
+    }
+}
+
+message WriteBatchRequest {
+    map<string, string> configuration = 1;
+    string schema_name = 2;
+    Table table = 3;
+    map<string, bytes> keys = 4;
+    repeated string replace_files = 5;
+    repeated string update_files = 6;
+    repeated string delete_files = 7;
+    FileParams file_params = 8;
+}
+
+message WriteHistoryBatchRequest {
+    map<string, string> configuration = 1;
+    string schema_name = 2;
+    Table table = 3;
+    map<string, bytes> keys = 4;
+    repeated string earliest_start_files = 5;
+    repeated string replace_files = 6;
+    repeated string update_files = 7;
+    repeated string delete_files = 8;
+    FileParams file_params = 9;
+}
+
+message FileParams {
+    Compression compression = 1;
+    Encryption encryption = 2;
+    string null_string = 3;
+    string unmodified_string = 4;
+}
+
+enum Encryption {
+    NONE = 0;
+    AES = 1;
+}
+
+enum BatchFileFormat {
+    CSV = 0;
+    PARQUET = 1;
+}
+
+enum Compression {
+    OFF = 0;
+    ZSTD = 1;
+    GZIP = 2;
+}
+
+message WriteBatchResponse {
+    oneof response {
+        bool success = 1;
+        Warning warning = 2;
+        Task task = 3;
+    }
+}
+
+message MigrateRequest {
+    map<string, string> configuration = 1;
+    MigrationDetails details = 2;
+}
+
+message MigrateResponse {
+    oneof response {
+        bool success = 1;
+        bool unsupported = 2;
+        Warning warning = 3;
+        Task task = 4;
+    }
+}
+
+message MigrationDetails {
+    string schema = 1;
+    string table = 2;
+
+    oneof operation {
+        DropOperation drop = 3;
+        CopyOperation copy = 4;
+        RenameOperation rename = 5;
+        AddOperation add = 6;
+        UpdateColumnValueOperation update_column_value = 7;
+        TableSyncModeMigrationOperation table_sync_mode_migration = 8;
+    }
+}
+
+message DropOperation {
+    oneof entity {
+        bool drop_table = 1;
+        DropColumnInHistoryMode drop_column_in_history_mode = 2;
+    }
+}
+
+message DropColumnInHistoryMode {
+    string column = 1;
+    string operation_timestamp = 2;
+}
+
+message CopyOperation {
+    oneof entity {
+        CopyTable copy_table = 1;
+        CopyColumn copy_column = 2;
+        CopyTableToHistoryMode copy_table_to_history_mode = 3;
+    }
+}
+
+message CopyTable {
+    string from_table = 1;
+    string to_table = 2;
+}
+
+message CopyColumn {
+    string from_column = 1;
+    string to_column = 2;
+}
+
+message CopyTableToHistoryMode {
+    string from_table = 1;
+    string to_table = 2;
+    string soft_deleted_column = 3;
+}
+
+message RenameOperation {
+    oneof entity {
+        RenameTable rename_table = 1;
+        RenameColumn rename_column = 2;
+    }
+}
+
+message RenameTable {
+    string from_table = 1;
+    string to_table = 2;
+}
+
+message RenameColumn {
+    string from_column = 1;
+    string to_column = 2;
+}
+
+message AddOperation {
+    oneof entity {
+        AddColumnInHistoryMode add_column_in_history_mode = 1;
+        AddColumnWithDefaultValue add_column_with_default_value = 2;
+    }
+}
+
+message AddColumnWithDefaultValue {
+    string column = 1;
+    DataType column_type = 2;
+    string default_value = 3;
+}
+
+message AddColumnInHistoryMode {
+    string column = 1;
+    DataType column_type = 2;
+    string default_value = 3;
+    string operation_timestamp = 4;
+}
+
+
+message UpdateColumnValueOperation {
+    string column = 1;
+    string value = 2;
+}
+
+
+message TableSyncModeMigrationOperation {
+    TableSyncModeMigrationType type = 1;
+    optional string soft_deleted_column = 2;
+    optional bool keep_deleted_rows = 3;
+}
+
+enum TableSyncModeMigrationType {
+    SOFT_DELETE_TO_LIVE = 0;
+    SOFT_DELETE_TO_HISTORY = 1;
+    HISTORY_TO_SOFT_DELETE = 2;
+    HISTORY_TO_LIVE = 3;
+    LIVE_TO_SOFT_DELETE = 4;
+    LIVE_TO_HISTORY = 5;
+}
