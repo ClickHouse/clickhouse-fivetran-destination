@@ -38,6 +38,10 @@ make install-protoc-gen-go  # install the Go protoc plugins
 make generate-proto         # generate Go code from the proto files
 ```
 
+The downloaded and generated files in `proto/` are committed.
+After changing `FIVETRAN_TAG` or any protoc version in the Makefile, run `make build` and commit `proto/`.
+CI fails if the committed files differ from the `make build` output.
+
 ## Running Go tests
 
 Add ClickHouse to your `/etc/hosts` file:
