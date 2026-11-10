@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"reflect"
 
 	pb "fivetran.com/fivetran_sdk/proto"
@@ -105,6 +106,20 @@ type DriverColumn struct {
 type DriverColumns struct {
 	Mapping map[string]*DriverColumn
 	Columns []*DriverColumn
+}
+
+// FindColumn returns the column with the given name from CSVColumns.All.
+// Returns an error if the receiver is nil or the column is not found.
+func (c *CSVColumns) FindColumn(name string) (*CSVColumn, error) {
+	if c == nil || c.All == nil {
+		return nil, fmt.Errorf("csvColumns is nil or empty")
+	}
+	for _, col := range c.All {
+		if col.Name == name {
+			return col, nil
+		}
+	}
+	return nil, fmt.Errorf("column %s not found in CSV columns", name)
 }
 
 // RemovePrimaryKey removes a primary key column by name from the CSVColumns.PrimaryKeys slice.
