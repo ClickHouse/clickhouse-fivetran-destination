@@ -4,7 +4,7 @@
 
 ClickHouse destination connector for the Fivetran data movement platform. It implements a gRPC server based on the [Fivetran Partner SDK](https://github.com/fivetran/fivetran_sdk) that receives data from Fivetran and writes it to ClickHouse Cloud.
 
-**Tech stack:** Go 1.22+, gRPC (protobuf), ClickHouse (SharedReplacingMergeTree), Docker, Make.
+**Tech stack:** Go (version per [go.mod](./go.mod)), gRPC (protobuf), ClickHouse (SharedReplacingMergeTree), Docker, Make.
 
 See [README.md](./README.md) for documentation links and [CONTRIBUTING.md](./CONTRIBUTING.md) for full development setup, testing, and build instructions.
 
