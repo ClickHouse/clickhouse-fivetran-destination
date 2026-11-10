@@ -38,7 +38,9 @@ func TestGetConnectionFailureAfterMaxRetries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	conn, err := GetClickHouseConnection(ctx, connConfig)
-	assert.ErrorContains(t, err, "ClickHouse connection error: ping failed after 3 attempts: dial tcp [::1]:9999: connect: connection refused")
+	// The dialed address (127.0.0.1 or [::1]) depends on the host's localhost resolution
+	assert.ErrorContains(t, err, "ping failed after 3 attempts")
+	assert.ErrorContains(t, err, "connect: connection refused")
 	assert.Nil(t, conn)
 }
 

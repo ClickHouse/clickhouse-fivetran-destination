@@ -2,7 +2,7 @@
 
 * Git
 * Make (see [Makefile](./Makefile) for all available commands)
-* Go 1.22+
+* Go (version per [go.mod](./go.mod))
 
 ## Building
 
