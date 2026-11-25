@@ -1129,26 +1129,23 @@ func (conn *ClickHouseConnection) WaitAllMutationsCompleted(
 	return nil
 }
 
-// WaitDatabaseIsCreated waits for the database to be created when concurrent creation requests collide.
-// If there are parallel requests to create tables in a particular database which does not exist yet,
-// and some of these requests will get "false" on database existence check,
-// each of these requests will try to create the database by itself.
-// Despite having NOT EXISTS modifier on the database creation statement,
-// we could still _rarely_ get a "Database ... is currently dropped or renamed" error (code 81).
+// WaitDatabaseIsCreated handles a failed CREATE DATABASE IF NOT EXISTS statement.
+// Parallel requests to create tables in a database that does not exist yet
+// will each try to create the database. Despite IF NOT EXISTS, the server may reject
+// all but one of them, and the error code varies between ClickHouse versions.
 //
-// As there is no guarantee that there will be only one instance of the app running at a time, we can't use a mutex.
-// Instead, we will try to wait until the database is created (as it is likely being created by some other request).
-//
-// NB: another (more robust) option is to use a distributed lock (maybe via a KeeperMap table engine),
-// but since this error is very rare, it is probably not worth to overcomplicate.
+// Since the database is likely being created by another request, any error other than
+// missing privileges is treated as a possible race: wait until the database exists.
+// If it never appears, return an error wrapping the original one.
 func (conn *ClickHouseConnection) WaitDatabaseIsCreated(
 	ctx context.Context,
-	mutationError error,
+	createErr error,
 	schemaName string,
 ) error {
-	if !isDatabaseBeingCreatedErr(mutationError) {
-		return mutationError
+	if isAccessDeniedErr(createErr) {
+		return createErr
 	}
+	log.Warn(fmt.Sprintf("Failed to create database %s, waiting for it to be created by a concurrent request: %v", schemaName, createErr))
 
 	// Measure the total execution (or, more precisely, waiting) time of all the operations here
 	err := benchmark.RunAndNotice(func() error {
@@ -1163,7 +1160,7 @@ func (conn *ClickHouseConnection) WaitDatabaseIsCreated(
 
 	if err != nil {
 		return fmt.Errorf("error while waiting for the database %s to be created: %w; initial cause: %w",
-			schemaName, err, mutationError)
+			schemaName, err, createErr)
 	}
 	return nil
 }
@@ -1268,10 +1265,12 @@ func isIncompleteMutationErr(err error) bool {
 	return true
 }
 
-func isDatabaseBeingCreatedErr(err error) bool {
+// isAccessDeniedErr reports whether err is (or wraps) a ClickHouse
+// server exception with code 497 (ACCESS_DENIED).
+func isAccessDeniedErr(err error) bool {
 	var exception *clickhouse.Exception
 	ok := errors.As(err, &exception)
-	if !ok || exception.Code != 81 {
+	if !ok || exception.Code != 497 {
 		return false
 	}
 	return true
