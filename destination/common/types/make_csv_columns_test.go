@@ -63,6 +63,38 @@ func TestMakeCSVColumnMappingCountMismatch(t *testing.T) {
 	assert.ErrorContains(t, err, "columns count in ClickHouse table (3) does not match the input file (2)")
 }
 
+func TestCSVColumnsFindColumn(t *testing.T) {
+	col1 := &CSVColumn{Index: 0, TableIndex: 1, Name: "col1", Type: pb.DataType_INT}
+	col2 := &CSVColumn{Index: 1, TableIndex: 0, Name: "col2", Type: pb.DataType_STRING, IsPrimaryKey: true}
+	cols := &CSVColumns{All: []*CSVColumn{col1, col2}, PrimaryKeys: []*CSVColumn{col2}}
+
+	tests := []struct {
+		name    string
+		cols    *CSVColumns
+		lookup  string
+		want    *CSVColumn
+		wantErr string
+	}{
+		{name: "first column", cols: cols, lookup: "col1", want: col1},
+		{name: "second column", cols: cols, lookup: "col2", want: col2},
+		{name: "missing column", cols: cols, lookup: "col3", wantErr: "column col3 not found in CSV columns"},
+		{name: "nil receiver", cols: nil, lookup: "col1", wantErr: "csvColumns is nil or empty"},
+		{name: "nil All", cols: &CSVColumns{}, lookup: "col1", wantErr: "csvColumns is nil or empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.cols.FindColumn(tt.lookup)
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				assert.Nil(t, got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Same(t, tt.want, got)
+		})
+	}
+}
+
 var (
 	dbCol1 = &DriverColumn{Name: "col1", DatabaseType: "Int32", ScanType: scanTypeNullableInt32, Index: 0}
 	dbCol2 = &DriverColumn{Name: "col2", DatabaseType: "String", ScanType: scanTypeString, Index: 1}

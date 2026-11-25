@@ -106,10 +106,9 @@ type AdvancedConfig struct {
 
 // DestinationConfigurations controls the internal behavior of the destination connector.
 type DestinationConfigurations struct {
-	WriteBatchSize      *uint `json:"write_batch_size,omitempty"`
-	SelectBatchSize     *uint `json:"select_batch_size,omitempty"`
-	MutationBatchSize   *uint `json:"mutation_batch_size,omitempty"`
-	HardDeleteBatchSize *uint `json:"hard_delete_batch_size,omitempty"`
+	WriteBatchSize   *uint `json:"write_batch_size,omitempty"`
+	SelectBatchSize  *uint `json:"select_batch_size,omitempty"`
+	StagingBatchSize *uint `json:"staging_batch_size,omitempty"`
 }
 
 // ParseAdvancedConfig decodes and parses the optional JSON configuration file
@@ -158,10 +157,7 @@ func ValidateAndOverwriteFlags(ds *DestinationConfigurations) error {
 	if err := applySetting(&flags.SelectBatchSizeSetting, ds.SelectBatchSize); err != nil {
 		return err
 	}
-	if err := applySetting(&flags.MutationBatchSizeSetting, ds.MutationBatchSize); err != nil {
-		return err
-	}
-	if err := applySetting(&flags.HardDeleteBatchSizeSetting, ds.HardDeleteBatchSize); err != nil {
+	if err := applySetting(&flags.StagingBatchSizeSetting, ds.StagingBatchSize); err != nil {
 		return err
 	}
 	return nil

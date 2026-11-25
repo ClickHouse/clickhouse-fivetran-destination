@@ -38,15 +38,10 @@ var SelectBatchSizeSetting = ConfigDefinition{
 	Description: "Batch size for SELECT operations"}
 var SelectBatchSize = SelectBatchSizeSetting.RegisterFlag()
 
-var MutationBatchSizeSetting = ConfigDefinition{
-	Name: "mutation_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
-	Description: "Batch size for ALTER TABLE UPDATE mutations (builds SQL strings, keep low to avoid large queries)"}
-var MutationBatchSize = MutationBatchSizeSetting.RegisterFlag()
-
-var HardDeleteBatchSizeSetting = ConfigDefinition{
-	Name: "hard_delete_batch_size", DefaultValue: 1_500, MinValue: 200, MaxValue: 1_500,
-	Description: "Batch size for DELETE mutations (builds SQL strings, keep low to avoid large queries)"}
-var HardDeleteBatchSize = HardDeleteBatchSizeSetting.RegisterFlag()
+var StagingBatchSizeSetting = ConfigDefinition{
+	Name: "staging_batch_size", DefaultValue: 1_000_000, MinValue: 10_000, MaxValue: 1_000_000,
+	Description: "Max rows of a batch file staged per helper table. Bounds the rows each staged DELETE/UPDATE(INSERT) operates on"}
+var StagingBatchSize = StagingBatchSizeSetting.RegisterFlag()
 
 var MaxParallelSelects = flag.Uint("max-parallel-selects", 10,
 	"Max number of parallel SELECT queries")
@@ -55,8 +50,8 @@ var MaxIdleConnections = flag.Uint("max-idle-connections", 5,
 	"Max number of idle connections for ClickHouse client")
 var MaxOpenConnections = flag.Uint("max-open-connections", 10,
 	"Max number of open connections for ClickHouse client (recommended: max-idle-connections + 5)")
-var RequestTimeoutDuration = flag.Duration("request-timeout-duration", 300*time.Second,
-	"Timeout for ClickHouse client requests")
+var RequestTimeoutDuration = flag.Duration("request-timeout-duration", 600*time.Second,
+	"Timeout for ClickHouse client requests; a single mutation on a large table can take minutes")
 
 var MaxRetries = flag.Uint("max-retries", 10,
 	"Max number of retries for ClickHouse client in case of network errors")
@@ -70,7 +65,7 @@ var MaxInactiveReplicaCheckRetries = flag.Uint("max-inactive-replica-check-retri
 var InactiveReplicaCheckInterval = flag.Duration("inactive-replica-check-interval", 1*time.Second,
 	"Interval between inactive replicas check retries")
 
-var MaxAsyncMutationsCheckRetries = flag.Uint("max-async-mutations-check-retries", 600,
+var MaxAsyncMutationsCheckRetries = flag.Uint("max-async-mutations-check-retries", 1200,
 	"Max number of retries when checking async mutations status before failing")
 var AsyncMutationsCheckInterval = flag.Duration("async-mutations-check-interval", 1*time.Second,
 	"Interval between async mutations status check retries")
