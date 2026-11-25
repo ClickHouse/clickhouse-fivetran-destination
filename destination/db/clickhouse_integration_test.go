@@ -14,6 +14,7 @@ import (
 	"fivetran.com/fivetran_sdk/destination/db/config"
 	"fivetran.com/fivetran_sdk/destination/db/sql"
 	pb "fivetran.com/fivetran_sdk/proto"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -225,6 +226,112 @@ func TestGrants(t *testing.T) {
 	addGrant("SELECT ON *.*")
 	err = conn.GrantsTest(ctx)
 	require.NoError(t, err)
+}
+
+func TestWaitDatabaseIsCreated(t *testing.T) {
+	setDatabaseCreatedCheckFlags(t, 20, 50*time.Millisecond)
+	ctx := context.Background()
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	raceErr := &clickhouse.Exception{Code: 341, Message: "Database was created by another replica"}
+	createDatabase := func(dbName string) error {
+		return conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
+	}
+
+	t.Run("database already exists", func(t *testing.T) {
+		dbName := newTestDatabaseName(t, ctx, conn)
+		require.NoError(t, createDatabase(dbName))
+
+		assert.NoError(t, conn.WaitDatabaseIsCreated(ctx, raceErr, dbName))
+	})
+
+	t.Run("database created concurrently", func(t *testing.T) {
+		dbName := newTestDatabaseName(t, ctx, conn)
+		created := make(chan error, 1)
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			created <- createDatabase(dbName)
+		}()
+
+		assert.NoError(t, conn.WaitDatabaseIsCreated(ctx, raceErr, dbName))
+		require.NoError(t, <-created)
+	})
+
+	t.Run("database never appears", func(t *testing.T) {
+		dbName := newTestDatabaseName(t, ctx, conn)
+
+		assert.ErrorIs(t, conn.WaitDatabaseIsCreated(ctx, raceErr, dbName), raceErr)
+	})
+}
+
+func TestCreateDatabaseAccessDenied(t *testing.T) {
+	// A long interval, so that waiting even once fails the timing assertion below by a wide margin.
+	setDatabaseCreatedCheckFlags(t, 2, 5*time.Second)
+
+	guid := strings.ReplaceAll(uuid.New().String(), "-", "")
+	ctx := context.Background()
+	defaultConn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": "default",
+		"local":    "true",
+	})
+	t.Cleanup(func() { assert.NoError(t, defaultConn.Close()) })
+
+	username := fmt.Sprintf("test_no_grants_user_%s", guid)
+	password := fmt.Sprintf("secret_%s", guid)
+	err := defaultConn.Exec(ctx, fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s'", username, password))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, defaultConn.Exec(ctx, fmt.Sprintf("DROP USER IF EXISTS %s", username)))
+	})
+	// Without SHOW DATABASES the existence check would also fail, hiding whether CreateDatabase waits.
+	err = defaultConn.Exec(ctx, fmt.Sprintf("GRANT SHOW DATABASES ON *.* TO %s", username))
+	require.NoError(t, err)
+
+	conn := getTestConnection(t, ctx, map[string]string{
+		"host":     "localhost",
+		"port":     "9000",
+		"username": username,
+		"password": password,
+		"local":    "true",
+	})
+	defer conn.Close() //nolint:errcheck
+
+	// The real server error must be recognized as access denied, so CreateDatabase fails without waiting.
+	start := time.Now()
+	err = conn.CreateDatabase(ctx, fmt.Sprintf("test_access_denied_db_%s", guid))
+	assert.True(t, isAccessDeniedErr(err), "expected ACCESS_DENIED, got: %v", err)
+	assert.Less(t, time.Since(start), *flags.DatabaseCreatedCheckInterval)
+}
+
+// setDatabaseCreatedCheckFlags overrides how long WaitDatabaseIsCreated polls, for the duration of the test.
+func setDatabaseCreatedCheckFlags(t *testing.T, maxRetries uint, interval time.Duration) {
+	t.Helper()
+	currentMaxRetries := *flags.MaxDatabaseCreatedCheckRetries
+	currentInterval := *flags.DatabaseCreatedCheckInterval
+	*flags.MaxDatabaseCreatedCheckRetries = maxRetries
+	*flags.DatabaseCreatedCheckInterval = interval
+	t.Cleanup(func() {
+		*flags.MaxDatabaseCreatedCheckRetries = currentMaxRetries
+		*flags.DatabaseCreatedCheckInterval = currentInterval
+	})
+}
+
+// newTestDatabaseName returns a unique database name and drops that database after the test.
+func newTestDatabaseName(t *testing.T, ctx context.Context, conn *ClickHouseConnection) string {
+	t.Helper()
+	dbName := fmt.Sprintf("test_db_%s", strings.ReplaceAll(uuid.New().String(), "-", ""))
+	t.Cleanup(func() {
+		assert.NoError(t, conn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName)))
+	})
+	return dbName
 }
 
 func TestRenameTable(t *testing.T) {
